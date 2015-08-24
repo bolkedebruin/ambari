@@ -97,13 +97,15 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   },
 
   /**
-   * Make Active Directory specific configs visible if user has selected AD option
+   * Make Active Directory or IPA specific configs visible if user has selected AD or IPA option
    * @param configs
    */
   filterConfigs: function (configs) {
     var kdcType = this.get('content.kerberosOption');
     var adConfigNames = ['ldap_url', 'container_dn', 'ad_create_attributes_template'];
     var mitConfigNames = ['kdc_create_attributes'];
+    var ipaConfigNames = ['admin_keytab'];
+
     var kerberosWizardController = this.controllers.get('kerberosWizardController');
     var manageIdentitiesConfig = configs.findProperty('name', 'manage_identities');
 
@@ -128,6 +130,13 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
       var config = configs.findProperty('name', _configName);
       if (config) {
         config.isVisible = kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.kdc');
+      }
+    }, this);
+
+    ipaConfigNames.forEach(function (_configName) {
+      var config = configs.findProperty('name', _configName);
+      if (config) {
+        config.isVisible = kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.ipa');
       }
     }, this);
   },
@@ -231,6 +240,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     }, this);
     this.tweakKdcTypeValue(properties);
     this.tweakManualKdcProperties(properties);
+    this.tweakIpaKdcProperties(properties);
     return {"type": site, "tag": tag, "properties": properties};
   },
 
@@ -250,6 +260,17 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
       if (properties.hasOwnProperty('manage_identities')) {
         properties['manage_identities'] = 'false';
       }
+      if (properties.hasOwnProperty('install_packages')) {
+        properties['install_packages'] = 'false';
+      }
+      if (properties.hasOwnProperty('manage_krb5_conf')) {
+        properties['manage_krb5_conf'] = 'false';
+      }
+    }
+  },
+
+  tweakIpaKdcProperties: function (properties) {
+    if (properties['kdc_type'] === 'ipa') {
       if (properties.hasOwnProperty('install_packages')) {
         properties['install_packages'] = 'false';
       }

@@ -73,6 +73,24 @@ App.KerberosWizardStep1Controller = Em.Controller.extend({
       ]
     }),
     Em.Object.create({
+      displayName: Em.I18n.t('admin.kerberos.wizard.step1.option.ipa'),
+      value: Em.I18n.t('admin.kerberos.wizard.step1.option.ipa'),
+      preConditions: [
+        Em.Object.create({
+          displayText: Em.I18n.t('admin.kerberos.wizard.step1.option.ipa.condition.1'),
+          checked: false
+        }),
+        Em.Object.create({
+          displayText: Em.I18n.t('admin.kerberos.wizard.step1.option.ipa.condition.2'),
+          checked: false
+        }),
+        Em.Object.create({
+          displayText: Em.I18n.t('admin.kerberos.wizard.step1.option.ipa.condition.3'),
+          checked: false
+        })
+      ]
+    }),
+    Em.Object.create({
       displayName: Em.I18n.t('admin.kerberos.wizard.step1.option.manual'),
       value: Em.I18n.t('admin.kerberos.wizard.step1.option.manual'),
       preConditions: [
