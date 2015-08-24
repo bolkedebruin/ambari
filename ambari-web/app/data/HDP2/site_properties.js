@@ -2492,6 +2492,7 @@ var hdp2properties = [
     "id": "puppet var",
     "name": "admin_keytab",
     "displayName": "Admin keytab",
+    "description": "Admin keytab used to create principals and export key tabs (e.g. /etc/security/admin.keytab)",
     "isOverridable": false,
     "isVisible": false,
     "isRequiredByAgent": false,
