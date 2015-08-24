@@ -2502,7 +2502,7 @@ var hdp2properties = [
   },
   {
     "id": "puppet var",
-    "name": "manage_krb5_conf",
+    "name": "manage_krb5_conf",sudo yu
     "displayName": "Manage Kerberos client krb5.conf",
     "displayType": "checkbox",
     "isOverridable": false,
