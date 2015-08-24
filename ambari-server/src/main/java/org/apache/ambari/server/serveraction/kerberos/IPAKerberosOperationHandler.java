@@ -41,6 +41,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
     private String adminServerHost = null;
 
+    private String adminKeyTab = null;
+
     /**
      * A String containing the resolved path to the ipa executable
      */
@@ -84,6 +86,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
             setAdminServerHost(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_SERVER_HOST));
             setExecutableSearchPaths(kerberosConfiguration.get(KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS));
+            setAdminKeyTab(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_KEYTAB));
         } else {
             setKeyEncryptionTypes(null);
             setAdminServerHost(null);
@@ -295,6 +298,24 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     }
 
     /**
+     * Sets the administrator key tab file location
+     *
+     * @param adminKeyTab the location of the key tab file
+     */
+    public void setAdminKeyTab(String adminKeyTab) {
+        this.adminKeyTab = adminKeyTab;
+    }
+
+    /**
+     * Gets the location of the administrator key tab file
+     *
+     * @return the location of the administrator key tab file
+     */
+    public String getAdminKeyTab() {
+        return this.adminKeyTab;
+    }
+
+    /**
      * Invokes the ipa shell command to issue queries
      *
      * @param query a String containing the query to send to the kdamin command
@@ -337,11 +358,12 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                     throw new KerberosOperationException("No admin keytab for ipa available - this KerberosOperationHandler may not have been opened.");
                 }
 
-                tempKeytabFile = createKeytabFile(adminKeyTab);
+                //TODO: check logic for admin credentials and keytab
+                //tempKeytabFile = createKeytabFile(adminKeyTab);
                 kinit.add(executableKinit);
                 kinit.add("-k");
                 kinit.add("-t");
-                kinit.add(tempKeytabFile.getAbsolutePath());
+                kinit.add(getAdminKeyTab());
                 kinit.add(administratorCredentials.getPrincipal());
                 result = executeCommand(kinit.toArray(new String[kinit.size()]));
 
