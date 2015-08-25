@@ -376,6 +376,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
             }
 
+            command.add(query);
+
             if(LOG.isDebugEnabled()) {
                 LOG.debug(String.format("Executing: %s", createCleanCommand(command)));
             }
@@ -407,7 +409,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 } else if (stdErr.contains("Cannot find KDC for requested realm while initializing kadmin interface")) {
                     throw new KerberosRealmException(stdErr);
                 } else {
-                    throw new KerberosOperationException("Unexpected error condition executing the kadmin command");
+                    throw new KerberosOperationException("Unexpected error condition executing the ipa command");
                 }
             }
         } finally {
