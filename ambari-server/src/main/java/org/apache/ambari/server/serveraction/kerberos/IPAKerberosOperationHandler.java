@@ -354,9 +354,9 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
                 String adminKeyTab = administratorCredentials.getKeytab();
 
-                if ((adminKeyTab == null || adminKeyTab.isEmpty())) {
+                /*if ((adminKeyTab == null || adminKeyTab.isEmpty())) {
                     throw new KerberosOperationException("No admin keytab for ipa available - this KerberosOperationHandler may not have been opened.");
-                }
+                }*/
 
                 //TODO: check logic for admin credentials and keytab
                 //tempKeytabFile = createKeytabFile(adminKeyTab);
