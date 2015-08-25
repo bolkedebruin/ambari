@@ -133,13 +133,16 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         if (principal == null) {
             return false;
+        } else if (isServicePrincipal(principal)) {
+            return true;
         } else {
             // TODO: fix exception check to only check for relevant exceptions
             try {
                 // Create the ipa query to execute:
-                ShellCommandUtil.Result result = invokeIpa(String.format("service-show %s", principal));
-                String stdOut = result.getStdout();
-                return (stdOut != null) && stdOut.contains(String.format("Principal: %s", principal));
+                ShellCommandUtil.Result result = invokeIpa(String.format("user-show %s", principal));
+                if (result.isSuccessful()) {
+                    return true;
+                }
             } catch (KerberosOperationException e) {
                 return false;
             }
@@ -504,7 +507,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         } catch (KerberosOperationException e) {
             return false;
         }
-        
+
         return false;
     }
 }
