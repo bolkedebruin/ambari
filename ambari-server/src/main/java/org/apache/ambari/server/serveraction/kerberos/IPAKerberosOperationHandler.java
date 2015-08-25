@@ -24,7 +24,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.text.NumberFormat;
+import java.text.ParseException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * IPAKerberosOperationHandler is an implementation of a KerberosOperationHandler providing
@@ -42,6 +46,12 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     private String adminKeyTab = null;
 
     /**
+     * A regular expression pattern to use to parse the key number from the text captured from the
+     * kvno command
+     */
+    private final static Pattern PATTERN_GET_KEY_NUMBER = Pattern.compile("^.*?: kvno = (\\d+).*$", Pattern.DOTALL);
+
+    /**
      * A String containing the resolved path to the ipa executable
      */
     private String executableIpa = null;
@@ -54,7 +64,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     /**
      * A String containing the resolved path to the ipa-getkeytab executable
      */
-    private String executableIpaGetKeyTab = null;
+    private String executableKvno = null;
 
     /**
      * Prepares and creates resources to be used by this KerberosOperationHandler
@@ -93,7 +103,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         // Pre-determine the paths to relevant Kerberos executables
         executableIpa = getExecutable("ipa");
-        executableIpaGetKeyTab = getExecutable("ipa-getkeytab");
+        executableKvno = getExecutable("kvno");
         executableKinit = getExecutable("kinit");
 
         setOpen(true);
@@ -105,7 +115,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         setOpen(false);
 
         executableIpa = null;
-        executableIpaGetKeyTab = null;
+        executableKvno = null;
 
         executableKinit = null;
     }
@@ -187,7 +197,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 ShellCommandUtil.Result result = invokeIpa(String.format("service-add --ok-as-delegate=TRUE %s", principal));
                 String stdOut = result.getStdout();
                 if ((stdOut != null) && stdOut.contains(String.format("Added service \"%s\"", principal))) {
-                    return 0;
+                    return getKeyNumber(principal);
                 } else {
                     LOG.error("Failed to execute ipa query: service-add --ok-as-delegate=TRUE {}\nSTDOUT: {}\nSTDERR: {}",
                             principal, stdOut, result.getStderr());
@@ -198,13 +208,14 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 // Create the ipa query: user-add <username> --principal=<principal_name> --first <primary> --last <primary>
                 // set-attr userPassword="<password>"
                 // first and last are required for IPA so we make it equal to the primary
+                // the --principal arguments makes sure that Kerberos keys are available for use in getKeyNumber
                 ShellCommandUtil.Result result = invokeIpa(String.format("user-add %s --principal=%s --first %s --last %s --setattr userPassword=\"%s\"",
                         deconstructedPrincipal.getPrimary(), deconstructedPrincipal.getPrincipalName(),
                         deconstructedPrincipal.getPrimary(), deconstructedPrincipal.getPrimary(), password));
 
                 String stdOut = result.getStdout();
                 if ((stdOut != null) && stdOut.contains(String.format("Added user \"%s\"", deconstructedPrincipal.getPrincipalName()))) {
-                    return 0;
+                    return getKeyNumber(principal);
                 } else {
                     LOG.error("Failed to execute ipa query: user-add {}\nSTDOUT: {}\nSTDERR: {}",
                             principal, stdOut, result.getStderr());
@@ -245,7 +256,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
             invokeIpa(String.format("user-mod %s --setattr userPassword=\"%s\"", deconstructedPrincipal.getPrimary(), password));
         }
-        return 0;
+        return getKeyNumber(principal);
     }
 
     /**
@@ -430,6 +441,12 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         return result;
     }
 
+    /**
+     * Rebuilds the command line to make sure space are converted to arguments
+     *
+     * @param command a List of items making up the command
+     * @return the fixed command
+     */
     private List<String> fixCommandList(List<String> command) {
         List<String> fixedCommandList = new ArrayList<>();
         Iterator<String> iterator = command.iterator();
@@ -511,5 +528,62 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         }
 
         return false;
+    }
+
+    /**
+     * Retrieves the current key number assigned to the identity identified by the specified principal
+     *
+     * @param principal a String declaring the principal to look up
+     * @return an Integer declaring the current key number
+     * @throws KerberosKDCConnectionException       if a connection to the KDC cannot be made
+     * @throws KerberosAdminAuthenticationException if the administrator credentials fail to authenticate
+     * @throws KerberosRealmException               if the realm does not map to a KDC
+     * @throws KerberosOperationException           if an unexpected error occurred
+     */
+    private Integer getKeyNumber(String principal) throws KerberosOperationException {
+        if (!isOpen()) {
+            throw new KerberosOperationException("This operation handler has not been opened");
+        }
+
+        if ((principal == null) || principal.isEmpty()) {
+            throw new KerberosOperationException("Failed to get key number for principal  - no principal specified");
+        } else {
+            // Create the kvno query:  <principal>
+            List<String> command = new ArrayList<>();
+            command.add(executableKvno);
+            command.add(principal);
+
+            ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
+            String stdOut = result.getStdout();
+            if (stdOut == null) {
+                String message = String.format("Failed to get key number for %s:\n\tExitCode: %s\n\tSTDOUT: NULL\n\tSTDERR: %s",
+                        principal, result.getExitCode(), result.getStderr());
+                LOG.warn(message);
+                throw new KerberosOperationException(message);
+            }
+
+            Matcher matcher = PATTERN_GET_KEY_NUMBER.matcher(stdOut);
+            if (matcher.matches()) {
+                NumberFormat numberFormat = NumberFormat.getIntegerInstance();
+                String keyNumber = matcher.group(1);
+
+                numberFormat.setGroupingUsed(false);
+                try {
+                    Number number = numberFormat.parse(keyNumber);
+                    return (number == null) ? 0 : number.intValue();
+                } catch (ParseException e) {
+                    String message = String.format("Failed to get key number for %s - invalid key number value (%s):\n\tExitCode: %s\n\tSTDOUT: NULL\n\tSTDERR: %s",
+                            principal, keyNumber, result.getExitCode(), result.getStderr());
+                    LOG.warn(message);
+                    throw new KerberosOperationException(message);
+                }
+            } else {
+                String message = String.format("Failed to get key number for %s - unexpected STDOUT data:\n\tExitCode: %s\n\tSTDOUT: NULL\n\tSTDERR: %s",
+                        principal, result.getExitCode(), result.getStderr());
+                LOG.warn(message);
+                throw new KerberosOperationException(message);
+            }
+
+        }
     }
 }
