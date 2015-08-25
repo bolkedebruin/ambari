@@ -442,14 +442,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             String part = iterator.next();
 
             cleanedCommand.append(' ');
-
-            if (part.contains(" ")) {
-                cleanedCommand.append('"');
-                cleanedCommand.append(part);
-                cleanedCommand.append('"');
-            } else {
-                cleanedCommand.append(part);
-            }
+            cleanedCommand.append(part);
 
             if ("-w".equals(part)) {
                 // Skip the password and use "********" instead
