@@ -23,10 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * IPAKerberosOperationHandler is an implementation of a KerberosOperationHandler providing
@@ -382,7 +379,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 LOG.debug(String.format("Executing: %s", createCleanCommand(command)));
             }
 
-            result = executeCommand(command.toArray(new String[command.size()]));
+            List<String> fixedCommand = fixCommandList(command);
+            result = executeCommand(fixedCommand.toArray(new String[fixedCommand.size()]));
 
             if (!result.isSuccessful()) {
                 String message = String.format("Failed to execute ipa:\n\tCommand: %s\n\tExitCode: %s\n\tSTDOUT: %s\n\tSTDERR: %s",
@@ -424,6 +422,30 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         return result;
     }
 
+    private List<String> fixCommandList(List<String> command) {
+        List<String> fixedCommandList = new ArrayList<>();
+        Iterator<String> iterator = command.iterator();
+
+        if (iterator.hasNext()) {
+            fixedCommandList.add(iterator.next());
+        }
+
+        while (iterator.hasNext()) {
+            String part = iterator.next();
+
+            // split arguments
+            if (part.contains(" ")) {
+                StringTokenizer st = new StringTokenizer(part, " ");
+                while (st.hasMoreElements()) {
+                    fixedCommandList.add(st.nextToken());
+                }
+            } else {
+                fixedCommandList.add(part);
+            }
+        }
+
+        return fixedCommandList;
+    }
     /**
      * Build the ipa command string, replacing administrator password with "********"
      *
