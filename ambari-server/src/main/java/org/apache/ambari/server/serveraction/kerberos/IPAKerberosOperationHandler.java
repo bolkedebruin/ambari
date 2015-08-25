@@ -19,6 +19,7 @@
 package org.apache.ambari.server.serveraction.kerberos;
 
 import org.apache.ambari.server.utils.ShellCommandUtil;
+import org.apache.directory.shared.kerberos.exceptions.KerberosException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -133,13 +134,15 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         if (principal == null) {
             return false;
         } else {
-            // Create the ipa query to execute:
-            ShellCommandUtil.Result result = invokeIpa(String.format("service-show %s", principal));
-
-            // If there is data from STDOUT, see if the following string exists:
-            //    Principal: <principal>
-            String stdOut = result.getStdout();
-            return (stdOut != null) && stdOut.contains(String.format("Principal: %s", principal));
+            // TODO: fix exception check to only check for relevant exceptions
+            try {
+                // Create the ipa query to execute:
+                ShellCommandUtil.Result result = invokeIpa(String.format("service-show %s", principal));
+                String stdOut = result.getStdout();
+                return (stdOut != null) && stdOut.contains(String.format("Principal: %s", principal));
+            } catch (KerberosOperationException e) {
+                return false;
+            }
         }
     }
 
@@ -492,7 +495,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         } else if (!principal.contains("/")) {
             return false;
         }
-        
+
         ShellCommandUtil.Result result = invokeIpa(String.format("service-show %s", principal));
 
         if (result.isSuccessful()) {
