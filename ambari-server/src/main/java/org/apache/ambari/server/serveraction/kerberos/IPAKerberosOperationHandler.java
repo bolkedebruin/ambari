@@ -147,6 +147,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 return false;
             }
         }
+
+        return false;
     }
 
 
