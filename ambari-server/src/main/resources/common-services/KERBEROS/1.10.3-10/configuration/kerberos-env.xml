@@ -24,7 +24,7 @@
   <property require-input="true">
     <name>kdc_type</name>
     <description>
-      The type of KDC being used. Either mit-kdc or active-directory
+      The type of KDC being used. Either mit-kdc, ipa, or active-directory
     </description>
     <value>mit-kdc</value>
   </property>
@@ -199,5 +199,13 @@
       The set of attributes to use when creating a new Kerberos identity in the relevant (MIT) KDC.
     </description>
     <value/>
+  </property>
+
+  <property>
+    <name>admin_keytab</name>
+    <description>
+      The location of the key for administrative access to the KDC
+    </description>
+    <value>/etc/admin.keytab</value>
   </property>
 </configuration>
