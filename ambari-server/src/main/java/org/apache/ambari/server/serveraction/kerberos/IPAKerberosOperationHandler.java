@@ -498,14 +498,13 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         try {
             ShellCommandUtil.Result result = invokeIpa(String.format("service-show %s", principal));
+            if (result.isSuccessful()) {
+                return true;
+            }
         } catch (KerberosOperationException e) {
             return false;
         }
-
-        if (result.isSuccessful()) {
-            return true;
-        }
-
+        
         return false;
     }
 }
