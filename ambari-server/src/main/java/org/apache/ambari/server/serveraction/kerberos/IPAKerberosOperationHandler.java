@@ -489,8 +489,10 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         if ((principal == null) || principal.isEmpty()) {
             throw new KerberosOperationException("Failed to determine principal type- no principal specified");
+        } else if (!principal.contains("/")) {
+            return false;
         }
-
+        
         ShellCommandUtil.Result result = invokeIpa(String.format("service-show %s", principal));
 
         if (result.isSuccessful()) {
