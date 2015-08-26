@@ -153,8 +153,10 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         } else {
             // TODO: fix exception check to only check for relevant exceptions
             try {
+                DeconstructedPrincipal deconstructedPrincipal = createDeconstructPrincipal(principal);
+                
                 // Create the ipa query to execute:
-                ShellCommandUtil.Result result = invokeIpa(String.format("user-show %s", principal));
+                ShellCommandUtil.Result result = invokeIpa(String.format("user-show %s", deconstructedPrincipal.getPrimary()));
                 if (result.isSuccessful()) {
                     return true;
                 }
