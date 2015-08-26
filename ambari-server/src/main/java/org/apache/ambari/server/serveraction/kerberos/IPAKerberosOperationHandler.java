@@ -226,7 +226,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                             principal, stdOut, result.getStderr()));
                 }
 
-                result = invokeIpa(String.format("user-mod %s --setattr krbPasswordExpiration=%s", PASSWORD_EXPIRY_DATE));
+                result = invokeIpa(String.format("user-mod %s --setattr krbPasswordExpiration=%s",
+                        deconstructedPrincipal.getPrimary(), PASSWORD_EXPIRY_DATE));
                 stdOut = result.getStdout();
                 if ((stdOut != null) && stdOut.contains("Modified")) {
                     return getKeyNumber(principal);
@@ -274,6 +275,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             List<String> command = new ArrayList<>();
             command.add(executableIpa);
             command.add("user-mod");
+            command.add(deconstructedPrincipal.getPrimary());
             command.add("--setattr");
             command.add(String.format("krbPasswordExpiration=%s", PASSWORD_EXPIRY_DATE));
             ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
