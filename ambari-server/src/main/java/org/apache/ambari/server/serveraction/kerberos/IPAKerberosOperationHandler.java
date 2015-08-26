@@ -19,6 +19,7 @@
 package org.apache.ambari.server.serveraction.kerberos;
 
 import org.apache.ambari.server.utils.ShellCommandUtil;
+import org.apache.directory.shared.kerberos.codec.types.EncryptionType;
 import org.apache.directory.shared.kerberos.exceptions.KerberosException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -96,7 +97,12 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         setDefaultRealm(realm);
 
         if (kerberosConfiguration != null) {
-            setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
+            // ipa does not generate additional encryption types when ipa-getkeytab is not invoked
+            Set<EncryptionType> ipaEncryptionTypes = new HashSet<>();
+            ipaEncryptionTypes.add(EncryptionType.RC4_HMAC);
+            setKeyEncryptionTypes(ipaEncryptionTypes);
+            //setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
+
             setAdminServerHost(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_SERVER_HOST));
             setExecutableSearchPaths(kerberosConfiguration.get(KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS));
             setAdminKeyTab(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_KEYTAB));
