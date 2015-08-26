@@ -154,7 +154,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             // TODO: fix exception check to only check for relevant exceptions
             try {
                 DeconstructedPrincipal deconstructedPrincipal = createDeconstructPrincipal(principal);
-                
+
                 // Create the ipa query to execute:
                 ShellCommandUtil.Result result = invokeIpa(String.format("user-show %s", deconstructedPrincipal.getPrimary()));
                 if (result.isSuccessful()) {
@@ -227,6 +227,9 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                     throw new KerberosOperationException(String.format("Failed to create user principal for %s\nSTDOUT: %s\nSTDERR: %s",
                             principal, stdOut, result.getStderr()));
                 }
+
+                // todo: remove
+                LOG.info("Principal {} created with password {}", principal, password);
 
                 result = invokeIpa(String.format("user-mod %s --setattr krbPasswordExpiration=%s",
                         deconstructedPrincipal.getPrimary(), PASSWORD_EXPIRY_DATE));
