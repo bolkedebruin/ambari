@@ -46,6 +46,11 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     private String adminKeyTab = null;
 
     /**
+     * The password expiry date for user principal accounts
+     */
+    private String PASSWORD_EXPIRY_DATE = "20370826073247Z";
+
+    /**
      * A regular expression pattern to use to parse the key number from the text captured from the
      * kvno command
      */
@@ -214,14 +219,23 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                         deconstructedPrincipal.getPrimary(), deconstructedPrincipal.getPrimary(), password));
 
                 String stdOut = result.getStdout();
-                if ((stdOut != null) && stdOut.contains(String.format("Added user \"%s\"", deconstructedPrincipal.getPrincipalName()))) {
-                    return getKeyNumber(principal);
-                } else {
+                if (!((stdOut != null) && stdOut.contains(String.format("Added user \"%s\"", deconstructedPrincipal.getPrincipalName())))) {
                     LOG.error("Failed to execute ipa query: user-add {}\nSTDOUT: {}\nSTDERR: {}",
                             principal, stdOut, result.getStderr());
                     throw new KerberosOperationException(String.format("Failed to create user principal for %s\nSTDOUT: %s\nSTDERR: %s",
                             principal, stdOut, result.getStderr()));
                 }
+
+                result = invokeIpa(String.format("user-mod %s --setattr krbPasswordExpiration=%s", PASSWORD_EXPIRY_DATE));
+                stdOut = result.getStdout();
+                if ((stdOut != null) && stdOut.contains("Modified")) {
+                    return getKeyNumber(principal);
+                }
+
+                throw new KerberosOperationException(String.format("Unknown error while creating principal for %s\n" +
+                                "STDOUT: %s\n" +
+                                "STDERR: %s\n",
+                        principal, stdOut, result.getStderr()));
             }
         }
     }
@@ -255,6 +269,17 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
             // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
             invokeIpa(String.format("user-mod %s --setattr userPassword=\"%s\"", deconstructedPrincipal.getPrimary(), password));
+
+            // password expiry gets set to now when resetting password
+            List<String> command = new ArrayList<>();
+            command.add(executableIpa);
+            command.add("user-mod");
+            command.add("--setattr");
+            command.add(String.format("krbPasswordExpiration=%s", PASSWORD_EXPIRY_DATE));
+            ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
+            if (!result.isSuccessful()) {
+                throw new KerberosOperationException("Failed to set password expiry");
+            }
         }
         return getKeyNumber(principal);
     }
