@@ -214,7 +214,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 // set-attr userPassword="<password>"
                 // first and last are required for IPA so we make it equal to the primary
                 // the --principal arguments makes sure that Kerberos keys are available for use in getKeyNumber
-                ShellCommandUtil.Result result = invokeIpa(String.format("user-add %s --principal=%s --first %s --last %s --setattr userPassword=\"%s\"",
+                ShellCommandUtil.Result result = invokeIpa(String.format("user-add %s --principal=%s --first %s --last %s --setattr userPassword=%s",
                         deconstructedPrincipal.getPrimary(), deconstructedPrincipal.getPrincipalName(),
                         deconstructedPrincipal.getPrimary(), deconstructedPrincipal.getPrimary(), password));
 
@@ -269,7 +269,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             DeconstructedPrincipal deconstructedPrincipal = createDeconstructPrincipal(principal);
 
             // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
-            invokeIpa(String.format("user-mod %s --setattr userPassword=\"%s\"", deconstructedPrincipal.getPrimary(), password));
+            invokeIpa(String.format("user-mod %s --setattr userPassword=%s", deconstructedPrincipal.getPrimary(), password));
 
             // password expiry gets set to now when resetting password
             List<String> command = new ArrayList<>();
