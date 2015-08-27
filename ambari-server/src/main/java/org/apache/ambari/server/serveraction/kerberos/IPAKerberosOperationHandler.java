@@ -112,7 +112,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             setAdminServerHost(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_SERVER_HOST));
             setExecutableSearchPaths(kerberosConfiguration.get(KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS));
             setAdminKeyTab(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_KEYTAB));
-            setUserPrincipalGroup(KERBEROS_ENV_USER_PRINCIPAL_GROUP);
+            setUserPrincipalGroup(kerberosConfiguration.get(KERBEROS_ENV_USER_PRINCIPAL_GROUP));
         } else {
             setKeyEncryptionTypes(null);
             setAdminServerHost(null);
