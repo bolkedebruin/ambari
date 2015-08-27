@@ -247,7 +247,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 }
 
                 result = invokeIpa(String.format("group-add-member %s --users=%s",
-                        getUserPrincipalGroup(), deconstructedPrincipal.getPrimary());
+                        getUserPrincipalGroup(), deconstructedPrincipal.getPrimary()));
                 stdOut = result.getStdout();
                 if ((stdOut != null) && stdOut.contains("added")) {
                     return getKeyNumber(principal);
@@ -288,7 +288,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         } else if (!isServicePrincipal(principal)) {
             DeconstructedPrincipal deconstructedPrincipal = createDeconstructPrincipal(principal);
 
-            LOG.info("Setting password for {} does not make sense in IPA context as it triggers a password expiry. Continuing anyway.")
+            LOG.info("Setting password for {} does not make sense in IPA context as it " +
+                    "triggers a password expiry. Continuing anyway.", principal);
 
             // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
             invokeIpa(String.format("user-mod %s --setattr userPassword=%s", deconstructedPrincipal.getPrimary(), password));
