@@ -221,7 +221,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 if ((stdOut != null) && stdOut.contains(String.format("Added service \"%s\"", principal))) {
                     // the server needs a bit of time to update
                     try {
-                        Thread.sleep(200L);
+                        Thread.sleep(2000L);
                     } catch (InterruptedException e) {
 
                     }
