@@ -19,12 +19,15 @@
 package org.apache.ambari.server.serveraction.kerberos;
 
 import org.apache.ambari.server.utils.ShellCommandUtil;
+import org.apache.directory.server.kerberos.shared.keytab.Keytab;
 import org.apache.directory.shared.kerberos.codec.types.EncryptionType;
 import org.apache.directory.shared.kerberos.exceptions.KerberosException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.security.auth.kerberos.KeyTab;
 import java.io.File;
+import java.io.IOException;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.*;
@@ -56,6 +59,11 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
      * kvno command
      */
     private final static Pattern PATTERN_GET_KEY_NUMBER = Pattern.compile("^.*?: kvno = (\\d+).*$", Pattern.DOTALL);
+
+    /**
+     * A String containing the resolved path to the ipa executable
+     */
+    private String executableIpaGetKeytab = null;
 
     /**
      * A String containing the resolved path to the ipa executable
@@ -116,6 +124,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         executableIpa = getExecutable("ipa");
         executableKvno = getExecutable("kvno");
         executableKinit = getExecutable("kinit");
+        executableIpaGetKeytab = getExecutable("ipa-getkeytab");
 
         setOpen(true);
     }
@@ -127,7 +136,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         executableIpa = null;
         executableKvno = null;
-
+        executableIpaGetKeytab = null;
         executableKinit = null;
     }
 
@@ -623,5 +632,56 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             }
 
         }
+    }
+
+    /**
+     * Creates a key tab by using the ipa commandline utilities. It ignores key number and password
+     * as this will be handled by IPA
+     *
+     * @param principal a String containing the principal to test
+     * @param password  (IGNORED) a String containing the password to use when creating the principal
+     * @param keyNumber (IGNORED) a Integer indicating the key number for the keytab entries
+     * @return
+     * @throws KerberosOperationException
+     */
+    @Override
+    protected Keytab createKeytab(String principal, String password, Integer keyNumber)
+            throws KerberosOperationException {
+
+        if ((principal == null) || principal.isEmpty()) {
+            throw new KerberosOperationException("Failed to create keytab file, missing principal");
+        }
+
+        UUID uuid = UUID.randomUUID();
+
+        String fileName = System.getProperty("java.io.tmpdir") +
+                File.pathSeparator +
+                "ambari." + uuid.toString();
+
+        // TODO: add ciphers
+        List<String> command = new ArrayList<>();
+        command.add(executableIpaGetKeytab);
+        command.add("-s");
+        command.add(getAdminServerHost());
+        command.add("-p");
+        command.add(principal);
+        command.add("-k");
+        command.add(fileName);
+
+        // TODO: use expect to set password?
+        ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
+        if (!result.isSuccessful()) {
+            String message = String.format("Failed to get key number for %s:\n\tExitCode: %s\n\tSTDOUT: %s\n\tSTDERR: %s",
+                    principal, result.getExitCode(), result.getStdout(), result.getStderr());
+            LOG.warn(message);
+            throw new KerberosOperationException(message);
+        }
+
+        File keytabFile = new File(fileName);
+        Keytab keytab = readKeytabFile(keytabFile);
+
+        keytabFile.delete();
+
+        return keytab;
     }
 }
