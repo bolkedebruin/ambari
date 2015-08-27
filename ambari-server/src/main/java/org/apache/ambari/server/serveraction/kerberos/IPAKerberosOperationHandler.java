@@ -219,13 +219,10 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 ShellCommandUtil.Result result = invokeIpa(String.format("service-add --ok-as-delegate=TRUE %s", principal));
                 String stdOut = result.getStdout();
                 if ((stdOut != null) && stdOut.contains(String.format("Added service \"%s\"", principal))) {
-                    // the server needs a bit of time to update
-                    try {
-                        Thread.sleep(2000L);
-                    } catch (InterruptedException e) {
-
-                    }
-                    return getKeyNumber(principal);
+                    // IPA does not generate encryption types when no keytab has been generated
+                    // So getKeyNumber(principal) cannot be used. This is ok as the createKeytab
+                    // procedure ignores the key number anyway for IPA.
+                    return 0;
                 } else {
                     LOG.error("Failed to execute ipa query: service-add --ok-as-delegate=TRUE {}\nSTDOUT: {}\nSTDERR: {}",
                             principal, stdOut, result.getStderr());
