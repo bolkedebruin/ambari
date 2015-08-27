@@ -106,10 +106,10 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         if (kerberosConfiguration != null) {
             // ipa does not generate additional encryption types when ipa-getkeytab is not invoked
-            Set<EncryptionType> ipaEncryptionTypes = new HashSet<>();
+            /*Set<EncryptionType> ipaEncryptionTypes = new HashSet<>();
             ipaEncryptionTypes.add(EncryptionType.RC4_HMAC);
-            setKeyEncryptionTypes(ipaEncryptionTypes);
-            //setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
+            setKeyEncryptionTypes(ipaEncryptionTypes);*/
+            setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
 
             setAdminServerHost(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_SERVER_HOST));
             setExecutableSearchPaths(kerberosConfiguration.get(KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS));
