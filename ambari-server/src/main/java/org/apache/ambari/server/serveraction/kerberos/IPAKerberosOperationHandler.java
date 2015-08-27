@@ -219,6 +219,12 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 ShellCommandUtil.Result result = invokeIpa(String.format("service-add --ok-as-delegate=TRUE %s", principal));
                 String stdOut = result.getStdout();
                 if ((stdOut != null) && stdOut.contains(String.format("Added service \"%s\"", principal))) {
+                    // the server needs a bit of time to update
+                    try {
+                        Thread.sleep(200L);
+                    } catch (InterruptedException e) {
+
+                    }
                     return getKeyNumber(principal);
                 } else {
                     LOG.error("Failed to execute ipa query: service-add --ok-as-delegate=TRUE {}\nSTDOUT: {}\nSTDERR: {}",
