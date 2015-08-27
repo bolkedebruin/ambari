@@ -104,7 +104,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     var kdcType = this.get('content.kerberosOption');
     var adConfigNames = ['ldap_url', 'container_dn', 'ad_create_attributes_template'];
     var mitConfigNames = ['kdc_create_attributes'];
-    var ipaConfigNames = ['admin_keytab'];
+    var ipaConfigNames = ['admin_keytab','group'];
 
     var kerberosWizardController = this.controllers.get('kerberosWizardController');
     var manageIdentitiesConfig = configs.findProperty('name', 'manage_identities');

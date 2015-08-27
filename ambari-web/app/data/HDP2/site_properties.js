@@ -2503,6 +2503,19 @@ var hdp2properties = [
   },
   {
     "id": "puppet var",
+    "name": "group",
+    "displayName": "Group",
+    "description": "User group of which user principals are member",
+    "isOverridable": false,
+    "isVisible": false,
+    "isRequiredByAgent": false,
+    "serviceName": "KERBEROS",
+    "filename": "krb5-conf.xml",
+    "category": "Kadmin",
+    "index": 3
+  },
+  {
+    "id": "puppet var",
     "name": "manage_krb5_conf",
     "displayName": "Manage Kerberos client krb5.conf",
     "displayType": "checkbox",

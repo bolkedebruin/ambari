@@ -158,7 +158,7 @@ App.KerberosWizardStep5Controller = App.KerberosProgressPageController.extend({
         },
         {
           key: Em.I18n.t('admin.kerberos.wizard.step1.option.ipa'),
-          properties: ['kdc_type','kdc_host','realm','admin_keytabl']
+          properties: ['kdc_type','kdc_host','realm','admin_keytab','group']
         },
         {
           key: Em.I18n.t('admin.kerberos.wizard.step1.option.manual'),

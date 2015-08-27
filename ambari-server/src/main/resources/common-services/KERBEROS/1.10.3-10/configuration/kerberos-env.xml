@@ -208,4 +208,13 @@
     </description>
     <value>/etc/admin.keytab</value>
   </property>
+
+  <property>
+    <name>group</name>
+    <description>
+      The group in IPA user principals should be member of
+    </description>
+    <value>ambari-managed-principals</value>
+  </property>
+
 </configuration>
