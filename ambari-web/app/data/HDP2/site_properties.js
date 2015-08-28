@@ -2512,7 +2512,7 @@ var hdp2properties = [
     "serviceName": "KERBEROS",
     "filename": "krb5-conf.xml",
     "category": "Kadmin",
-    "index": 3
+    "index": 4
   },
   {
     "id": "puppet var",

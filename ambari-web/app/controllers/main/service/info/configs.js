@@ -376,8 +376,8 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
         configs.findProperty('name', 'ldap_url').set('isVisible', true);
       } else if (kdc_type.get('value') === 'ipa') {
         configs.findProperty('name', 'admin_keytab').set('isRequired', true).set('isVisible', true);
-        configs.findProperty('name', 'group').set('isRequired', true).set('isVisible', true);
-        configs.findProperty('name', 'manage_krb5_conf').set('checked', 'false');
+        configs.findProperty('name', 'group').set('isVisible', true);
+        configs.findProperty('name', 'manage_krb5_conf').checked = false;
       }
     }
 
