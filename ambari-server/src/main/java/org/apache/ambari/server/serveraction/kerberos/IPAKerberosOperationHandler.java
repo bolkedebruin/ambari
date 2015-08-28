@@ -56,6 +56,11 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     private String userPrincipalGroup = null;
 
     /**
+     * The password expiry date for user principal accounts
+     */
+    private String PASSWORD_EXPIRY_DATE = "20370826073247Z";
+
+    /**
      * A regular expression pattern to use to parse the key number from the text captured from the
      * kvno command
      */
@@ -246,10 +251,20 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                             principal, stdOut, result.getStderr()));
                 }
 
-                result = invokeIpa(String.format("group-add-member %s --users=%s",
-                        getUserPrincipalGroup(), deconstructedPrincipal.getPrimary()));
+                if (getUserPrincipalGroup() != null && !getUserPrincipalGroup().equals("")) {
+                    result = invokeIpa(String.format("group-add-member %s --users=%s",
+                            getUserPrincipalGroup(), deconstructedPrincipal.getPrimary()));
+                    stdOut = result.getStdout();
+                    if (!((stdOut != null) && stdOut.contains("added"))) {
+                        throw new KerberosOperationException(String.format("Failed to create user principal for %s\nSTDOUT: %s\nSTDERR: %s",
+                                principal, stdOut, result.getStderr()));
+                    }
+                }
+
+                result = invokeIpa(String.format("user-mod %s --setattr krbPasswordExpiration=%s",
+                        deconstructedPrincipal.getPrimary(), PASSWORD_EXPIRY_DATE));
                 stdOut = result.getStdout();
-                if ((stdOut != null) && stdOut.contains("added")) {
+                if ((stdOut != null) && stdOut.contains("Modified")) {
                     return getKeyNumber(principal);
                 }
 
@@ -294,6 +309,16 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
             invokeIpa(String.format("user-mod %s --setattr userPassword=%s", deconstructedPrincipal.getPrimary(), password));
 
+            List<String> command = new ArrayList<>();
+            command.add(executableIpa);
+            command.add("user-mod");
+            command.add(deconstructedPrincipal.getPrimary());
+            command.add("--setattr");
+            command.add(String.format("krbPasswordExpiration=%s",PASSWORD_EXPIRY_DATE));
+            ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
+            if (!result.isSuccessful()) {
+                throw new KerberosOperationException("Failed to set password expiry");
+            }
         }
         return getKeyNumber(principal);
     }
