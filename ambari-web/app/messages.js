@@ -63,6 +63,7 @@ Em.I18n.translations = {
   'add': 'Add',
   'op': 'op',
   'ops': 'ops',
+  'or': 'or',
 
 
   'common.access':'Access',
@@ -381,6 +382,9 @@ Em.I18n.translations = {
   'popup.dependent.configs.dependencies.service.plural': 'in {0} services',
 
   'popup.dependent.configs.dependencies.for.groups': 'You are changing not default group, please select config group to which you want to save dependent configs from other services',
+
+  'popup.jdkValidation.header': 'Unsupported JDK',
+  'popup.jdkValidation.body': 'The {0} Stack requires JDK {1} but Ambari is configured for JDK {2}. This could result in error or problems with running your cluster.',
 
   'login.header':'Sign in',
   'login.username':'Username',
@@ -721,10 +725,10 @@ Em.I18n.translations = {
   'installer.step4.ambariMetricsCheck.popup.header':'Limited Functionality Warning',
   'installer.step4.ambariMetricsCheck.popup.body':'Ambari Metrics collects metrics from the cluster and makes them available to Ambari.  If you do not install Ambari Metrics service, metrics will not be accessible from Ambari.  Are you sure you want to proceed without Ambari Metrics?',
   'installer.step4.rangerRequirements.popup.header': 'Ranger Requirements',
-  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL Server</strong> database instance running to be used by Ranger.</li>' +
-    '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is only applicable for only Ranger 0.4.0)</li>' +
+  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQLA Server</strong> database instance running to be used by Ranger.</li>' +
+    '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is applicable for only Ranger 0.4.0)</li>' +
     '<li>Ensure that the access for the DB Admin user is enabled in DB server from any host.</li>' +
-    '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql|oracle|postgres|mssql</strong> and <code>/jdbc/driver/path</code> based on the location of corresponding JDBC driver:' +
+    '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql|oracle|postgres|mssql|sqlanywhere</strong> and <code>/jdbc/driver/path</code> based on the location of corresponding JDBC driver:' +
     '<pre>ambari-server setup --jdbc-db={database-type} --jdbc-driver={/jdbc/driver/path}</pre></li></ol>',
   'installer.step4.rangerRequirements.popup.body.confirmation': 'I have met all the requirements above.',
   'installer.step4.sparkWarning.popup.body': 'Spark requires HDP 2.2.2 or later. Attempting to install Spark to a HDP 2.2.0 cluster will fail. Confirm you are using HDP 2.2.2 or later packages. Are you sure you want to proceed?',
@@ -1413,6 +1417,7 @@ Em.I18n.translations = {
   'admin.stackVersions.version.reinstall': "Reinstall Packages",
   'admin.stackVersions.version.performUpgrade': "Perform Upgrade",
   'admin.stackVersions.version.upgrade.pause': "Upgrade: Action Required",
+  'admin.stackVersions.version.upgrade.notFinalized.warning': "The upgrade has not been finalized yet. After the cluster is verified to be functional, do not forget to finalize the upgrade as soon as possible (within a couple of days is highly recommended) as running the cluster in unfinalized state causes extra resource requirements on HDFS.",
   'admin.stackVersions.version.upgrade.running': "Upgrade: In Process",
   'admin.stackVersions.version.upgrade.aborted': "Upgrade: Aborted",
   'admin.stackVersions.version.downgrade.pause': "Downgrade: Action Required",

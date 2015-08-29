@@ -341,7 +341,7 @@ if has_ranger_admin:
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'oracle':
       jdbc_jar_name = "ojdbc6.jar"
       jdbc_symlink_name = "oracle-jdbc-driver.jar"
-      audit_jdbc_url = format('jdbc:oracle:thin:\@//{xa_db_host}')
+      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
       jdbc_driver = "oracle.jdbc.OracleDriver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'postgres':
       jdbc_jar_name = "postgresql.jar"
@@ -353,14 +353,23 @@ if has_ranger_admin:
       jdbc_symlink_name = "mssql-jdbc-driver.jar"
       audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
       jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+    elif xa_audit_db_flavor and xa_audit_db_flavor == 'sqla':
+      jdbc_jar_name = "sajdbc4.jar"
+      jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+      audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
+      jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
     downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
     driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
-    driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
+    driver_curl_target = format("{hadoop_yarn_home}/lib/{jdbc_jar_name}")
 
     ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
     xa_audit_db_is_enabled = config['configurations']['ranger-yarn-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
     ssl_keystore_password = unicode(config['configurations']['ranger-yarn-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
     ssl_truststore_password = unicode(config['configurations']['ranger-yarn-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
     credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
+
+    #For SQLA explicitly disable audit to DB for Ranger
+    if xa_audit_db_flavor == 'sqla':
+      xa_audit_db_is_enabled = False

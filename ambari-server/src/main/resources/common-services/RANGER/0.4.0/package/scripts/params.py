@@ -49,6 +49,9 @@ create_db_dbuser = config['configurations']['ranger-env']['create_db_dbuser']
 stack_is_hdp22_or_further = Script.is_hdp_stack_greater_or_equal("2.2")
 stack_is_hdp23_or_further = Script.is_hdp_stack_greater_or_equal("2.3")
 
+ranger_conf    = '/etc/ranger/admin/conf'
+ranger_ugsync_conf = '/etc/ranger/usersync/conf'
+
 if stack_is_hdp22_or_further:
   ranger_home    = '/usr/hdp/current/ranger-admin'
   ranger_conf    = '/etc/ranger/admin/conf'
@@ -69,7 +72,13 @@ java_home = config['hostLevelParams']['java_home']
 unix_user  = config['configurations']['ranger-env']['ranger_user']
 unix_group = config['configurations']['ranger-env']['ranger_group']
 ranger_pid_dir = config['configurations']['ranger-env']['ranger_pid_dir']
-usersync_log_dir = config['configurations']['ranger-env']['ranger_usersync_log_dir']
+usersync_log_dir = default("/configurations/ranger-env/ranger_usersync_log_dir", "/var/log/ranger/usersync")
+admin_log_dir = default("/configurations/ranger-env/ranger_admin_log_dir", "/var/log/ranger/admin")
+ranger_admin_default_file = format('{ranger_conf}/ranger-admin-default-site.xml')
+security_app_context_file = format('{ranger_conf}/security-applicationContext.xml')
+ranger_ugsync_default_file = format('{ranger_ugsync_conf}/ranger-ugsync-default.xml')
+usgsync_log4j_file = format('{ranger_ugsync_conf}/log4j.xml')
+cred_validator_file = format('{usersync_home}/native/credValidator.uexe')
 
 ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
@@ -102,7 +111,7 @@ if db_flavor.lower() == 'mysql':
 elif db_flavor.lower() == 'oracle':
   jdbc_jar_name = "ojdbc6.jar"
   jdbc_symlink_name = "oracle-jdbc-driver.jar"
-  audit_jdbc_url = format('jdbc:oracle:thin:\@//{db_host}')
+  audit_jdbc_url = format('jdbc:oracle:thin:@//{db_host}')
   jdbc_dialect = "org.eclipse.persistence.platform.database.OraclePlatform"
 elif db_flavor.lower() == 'postgres':
   jdbc_jar_name = "postgresql.jar"
@@ -114,11 +123,23 @@ elif db_flavor.lower() == 'mssql':
   jdbc_symlink_name = "mssql-jdbc-driver.jar"
   audit_jdbc_url = format('jdbc:sqlserver://{db_host};databaseName={ranger_auditdb_name}')
   jdbc_dialect = "org.eclipse.persistence.platform.database.SQLServerPlatform"
+elif db_flavor.lower() == 'sqla':
+  jdbc_jar_name = "sajdbc4.jar"
+  jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
+  audit_jdbc_url = format('jdbc:sqlanywhere:database={ranger_auditdb_name};host={db_host}')
+  jdbc_dialect = "org.eclipse.persistence.platform.database.SQLAnywherePlatform"
 
 downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
 
 driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
 driver_curl_target = format("{java_share_dir}/{jdbc_jar_name}")
+
+if db_flavor.lower() == 'sqla':
+  downloaded_custom_connector = format("{tmp_dir}/sqla-client-jdbc.tar.gz")
+  jar_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/java/{jdbc_jar_name}")
+  libs_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/native/lib64/*")
+  jdbc_libs_dir = format("{ranger_home}/native/lib64")
+  ld_lib_path = format("{jdbc_libs_dir}")
 
 #for db connection
 check_db_connection_jar_name = "DBConnectionVerification.jar"

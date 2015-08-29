@@ -313,8 +313,8 @@ App.ConfigGroupDropdownView = Ember.TextField.extend({
    */
   disabled: function () {
     if (this.get('controller.isInstaller')) return false;
-    return !this.get('controller.versionLoaded');
-  }.property('controller.versionLoaded', 'controller.isInstaller'),
+    return !this.get('controller.versionLoaded') || this.get('controller.isHostsConfigsPage');
+  }.property('controller.versionLoaded', 'controller.isInstaller', 'controller.isHostsConfigsPage'),
 
   didInsertElement: function() {
     var self = this;
@@ -356,6 +356,10 @@ App.ConfigGroupDropdownView = Ember.TextField.extend({
       $(self.get('element')).val(self.get('controller.selectedConfigGroup.displayNameHosts'));
     });
   },
+
+  updateSelectedGroup: function () {
+    $(this.get('element')).val(this.get('controller.selectedConfigGroup.displayNameHosts'));
+  }.observes('controller.selectedConfigGroup.displayNameHosts'),
 
   updateConfigGroupsList: function() {
     if ($(this.get('element'))) {

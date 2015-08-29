@@ -441,6 +441,14 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   },
 
   /**
+   * Radio buttons that are not DB options and should not trigger any observer or change any other property's value
+   * Ranger service -> "Authentication method" property is an example for non DB related radio button
+   */
+  nonDBRadioButtons: function() {
+    return this.get('dontUseHandleDbConnection').without('DB_FLAVOR');
+  }.property('dontUseHandleDbConnection'),
+
+  /**
    * properties with these names don'use handleDBConnectionProperty method
    */
   dontUseHandleDbConnection: function () {
@@ -497,8 +505,7 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
   }.property('serviceConfig.serviceName', 'serviceConfig.value'),
 
   onOptionsChange: function () {
-    // The following if condition will be satisfied only for installer wizard flow
-    if (this.getPropertyByType('connection_url') && this.get('hostNameProperty')) {
+    if (this.get('hostNameProperty') && !this.get('nonDBRadioButtons').contains(this.get('serviceConfig.name'))) {
       /** if new db is selected host name must be same as master of selected service (and can't be changed)**/
       if (this.get('isNewDb')) {
         var initProperty = this.get('hostNameProperty.recommendedValue') || this.get('hostNameProperty.savedValue');
@@ -508,7 +515,9 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
         this.get('hostNameProperty').set('isEditable', true);
       }
       this.setRequiredProperties(['driver', 'sql_jar_connector', 'db_type']);
-      this.setConnectionUrl(this.get('hostNameProperty.value'), this.get('databaseProperty.value'), this.get('userProperty.value'), this.get('passwordProperty.value'));
+      if (this.getPropertyByType('connection_url')) {
+        this.setConnectionUrl(this.get('hostNameProperty.value'), this.get('databaseProperty.value'), this.get('userProperty.value'), this.get('passwordProperty.value'));
+      }
       this.handleSpecialUserPassProperties();
     }
   }.observes('databaseProperty.value', 'hostNameProperty.value', 'serviceConfig.value', 'userProperty.value', 'passwordProperty.value'),
@@ -574,8 +583,9 @@ App.ServiceConfigRadioButtons = Ember.View.extend(App.ServiceConfigCalculateId, 
    */
   getPropertyByType: function(propertyType) {
     if (dbInfo.dpPropertiesByServiceMap[this.get('serviceConfig.serviceName')]) {
+      //@TODO: dbInfo.dpPropertiesByServiceMap has corresponding property name but does not have filenames with it. this can cause issue when there are multiple db properties with same name belonging to different files
       /** check if selected service has db properties**/
-      return this.get('categoryConfigsAll').findProperty('name', dbInfo.dpPropertiesByServiceMap[this.get('serviceConfig.serviceName')][propertyType]);
+      return this.get('parentView.serviceConfigs').findProperty('name', dbInfo.dpPropertiesByServiceMap[this.get('serviceConfig.serviceName')][propertyType]);
     }
     return null;
   },

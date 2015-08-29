@@ -911,7 +911,7 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
         serviceConfigProperties.push(configProperty);
       }, this);
       // check for configs that need to update for installed services
-      if (installedServiceNames[_content.get('serviceName')]) {
+      if (installedServiceNamesMap[_content.get('serviceName')]) {
         // get only modified configs
         var configs = _content.get('configs').filter(function (config) {
           if (config.get('isNotDefaultValue') || (config.get('savedValue') === null)) {
@@ -966,12 +966,17 @@ App.WizardController = Em.Controller.extend(App.LocalStorage, App.ThemesMappingM
           id: configGroup.get('id'),
           name: configGroup.get('name'),
           description: configGroup.get('description'),
-          hosts: hostNames,
-          properties: properties,
-          isDefault: configGroup.get('isDefault'),
-          isForInstalledService: isForInstalledService,
-          isForUpdate: configGroup.isForUpdate || configGroup.get('hash') != this.getConfigGroupHash(configGroup, hostNames),
-          service: {id: configGroup.get('service.id')}
+          hosts: hostNames.slice(),
+          properties: properties.slice(),
+          is_default: configGroup.get('isDefault'),
+          is_for_installed_service: isForInstalledService,
+          is_for_update: configGroup.isForUpdate || configGroup.get('hash') != this.getConfigGroupHash(configGroup, hostNames),
+          service_name: configGroup.get('serviceName'),
+          service_id: configGroup.get('serviceName'),
+          desired_configs: configGroup.get('desiredConfigs'),
+          config_group_id: configGroup.get('configGroupId'),
+          child_config_groups: configGroup.get('childConfigGroups') ? configGroup.get('childConfigGroups').mapProperty('id') : [],
+          parent_config_group_id: configGroup.get('parentConfigGroup.id')
         });
       }, this)
     }, this);
