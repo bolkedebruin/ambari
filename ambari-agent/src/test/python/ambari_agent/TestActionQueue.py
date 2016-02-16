@@ -24,7 +24,6 @@ from ambari_agent.LiveStatus import LiveStatus
 from ambari_agent.ActionQueue import ActionQueue
 from ambari_agent.AmbariConfig import AmbariConfig
 import os, errno, time, pprint, tempfile, threading
-import StringIO
 import sys
 from threading import Thread
 import copy
@@ -33,12 +32,10 @@ from mock.mock import patch, MagicMock, call
 from ambari_agent.StackVersionsFileHandler import StackVersionsFileHandler
 from ambari_agent.CustomServiceOrchestrator import CustomServiceOrchestrator
 from ambari_agent.PythonExecutor import PythonExecutor
-from ambari_agent.CommandStatusDict import CommandStatusDict
 from ambari_agent.ActualConfigHandler import ActualConfigHandler
 from ambari_agent.RecoveryManager import RecoveryManager
-from ambari_agent.FileCache import FileCache
 from ambari_commons import OSCheck
-from only_for_platform import not_for_platform, os_distro_value, PLATFORM_WINDOWS
+from only_for_platform import not_for_platform, os_distro_value, PLATFORM_WINDOWS, PLATFORM_LINUX
 
 import logging
 
@@ -340,8 +337,8 @@ class TestActionQueue(TestCase):
     config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
     config.set('agent', 'tolerate_download_failures', "true")
     dummy_controller = MagicMock()
-    dummy_controller.recovery_manager = RecoveryManager()
-    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False)
+    dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp())
+    dummy_controller.recovery_manager.update_config(5, 5, 1, 11, True, False, "")
 
     actionQueue = ActionQueue(config, dummy_controller)
     unfreeze_flag = threading.Event()
@@ -668,7 +665,7 @@ class TestActionQueue(TestCase):
 
     build_mock.return_value = {'dummy report': '' }
 
-    dummy_controller.recovery_manager = RecoveryManager()
+    dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp())
 
     requestComponentStatus_mock.reset_mock()
     requestComponentStatus_mock.return_value = {'exitcode': 0 }
@@ -680,6 +677,65 @@ class TestActionQueue(TestCase):
     report = actionQueue.result()
     expected = {'dummy report': '',
                 'securityState' : 'UNKNOWN'}
+
+    self.assertEqual(len(report['componentStatus']), 1)
+    self.assertEqual(report['componentStatus'][0], expected)
+    self.assertTrue(requestComponentStatus_mock.called)
+
+  @patch.object(RecoveryManager, "command_exists")
+  @patch.object(RecoveryManager, "requires_recovery")
+  @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
+  @patch.object(ActionQueue, "status_update_callback")
+  @patch.object(StackVersionsFileHandler, "read_stack_version")
+  @patch.object(CustomServiceOrchestrator, "requestComponentStatus")
+  @patch.object(CustomServiceOrchestrator, "requestComponentSecurityState")
+  @patch.object(ActionQueue, "execute_command")
+  @patch.object(LiveStatus, "build")
+  @patch.object(CustomServiceOrchestrator, "__init__")
+  def test_execute_status_command_recovery(self, CustomServiceOrchestrator_mock,
+                                  build_mock, execute_command_mock, requestComponentSecurityState_mock,
+                                  requestComponentStatus_mock, read_stack_version_mock,
+                                  status_update_callback, requires_recovery_mock,
+                                  command_exists_mock):
+    CustomServiceOrchestrator_mock.return_value = None
+    dummy_controller = MagicMock()
+    actionQueue = ActionQueue(AmbariConfig(), dummy_controller)
+
+    build_mock.return_value = {'dummy report': '' }
+    requires_recovery_mock.return_value = True
+    command_exists_mock.return_value = False
+
+    dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp(), True, False)
+
+    requestComponentStatus_mock.reset_mock()
+    requestComponentStatus_mock.return_value = {'exitcode': 0 }
+
+    requestComponentSecurityState_mock.reset_mock()
+    requestComponentSecurityState_mock.return_value = 'UNKNOWN'
+
+    actionQueue.execute_status_command(self.status_command)
+    report = actionQueue.result()
+    expected = {'dummy report': '',
+                'securityState' : 'UNKNOWN',
+                'sendExecCmdDet': 'True'}
+
+    self.assertEqual(len(report['componentStatus']), 1)
+    self.assertEqual(report['componentStatus'][0], expected)
+    self.assertTrue(requestComponentStatus_mock.called)
+
+    requires_recovery_mock.return_value = True
+    command_exists_mock.return_value = True
+    requestComponentStatus_mock.reset_mock()
+    requestComponentStatus_mock.return_value = {'exitcode': 0 }
+
+    requestComponentSecurityState_mock.reset_mock()
+    requestComponentSecurityState_mock.return_value = 'UNKNOWN'
+
+    actionQueue.execute_status_command(self.status_command)
+    report = actionQueue.result()
+    expected = {'dummy report': '',
+                'securityState' : 'UNKNOWN',
+                'sendExecCmdDet': 'False'}
 
     self.assertEqual(len(report['componentStatus']), 1)
     self.assertEqual(report['componentStatus'][0], expected)
@@ -728,7 +784,7 @@ class TestActionQueue(TestCase):
                                 get_mock, process_command_mock, gpeo_mock):
     CustomServiceOrchestrator_mock.return_value = None
     dummy_controller = MagicMock()
-    dummy_controller.recovery_manager = RecoveryManager()
+    dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp())
     config = MagicMock()
     gpeo_mock.return_value = 0
     config.get_parallel_exec_option = gpeo_mock
@@ -789,6 +845,7 @@ class TestActionQueue(TestCase):
     process_command_mock.assert_any_calls([call(self.datanode_install_command), call(self.hbase_install_command)])
 
 
+  @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
   @patch.object(StackVersionsFileHandler, "read_stack_version")
@@ -873,6 +930,7 @@ class TestActionQueue(TestCase):
            os.sep + 'tmp' + os.sep + 'ambari-agent' + os.sep + 'errors-19.txt', override_output_files=False, retry=True)])
 
   #retryable_command
+  @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
   @patch.object(StackVersionsFileHandler, "read_stack_version")
@@ -909,6 +967,7 @@ class TestActionQueue(TestCase):
     self.assertEqual(1, sleep_mock.call_count)
     sleep_mock.assert_any_call(2)
 
+  @not_for_platform(PLATFORM_LINUX)
   @patch("time.sleep")
   @patch.object(OSCheck, "os_distribution", new=MagicMock(return_value=os_distro_value))
   @patch.object(StackVersionsFileHandler, "read_stack_version")

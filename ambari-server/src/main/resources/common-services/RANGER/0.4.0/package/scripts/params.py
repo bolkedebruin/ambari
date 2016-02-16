@@ -22,6 +22,9 @@ from resource_management.libraries.script import Script
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions.is_empty import is_empty
+from resource_management.libraries.functions.version import compare_versions
+from resource_management.libraries.functions.constants import Direction
 
 # a map of the Ambari role to the component name
 # for use with /usr/hdp/current/<component>
@@ -42,6 +45,8 @@ host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 
+upgrade_marker_file = format("{tmp_dir}/rangeradmin_ru.inprogress")
+
 xml_configurations_supported = config['configurations']['ranger-env']['xml_configurations_supported']
 
 create_db_dbuser = config['configurations']['ranger-env']['create_db_dbuser']
@@ -49,8 +54,15 @@ create_db_dbuser = config['configurations']['ranger-env']['create_db_dbuser']
 stack_is_hdp22_or_further = Script.is_hdp_stack_greater_or_equal("2.2")
 stack_is_hdp23_or_further = Script.is_hdp_stack_greater_or_equal("2.3")
 
+downgrade_from_version = default("/commandParams/downgrade_from_version", None)
+upgrade_direction = default("/commandParams/upgrade_direction", None)
+
 ranger_conf    = '/etc/ranger/admin/conf'
 ranger_ugsync_conf = '/etc/ranger/usersync/conf'
+
+if upgrade_direction == Direction.DOWNGRADE and compare_versions(format_hdp_stack_version(version),'2.3' ) < 0:
+  stack_is_hdp22_or_further = True
+  stack_is_hdp23_or_further = False
 
 if stack_is_hdp22_or_further:
   ranger_home    = '/usr/hdp/current/ranger-admin'
@@ -85,6 +97,10 @@ ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 db_flavor =  (config['configurations']['admin-properties']['DB_FLAVOR']).lower()
 usersync_exturl =  config['configurations']['admin-properties']['policymgr_external_url']
 ranger_host = config['clusterHostInfo']['ranger_admin_hosts'][0]
+ugsync_host = 'localhost'
+usersync_host_info = config['clusterHostInfo']['ranger_usersync_hosts']
+if not is_empty(usersync_host_info) and len(usersync_host_info) > 0:
+  ugsync_host = config['clusterHostInfo']['ranger_usersync_hosts'][0]
 ranger_external_url = config['configurations']['admin-properties']['policymgr_external_url']
 ranger_db_name = config['configurations']['admin-properties']['db_name']
 ranger_auditdb_name = config['configurations']['admin-properties']['audit_db_name']
@@ -111,8 +127,12 @@ if db_flavor.lower() == 'mysql':
 elif db_flavor.lower() == 'oracle':
   jdbc_jar_name = "ojdbc6.jar"
   jdbc_symlink_name = "oracle-jdbc-driver.jar"
-  audit_jdbc_url = format('jdbc:oracle:thin:@//{db_host}')
   jdbc_dialect = "org.eclipse.persistence.platform.database.OraclePlatform"
+  colon_count = db_host.count(':')
+  if colon_count == 2 or colon_count == 0:
+    audit_jdbc_url = format('jdbc:oracle:thin:@{db_host}')
+  else:
+    audit_jdbc_url = format('jdbc:oracle:thin:@//{db_host}')
 elif db_flavor.lower() == 'postgres':
   jdbc_jar_name = "postgresql.jar"
   jdbc_symlink_name = "postgres-jdbc-driver.jar"
@@ -168,3 +188,12 @@ if xml_configurations_supported:
 
 ranger_admin_hosts = config['clusterHostInfo']['ranger_admin_hosts']
 is_ranger_ha_enabled = True if len(ranger_admin_hosts) > 1 else False
+ranger_ug_ldap_url = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.ldap.url"]
+ranger_ug_ldap_bind_dn = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.ldap.binddn"]
+ranger_ug_ldap_user_searchfilter = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.ldap.user.searchfilter"]
+ranger_ug_ldap_group_searchbase = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.group.searchbase"]
+ranger_ug_ldap_group_searchfilter = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.group.searchfilter"]
+ug_sync_source = config["configurations"]["ranger-ugsync-site"]["ranger.usersync.source.impl.class"]
+current_host = config['hostname']
+if current_host in ranger_admin_hosts:
+  ranger_host = current_host

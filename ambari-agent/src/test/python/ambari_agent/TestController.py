@@ -64,8 +64,9 @@ class TestController(unittest.TestCase):
     config = MagicMock()
     #config.get.return_value = "something"
     config.get.return_value = "5"
+    server_hostname = "test_server"
 
-    self.controller = Controller.Controller(config)
+    self.controller = Controller.Controller(config, server_hostname)
     self.controller.netutil.MINIMUM_INTERVAL_BETWEEN_HEARTBEATS = 0.1
     self.controller.netutil.HEARTBEAT_NOT_IDDLE_INTERVAL_SEC = 0.1
 
@@ -164,6 +165,9 @@ class TestController(unittest.TestCase):
     commands = ambari_simplejson.loads('[{"clusterName":"dummy_cluster"}]')
     actionQueue = MagicMock()
     self.controller.actionQueue = actionQueue
+    process_status_commands = MagicMock(name="process_status_commands")
+    self.controller.recovery_manager.process_status_commands = process_status_commands
+
     updateComponents = Mock()
     self.controller.updateComponents = updateComponents
     self.controller.addToStatusQueue(None)
@@ -178,6 +182,7 @@ class TestController(unittest.TestCase):
     self.controller.addToStatusQueue(commands)
     self.assertTrue(updateComponents.called)
     self.assertTrue(actionQueue.put_status.called)
+    self.assertTrue(process_status_commands.called)
 
 
   @patch("subprocess.Popen")
@@ -384,7 +389,7 @@ class TestController(unittest.TestCase):
     self.assertEqual(actual, expected)
     
     security_mock.CachedHTTPSConnection.assert_called_once_with(
-      self.controller.config)
+      self.controller.config, self.controller.serverHostname)
     requestMock.called_once_with(url, data,
       {'Content-Type': 'application/ambari_simplejson'})
 
@@ -725,9 +730,8 @@ class TestController(unittest.TestCase):
     self.controller.heartbeatWithServer()
     self.assertTrue(sendRequest.called)
     self.assertTrue(process_execution_commands.called)
-    self.assertTrue(process_status_commands.called)
+    self.assertFalse(process_status_commands.called)
     process_execution_commands.assert_called_with("commands1")
-    process_status_commands.assert_called_with("commands2")
     set_paused.assert_called_with(True)
 
     self.controller.heartbeatWithServer()

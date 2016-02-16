@@ -42,7 +42,16 @@ class TestMahoutClient(RMFTestCase):
       '/usr/hdp/current/mahout-client/conf',
       owner = 'mahout',
       group = 'hadoop',
-      recursive = True)
+      create_parents = True)
+
+    self.assertResourceCalled('XmlConfig', 'yarn-site.xml',
+      owner = "yarn",
+      group = 'hadoop',
+      mode = 0644,
+      conf_dir = '/usr/hdp/current/hadoop-client/conf',
+      configurations = self.getConfig()['configurations']['yarn-site'],
+      configuration_attributes = self.getConfig()['configuration_attributes']['yarn-site']
+    )
 
     self.assertResourceCalled('File',
       '/usr/hdp/current/mahout-client/conf/log4j.properties',
@@ -53,7 +62,7 @@ class TestMahoutClient(RMFTestCase):
 
     self.assertNoMoreResources()
 
-  def test_pre_rolling_restart(self):
+  def test_pre_upgrade_restart(self):
     config_file = self.get_src_folder() + "/test/python/stacks/2.2/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -62,15 +71,15 @@ class TestMahoutClient(RMFTestCase):
     self.executeScript(
       self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/mahout_client.py",
       classname = "MahoutClient",
-      command = "pre_rolling_restart",
+      command = "pre_upgrade_restart",
       config_dict = json_content,
       hdp_stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'mahout-client', '2.2.1.0-3242'), sudo=True)
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'mahout-client', '2.2.1.0-3242'), sudo=True)
     self.assertNoMoreResources()
 
-  def test_pre_rolling_restart_23(self):
+  def test_pre_upgrade_restart_23(self):
     config_file = self.get_src_folder() + "/test/python/stacks/2.2/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -87,16 +96,14 @@ class TestMahoutClient(RMFTestCase):
     self.executeScript(
       self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/mahout_client.py",
       classname = "MahoutClient",
-      command = "pre_rolling_restart",
+      command = "pre_upgrade_restart",
       config_dict = json_content,
       hdp_stack_version = self.STACK_VERSION,
       target = RMFTestCase.TARGET_COMMON_SERVICES,
-      call_mocks = itertools.cycle([(0, None)]),
+      call_mocks = itertools.cycle([(0, None, '')]),
       mocks_dict = mocks_dict)
 
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'mahout-client', '2.3.0.0-1234'),
-        sudo = True,
-    )
+    self.assertResourceCalledIgnoreEarlier('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'mahout-client', '2.3.0.0-1234'),sudo = True)
     self.assertNoMoreResources()
 
     import sys
@@ -108,9 +115,9 @@ class TestMahoutClient(RMFTestCase):
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
 
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'mahout', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'mahout', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
       mocks_dict['checked_call'].call_args_list[0][0][0])
 
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'mahout', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'mahout', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
       mocks_dict['call'].call_args_list[0][0][0])

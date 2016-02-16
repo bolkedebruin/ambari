@@ -20,12 +20,15 @@ package org.apache.ambari.server.api;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
-import com.sun.jersey.api.client.*;
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.ClientResponse;
+import com.sun.jersey.api.client.WebResource;
+import org.apache.ambari.server.configuration.Configuration;
+import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.DefaultServlet;
 import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
 import org.junit.Test;
 
 import javax.servlet.ServletException;
@@ -51,17 +54,19 @@ public class AmbariErrorHandlerTest {
   @Test
   public void testErrorWithJetty() throws Exception {
     Server server = new Server(0);
+    Configuration configuration = new Configuration();
 
     ServletContextHandler root = new ServletContextHandler(server, "/",
       ServletContextHandler.SECURITY | ServletContextHandler.SESSIONS);
 
     root.addServlet(HelloServlet.class, "/hello");
     root.addServlet(DefaultServlet.class, "/");
-    root.setErrorHandler(new AmbariErrorHandler(gson));
+    root.setErrorHandler(new AmbariErrorHandler(gson, configuration));
 
     server.start();
 
-    int localPort = server.getConnectors()[0].getLocalPort();
+    Connector connector = server.getConnectors()[0];
+    int localPort = ((ServerConnector)connector).getLocalPort();
 
     Client client = new Client();
     WebResource resource = client.resource("http://localhost:" + localPort + "/");

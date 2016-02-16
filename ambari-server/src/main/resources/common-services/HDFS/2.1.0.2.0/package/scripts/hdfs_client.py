@@ -31,8 +31,8 @@ class HdfsClient(Script):
 
   def install(self, env):
     import params
-    self.install_packages(env, params.exclude_packages)
     env.set_params(params)
+    self.install_packages(env)
     self.configure(env)
 
   def configure(self, env):
@@ -40,11 +40,11 @@ class HdfsClient(Script):
     env.set_params(params)
     hdfs()
 
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
 
@@ -57,7 +57,7 @@ class HdfsClientDefault(HdfsClient):
   def get_stack_to_component(self):
     return {"HDP": "hadoop-client"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
@@ -113,7 +113,7 @@ class HdfsClientDefault(HdfsClient):
 class HdfsClientWindows(HdfsClient):
   def install(self, env):
     import install_params
-    self.install_packages(env, install_params.exclude_packages)
+    self.install_packages(env)
     self.configure(env)
 
 if __name__ == "__main__":

@@ -32,6 +32,11 @@ App.UpgradeVersionBoxView = Em.View.extend({
   PROGRESS_STATUS: 'IN_PROGRESS',
 
   /**
+   * @type {boolean}
+   */
+  upgradeCheckInProgress: false,
+
+  /**
    * progress of version installation
    * @type {number}
    */
@@ -50,7 +55,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
   }.property('App.upgradeState', 'content.displayName', 'controller.upgradeVersion'),
 
   isRepoUrlsEditDisabled: function () {
-    return ['INSTALLING', 'UPGRADING'].contains(this.get('content.status')) || this.get('isUpgrading');
+    return ['INSTALLING', 'UPGRADING'].contains(this.get('content.status')) || this.get('isUpgrading') || (!App.isAuthorized('AMBARI.MANAGE_STACK_VERSIONS') && this.get('content.status') === 'CURRENT');
   }.property('content.status', 'isUpgrading'),
 
   /**
@@ -63,9 +68,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
   /**
    * @type {boolean}
    */
-  isOutOfSync: function () {
-    return this.get('content.status') === 'OUT_OF_SYNC';
-  }.property('content.status'),
+  isOutOfSync: Em.computed.equal('content.status', 'OUT_OF_SYNC'),
 
   /**
    * map containing version (id, label)
@@ -97,13 +100,52 @@ App.UpgradeVersionBoxView = Em.View.extend({
   content: null,
 
   /**
+   * map of properties which correspond to particular state of Upgrade version
+   * @type {object}
+   */
+  statePropertiesMap: {
+    'CURRENT': {
+      isLabel: true,
+      text: Em.I18n.t('common.current'),
+      class: 'label label-success'
+    },
+    'INIT': {
+      isButton: true,
+      text: Em.I18n.t('admin.stackVersions.version.installNow'),
+      action: 'installRepoVersionConfirmation'
+    },
+    'LOADING': {
+      isSpinner: true,
+      class: 'spinner'
+    },
+    'INSTALLING': {
+      iconClass: 'icon-cog',
+      isLink: true,
+      text: Em.I18n.t('hosts.host.stackVersions.status.installing'),
+      action: 'showProgressPopup'
+    },
+    'INSTALLED': {
+      iconClass: 'icon-ok',
+      isLink: true,
+      text: Em.I18n.t('common.installed'),
+      action: null
+    },
+    'SUSPENDED': {
+      isButton: true,
+      text: Em.I18n.t('admin.stackUpgrade.dialog.resume'),
+      action: 'resumeUpgrade'
+    }
+  },
+
+  /**
    * object that describes how content should be displayed
    * @type {Em.Object}
    * TODO remove <code>isUpgrading</code> condition when transition of version states in API fixed
    */
   stateElement: function () {
     var currentVersion = this.get('controller.currentVersion');
-    var upgradeVersion = this.get('controller.upgradeVersion');
+    var statePropertiesMap = this.get('statePropertiesMap');
+    var requestInProgressRepoId = this.get('controller.requestInProgressRepoId');
     var status = this.get('content.status');
     var element = Em.Object.create({
       status: status,
@@ -116,69 +158,89 @@ App.UpgradeVersionBoxView = Em.View.extend({
     var isInstalling = this.get('parentView.repoVersions').someProperty('status', 'INSTALLING');
     var isAborted = App.get('upgradeState') === 'ABORTED';
 
-    if (status === 'CURRENT') {
-      element.set('isLabel', true);
-      element.set('text', Em.I18n.t('common.current'));
-      element.set('class', 'label label-success');
-    } else if (['INIT', 'INSTALL_FAILED', 'OUT_OF_SYNC'].contains(status)) {
-      element.set('isButton', true);
-      element.set('text', Em.I18n.t('admin.stackVersions.version.installNow'));
-      element.set('action', 'installRepoVersionConfirmation');
-      element.set('isDisabled', !App.isAccessible('ADMIN') || this.get('controller.requestInProgress') || isInstalling);
-    } else if (status === 'INSTALLING') {
-      element.set('iconClass', 'icon-cog');
-      element.set('isLink', true);
-      element.set('text', Em.I18n.t('hosts.host.stackVersions.status.installing'));
-      element.set('action', 'showProgressPopup');
-    } else if (status === 'INSTALLED' && !this.get('isUpgrading')) {
+    if (['INSTALLING', 'CURRENT'].contains(status)) {
+      element.setProperties(statePropertiesMap[status]);
+    }
+    else if (status === 'INIT') {
+      requestInProgressRepoId && requestInProgressRepoId == this.get('content.id') ? element.setProperties(statePropertiesMap['LOADING']) : element.setProperties(statePropertiesMap[status]);
+      element.set('isDisabled', this.get('controller.requestInProgress') || isInstalling);
+    }
+    else if ((status === 'INSTALLED' && !this.get('isUpgrading')) ||
+             (['INSTALL_FAILED', 'OUT_OF_SYNC'].contains(status))) {
       if (stringUtils.compareVersions(this.get('content.repositoryVersion'), Em.get(currentVersion, 'repository_version')) === 1) {
-        var isDisabled = !App.isAccessible('ADMIN') || this.get('controller.requestInProgress') || isInstalling;
+        var isDisabled = !App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK') || this.get('controller.requestInProgress') || isInstalling;
         element.set('isButtonGroup', true);
-        element.set('text', Em.I18n.t('admin.stackVersions.version.performUpgrade'));
-        element.set('action', 'confirmUpgrade');
-        element.get('buttons').pushObject({
-          text: Em.I18n.t('admin.stackVersions.version.reinstall'),
-          action: 'installRepoVersionConfirmation',
-          isDisabled: isDisabled
-        });
+        if (status === 'OUT_OF_SYNC') {
+          element.set('text', Em.I18n.t('admin.stackVersions.version.reinstall'));
+          element.set('action', 'installRepoVersionConfirmation');
+          element.get('buttons').pushObject({
+            text: Em.I18n.t('admin.stackVersions.version.performUpgrade'),
+            action: 'confirmUpgrade',
+            isDisabled: isDisabled
+          });
+        } else {
+          element.set('text', Em.I18n.t('admin.stackVersions.version.performUpgrade'));
+          element.set('action', 'confirmUpgrade');
+          element.get('buttons').pushObject({
+            text: Em.I18n.t('admin.stackVersions.version.reinstall'),
+            action: 'installRepoVersionConfirmation',
+            isDisabled: isDisabled
+          });
+        }
         element.set('isDisabled', isDisabled);
-      } else {
-        element.set('iconClass', 'icon-ok');
-        element.set('isLink', true);
-        element.set('text', Em.I18n.t('common.installed'));
-        element.set('action', null);
       }
-    } else if ((['UPGRADING', 'UPGRADE_FAILED', 'UPGRADED'].contains(status) || this.get('isUpgrading')) && !isAborted) {
+      else {
+        element.setProperties(statePropertiesMap['INSTALLED']);
+      }
+    }
+    else if ((['UPGRADING', 'UPGRADE_FAILED', 'UPGRADED'].contains(status) || this.get('isUpgrading')) && !isAborted) {
       element.set('isLink', true);
       element.set('action', 'openUpgradeDialog');
       if (['HOLDING', 'HOLDING_FAILED', 'HOLDING_TIMEDOUT'].contains(App.get('upgradeState'))) {
         element.set('iconClass', 'icon-pause');
         if (this.get('controller.isDowngrade')) {
           element.set('text', Em.I18n.t('admin.stackVersions.version.downgrade.pause'));
-        } else {
+        }
+        else {
           element.set('text', Em.I18n.t('admin.stackVersions.version.upgrade.pause'));
         }
-      } else {
+      }
+      else {
         element.set('iconClass', 'icon-cog');
         if (this.get('controller.isDowngrade')) {
           element.set('text', Em.I18n.t('admin.stackVersions.version.downgrade.running'));
-        } else {
+        }
+        else {
           element.set('text', Em.I18n.t('admin.stackVersions.version.upgrade.running'));
         }
       }
-    } else if (isAborted) {
-      element.set('isButton', true);
-      element.set('text', this.get('controller.isDowngrade') ? Em.I18n.t('common.reDowngrade') : Em.I18n.t('common.reUpgrade'));
-      element.set('action', this.get('controller.isDowngrade') ? 'confirmRetryDowngrade' : 'confirmRetryUpgrade');
+    }
+    else if (isAborted) {
+      element.setProperties(statePropertiesMap['SUSPENDED']);
+      element.set('text', this.get('controller.isDowngrade') ? Em.I18n.t('admin.stackUpgrade.dialog.resume.downgrade') : Em.I18n.t('admin.stackUpgrade.dialog.resume'));
       element.set('isDisabled', this.get('controller.requestInProgress'));
     }
     return element;
-  }.property('content.status', 'controller.isDowngrade', 'isUpgrading', 'controller.requestInProgress', 'parentView.repoVersions.@each.status'),
+  }.property(
+    'content.status',
+    'controller.isDowngrade',
+    'isUpgrading',
+    'controller.requestInProgress',
+    'controller.requestInProgressRepoId',
+    'parentView.repoVersions.@each.status'
+  ),
 
   didInsertElement: function () {
     App.tooltip($('.link-tooltip'), {title: Em.I18n.t('admin.stackVersions.version.linkTooltip')});
     App.tooltip($('.hosts-tooltip'));
     App.tooltip($('.out-of-sync-badge'), {title: Em.I18n.t('hosts.host.stackVersions.status.out_of_sync')});
+    Em.run.later(this, function () {
+      if (this.get('maintenanceHosts').length + this.get('notRequiredHosts').length) {
+        App.tooltip(this.$('.hosts-section'), {placement: 'bottom', title: Em.I18n.t('admin.stackVersions.version.hostsInfoTooltip').format(
+          this.get('maintenanceHosts').length + this.get('notRequiredHosts').length, this.get('maintenanceHosts').length, this.get('notRequiredHosts').length
+        )});
+      }
+    }, 1000);
   },
 
   /**
@@ -201,12 +263,11 @@ App.UpgradeVersionBoxView = Em.View.extend({
   getStackVersionNumber: function(repository){
     var stackVersion = null; 
     var systems = repository.get('operatingSystems');
-    
-    systems.forEach(function(os){
-      repos = os.get('repositories');
-      repos.forEach(function(repo){
+
+    systems.forEach(function (os) {
+      os.get('repositories').forEach(function (repo) {
         stackVersion = repo.get('stackVersion');
-        if(null != stackVersion)
+        if (null != stackVersion)
           return stackVersion;
       });
     });
@@ -246,6 +307,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
     return this.get('isRepoUrlsEditDisabled') ? null : App.ModalPopup.show({
       classNames: ['repository-list', 'sixty-percent-width-modal'],
       skipValidation: false,
+      useRedhatSatellite: false,
       autoHeight: false,
       /**
        * @type {boolean}
@@ -272,14 +334,17 @@ App.UpgradeVersionBoxView = Em.View.extend({
 
           this.get('content.operatingSystems').forEach(function (os) {
             os.get('repositories').forEach(function (repo) {
-              disablePrimary = (!disablePrimary) ? repo.get('hasError') : disablePrimary;
+              disablePrimary = !disablePrimary ? repo.get('hasError') : disablePrimary;
             }, this);
           }, this);
           this.set('parentView.disablePrimary', disablePrimary);
         },
         templateName: require('templates/main/admin/stack_upgrade/edit_repositories'),
         didInsertElement: function () {
-          App.tooltip($("[rel=skip-validation-tooltip]"), {placement: 'right'});
+          App.tooltip($("[rel=skip-validation-tooltip], [rel=use-redhat-tooltip]"), {placement: 'right'});
+        },
+        willDestroyElement: function () {
+          $("[rel=skip-validation-tooltip], [rel=use-redhat-tooltip]").tooltip('destroy');
         }
       }),
       header: Em.I18n.t('common.repositories'),
@@ -308,7 +373,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
   showHosts: function (event) {
     var status = event.contexts[0];
     var displayName = this.get('content.displayName');
-    var hosts = this.get('content').get(status['property']);
+    var hosts = this.get(status['property']);
     var self = this;
     hosts.sort();
     if (hosts.length) {
@@ -340,5 +405,68 @@ App.UpgradeVersionBoxView = Em.View.extend({
     App.router.get('mainHostController').filterByStack(displayName, state);
     App.router.get('mainHostController').set('showFilterConditionsFirstLoad', true);
     App.router.transitionTo('hosts.index');
-  }
+  },
+
+  /**
+   * Not installed hosts should exclude 1.not required hosts 2. Maintenance Mode hosts,
+   * or it maybe confusing to users
+   * @type {Array}
+   */
+  notInstalledHosts: function () {
+    var notInstalledHosts = this.get('content.notInstalledHosts') || App.get('allHostNames');
+    var notRequiredHosts = this.get('notRequiredHosts');
+    var maintenanceHosts = this.get('maintenanceHosts');
+    if (notInstalledHosts.length && notRequiredHosts.length) {
+      notRequiredHosts.forEach(function(not_required) {
+        var index = notInstalledHosts.indexOf(not_required)
+        if (index > -1) {
+          notInstalledHosts.splice(index, 1);
+        }
+      });
+    }
+    if (notInstalledHosts.length && maintenanceHosts.length) {
+      maintenanceHosts.forEach(function(mm_host) {
+        var index = notInstalledHosts.indexOf(mm_host)
+        if (index > -1) {
+          notInstalledHosts.splice(index, 1);
+        }
+      });
+    }
+    return notInstalledHosts;
+  }.property('content.notInstalledHosts', 'notRequiredHosts', 'maintenanceHosts'),
+
+  /**
+   * @type {Array}
+   */
+  maintenanceHosts: function () {
+    return App.Host.find().filterProperty('passiveState', 'ON').mapProperty('hostName') || [];
+  }.property(''),
+
+  /**
+   * Host with no HDP component is not required to install new version
+   * @type {Array}
+   */
+  notRequiredHosts: function () {
+    var notRequiredHosts = [];
+    App.Host.find().forEach(function(host) {
+      if (!host.get('hostComponents').someProperty('isHDPComponent')) {
+        notRequiredHosts.push(host.get('hostName'));
+      }
+    });
+    return notRequiredHosts.uniq() || [];
+  }.property(''),
+
+  /**
+   * @type {Array}
+   */
+  installedHosts: function () {
+    return this.get('content.installedHosts') || [];
+  }.property('content.installedHosts'),
+
+  /**
+   * @type {Array}
+   */
+  currentHosts: function () {
+    return this.get('content.currentHosts') || [];
+  }.property('content.currentHosts')
 });

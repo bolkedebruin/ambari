@@ -242,6 +242,7 @@
             "dfs.namenode.avoid.write.stale.datanode": "true", 
             "dfs.block.access.token.enable": "true", 
             "dfs.support.append": "true", 
+            "nfs.file.dump.dir": "/tmp/.hdfs-nfs",
             "dfs.datanode.address": "0.0.0.0:${ambari.dfs.datanode.port}", 
             "dfs.cluster.administrators": "test_user1,test_user2 hdfs,test_group",
             "dfs.replication": "3", 
@@ -507,8 +508,7 @@
             "dtnode_heapsize": "1024m", 
             "proxyuser_group": "users",
             "hadoop_heapsize": "1024", 
-            "hadoop_pid_dir_prefix": "/var/run/hadoop",
-            "dfs.datanode.data.dir.mount.file": "/etc/hadoop/conf/dfs_data_dir_mount.hist"
+            "hadoop_pid_dir_prefix": "/var/run/hadoop"
         },
         "hive-env": {
             "hcat_pid_dir": "/var/run/webhcat", 
@@ -530,16 +530,19 @@
             "xml_configurations_supported" : "false"
         },
       "cluster-env": {
-            "security_enabled": "false",
-            "hdfs_user_principal" : "",
-            "hdfs_user_keytab" : "",
-            "ignore_groupsusers_create": "false",
-            "smokeuser": "ambari-qa",
-            "kerberos_domain": "EXAMPLE.COM",
-            "user_group": "hadoop",
-            "repo_suse_rhel_template": "[{{repo_id}}]\nname={{repo_id}}\n{% if mirror_list %}mirrorlist={{mirror_list}}{% else %}baseurl={{base_url}}{% endif %}\n\npath=/\nenabled=1\ngpgcheck=0",
-            "repo_ubuntu_template": "{{package_type}} {{base_url}} {{components}}",
-          "override_uid" : "true"
+          "security_enabled": "false",
+          "hdfs_user_principal" : "",
+          "hdfs_user_keytab" : "",
+          "ignore_groupsusers_create": "false",
+          "smokeuser": "ambari-qa",
+          "kerberos_domain": "EXAMPLE.COM",
+          "user_group": "hadoop",
+          "repo_suse_rhel_template": "[{{repo_id}}]\nname={{repo_id}}\n{% if mirror_list %}mirrorlist={{mirror_list}}{% else %}baseurl={{base_url}}{% endif %}\n\npath=/\nenabled=1\ngpgcheck=0",
+          "repo_ubuntu_template": "{{package_type}} {{base_url}} {{components}}",
+          "metrics_collector_vip_host": "c6402.ambari.apache.org",
+          "metrics_collector_vip_port": "6189",
+          "override_uid" : "true",
+          "fetch_nonlocal_groups": "true"
       },
       "hbase-env": {
             "hbase_pid_dir": "/var/run/hbase", 
@@ -549,7 +552,8 @@
             "hbase_regionserver_heapsize": "1024m",
             "hbase_regionserver_xmn_max": "512",
             "hbase_regionserver_xmn_ratio": "0.2",
-            "hbase_log_dir": "/var/log/hbase"
+            "hbase_log_dir": "/var/log/hbase",
+            "hbase_java_io_tmpdir" : "/tmp"
         },
         "ganglia-env": {
             "gmond_user": "nobody", 
@@ -786,7 +790,7 @@
             "hbase.regionserver.thread.compaction.large": "2",
             "phoenix.query.timeoutMs": "1200000",
             "hbase.local.dir": "${hbase.tmp.dir}/local",
-            "hbase.cluster.distributed": "false",
+            "hbase.cluster.distributed": "true",
             "zookeeper.session.timeout.localHBaseCluster": "20000",
             "hbase.client.scanner.caching": "10000",
             "phoenix.sequence.saltBuckets": "2",
@@ -849,6 +853,15 @@
             "timeline.metrics.daily.aggregator.minute.interval": "86400",
             "timeline.metrics.cluster.aggregator.minute.interval": "120",
             "timeline.metrics.host.aggregator.hourly.interval": "3600"
+        },
+        "ams-grafana-env": {
+            "metrics_grafana_log_dir": "/var/log/ambari-metrics-grafana",
+            "metrics_grafana_pid_dir": "/var/run/ambari-metrics-grafana",
+            "metrics_grafana_data_dir": "/var/lib/ambari-metrics-grafana",
+            "content": "\n"
+        },
+        "ams-grafana-ini": {
+            "content": "\n"
         }
     },
     "configuration_attributes": {

@@ -409,7 +409,8 @@ class DefaultStackAdvisor(StackAdvisor):
                 hostsMin = int(cardinality)
               if hostsMin > len(hostsForComponent):
                 hostsForComponent.extend(freeHosts[0:hostsMin-len(hostsForComponent)])
-            else:
+            # Components which are already installed, keep the recommendation as the existing layout
+            elif not componentIsPopulated:
               hostsForComponent.extend(freeHosts)
               if not hostsForComponent:  # hostsForComponent is empty
                 hostsForComponent = hostsList[-1:]
@@ -566,12 +567,7 @@ class DefaultStackAdvisor(StackAdvisor):
       for service in servicesList:
         calculation = self.getServiceConfigurationRecommender(service)
         if calculation is not None:
-          try:
-            calculation(configurations, clusterSummary, services, hosts)
-          except (AttributeError, TypeError, LookupError) as e:
-            # NOP
-            print "Failed to recommend configuration "
-            print e
+          calculation(configurations, clusterSummary, services, hosts)
 
     return recommendations
 
@@ -735,6 +731,7 @@ class DefaultStackAdvisor(StackAdvisor):
   def getAffectedConfigs(self, services):
     """returns properties dict including changed-configurations and depended-by configs"""
     changedConfigs = services['changed-configurations']
+    changedConfigs = [{"type": entry["type"], "name": entry["name"]} for entry in changedConfigs]
     allDependencies = []
 
     for item in services['services']:
@@ -759,6 +756,8 @@ class DefaultStackAdvisor(StackAdvisor):
             if dependency not in dependencies:
               dependencies.append(dependency)
 
+    if "forced-configurations" in services and services["forced-configurations"] is not None:
+      dependencies.extend(services["forced-configurations"])
     return  dependencies
 
   def versionCompare(self, version1, version2):

@@ -35,7 +35,7 @@ from ambari_commons.os_utils import copy_files, run_os_command, is_root
 from ambari_commons.str_utils import compress_backslashes
 from ambari_server.dbConfiguration import DBMSConfigFactory, check_jdbc_drivers
 from ambari_server.serverConfiguration import configDefaults, JDKRelease, \
-  get_ambari_properties, get_full_ambari_classpath, get_is_secure, get_is_persisted, get_java_exe_path, get_JAVA_HOME, \
+  get_ambari_properties, get_is_secure, get_is_persisted, get_java_exe_path, get_JAVA_HOME, \
   get_resources_location, get_value_from_properties, read_ambari_user, update_properties, validate_jdk, write_property, \
   JAVA_HOME, JAVA_HOME_PROPERTY, JCE_NAME_PROPERTY, JDBC_RCA_URL_PROPERTY, JDBC_URL_PROPERTY, \
   JDK_NAME_PROPERTY, JDK_RELEASES, NR_USER_PROPERTY, OS_FAMILY, OS_FAMILY_PROPERTY, OS_TYPE, OS_TYPE_PROPERTY, OS_VERSION, \
@@ -44,6 +44,7 @@ from ambari_server.serverUtils import is_server_runing
 from ambari_server.setupSecurity import adjust_directory_permissions
 from ambari_server.userInput import get_YN_input, get_validated_string_input
 from ambari_server.utils import locate_file
+from ambari_server.serverClassPath import ServerClassPath
 
 
 # selinux commands
@@ -84,7 +85,7 @@ JDBC_DB_OPTION_VALUES = get_supported_jdbc_drivers()
 # Setup security prerequisites
 #
 
-def verify_setup_allowed():
+def verify_setup_allowed(options):
   if get_silent():
     properties = get_ambari_properties()
     if properties == -1:
@@ -99,6 +100,29 @@ def verify_setup_allowed():
               "and Master Key not persisted."
         print "Ambari Server 'setup' exiting."
         return 1
+
+    factory = DBMSConfigFactory()
+    default_dbms = factory.get_default_dbms_name()
+    if default_dbms:
+      valid = True
+      if options.dbms is not None \
+        and options.database_host is not None \
+        and options.database_port is not None \
+        and options.database_name is not None \
+        and options.database_username is not None \
+        and options.database_password is not None:
+
+        if default_dbms == "sqlanywhere" and options.sqla_server_name is None:
+          valid = False
+
+      else:
+        valid = False
+
+      if not valid:
+        print "ERROR: Cannot run silent setup without database connection properties provided."
+        print "Ambari Server 'setup' exiting."
+        return 2
+
   return 0
 
 
@@ -408,23 +432,6 @@ class JDKSetup(object):
     else:
       progress_func = download_progress
 
-    if get_silent():
-      if not java_home_var:
-        #No java_home_var set, detect if java is already installed
-        if os.environ.has_key(JAVA_HOME):
-          args.java_home = os.environ[JAVA_HOME]
-
-          properties.process_pair(JAVA_HOME_PROPERTY, args.java_home)
-          properties.removeOldProp(JDK_NAME_PROPERTY)
-          properties.removeOldProp(JCE_NAME_PROPERTY)
-
-          self._ensure_java_home_env_var_is_set(args.java_home)
-          self.jdk_index = self.custom_jdk_number
-          return
-        else:
-          # For now, changing the existing JDK to make sure we use a supported one
-          pass
-
     if java_home_var:
       change_jdk = get_YN_input("Do you want to change Oracle JDK [y/n] (n)? ", False)
       if not change_jdk:
@@ -637,10 +644,10 @@ class JDKSetup(object):
   # Base implementation, overriden in the subclasses
   def _install_jdk(self, java_inst_file, java_home_dir):
     pass
-  
+
   def adjust_jce_permissions(self, jdk_path):
     pass
-  
+
   # Base implementation, overriden in the subclasses
   def _ensure_java_home_env_var_is_set(self, java_home_dir):
     pass
@@ -722,7 +729,7 @@ class JDKSetupLinux(JDKSetup):
     super(JDKSetupLinux, self).__init__()
     self.JDK_DEFAULT_CONFIGS = [
       JDKRelease("jdk1.8", "Oracle JDK 1.8 + Java Cryptography Extension (JCE) Policy Files 8",
-                 "http://public-repo-1.hortonworks.com/ARTIFACTS/jdk-8u40-linux-x64.tar.gz", "jdk-8u40-linux-x64.tar.gz",
+                 "http://public-repo-1.hortonworks.com/ARTIFACTS/jdk-8u60-linux-x64.tar.gz", "jdk-8u60-linux-x64.tar.gz",
                  "http://public-repo-1.hortonworks.com/ARTIFACTS/jce_policy-8.zip", "jce_policy-8.zip",
                  "/usr/jdk64/jdk1.8.0_40",
                  "(jdk.*)/jre")
@@ -771,7 +778,7 @@ class JDKSetupLinux(JDKSetup):
   def _ensure_java_home_env_var_is_set(self, java_home_dir):
     #No way to do this in Linux. Best we can is to set the process environment variable.
     os.environ[JAVA_HOME] = java_home_dir
-    
+
   def adjust_jce_permissions(self, jdk_path):
     ambari_user = read_ambari_user()
     cmd = self.SET_JCE_PERMISSIONS.format(ambari_user, jdk_path,configDefaults.JDK_SECURITY_DIR)
@@ -890,13 +897,16 @@ def _cache_jdbc_driver(args):
 
 # Ask user for database connection properties
 def prompt_db_properties(options):
-  ok = False
-  if options.must_set_database_options:
-    ok = get_YN_input("Enter advanced database configuration [y/n] (n)? ", False)
+  factory = DBMSConfigFactory()
+
+  if not factory.force_dbms_setup():
+    ok = False
+    if options.must_set_database_options:
+      ok = get_YN_input("Enter advanced database configuration [y/n] (n)? ", False)
+  else:
+    ok = True
 
   print 'Configuring database...'
-
-  factory = DBMSConfigFactory()
 
   options.must_set_database_options = ok
   options.database_index = factory.select_dbms(options)
@@ -962,7 +972,7 @@ def _reset_database(options):
 #
 # Extract the system views
 #
-def extract_views():
+def extract_views(options):
   java_exe_path = get_java_exe_path()
   if java_exe_path is None:
     print_error_msg("No JDK found, please run the \"setup\" "
@@ -978,9 +988,10 @@ def extract_views():
   vdir = get_value_from_properties(properties, VIEWS_DIR_PROPERTY, configDefaults.DEFAULT_VIEWS_DIR)
 
   files = [f for f in os.listdir(vdir) if os.path.isfile(os.path.join(vdir,f))]
+  serverClassPath = ServerClassPath(get_ambari_properties(), options)
   for f in files:
     command = VIEW_EXTRACT_CMD.format(java_exe_path,
-                                      get_full_ambari_classpath(), os.path.join(vdir,f))
+                                      serverClassPath.get_full_ambari_classpath_escaped_for_shell(), os.path.join(vdir,f))
     retcode, stdout, stderr = run_os_command(command)
     if retcode == 0:
       sys.stdout.write(f + "\n")
@@ -1049,7 +1060,7 @@ def setup(options):
       print "Nothing was done. Ambari Setup already performed and cannot re-run setup in silent mode. Use \"ambari-server setup\" command without -s option to change Ambari setup."
       sys.exit(0)
 
-  retcode = verify_setup_allowed()
+  retcode = verify_setup_allowed(options)
   if not retcode == 0:
     raise FatalException(1, None)
 
@@ -1102,7 +1113,7 @@ def setup(options):
   check_jdbc_drivers(options)
 
   print 'Extracting system views...'
-  retcode = extract_views()
+  retcode = extract_views(options)
   if not retcode == 0:
     err = 'Error while extracting system views. Exiting'
     raise FatalException(retcode, err)

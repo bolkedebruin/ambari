@@ -58,6 +58,7 @@ import org.apache.ambari.server.controller.spi.TemporalInfo;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PredicateHelper;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -213,7 +214,6 @@ public class QueryImpl implements Query, ResourceInstance {
              SystemException,
              NoSuchResourceException,
              NoSuchParentResourceException {
-
     queryForResources();
     return getResult(null);
   }
@@ -407,6 +407,33 @@ public class QueryImpl implements Query, ResourceInstance {
       clusterController.populateResources(resourceType, providerResourceSet, request, queryPredicate);
     }
 
+    // Optimization:
+    // Currently the steps executed when sub-resources are requested are: 
+    //   (1) Get *all* top-level resources
+    //   (2) Populate all top-level resources
+    //   (3) Query for and populate sub-resources of *all* top-level resources 
+    //   (4) Apply pagination and predicate on resources from above
+    //
+    // Though this works, it is very inefficient when either:
+    //   (a) Predicate does not apply to sub-resources
+    //   (b) Page request is present
+    // It is inefficient because we needlessly populate sub-resources that might not get 
+    // used due to their top-level resources being filtered out by the predicate and paging
+    //
+    // The optimization is to apply the predicate and paging request on the top-level resources
+    // directly if there are no sub-resources predicates.
+    if ((pageRequest != null || userPredicate != null) && !hasSubResourcePredicate() && populateResourceRequired(resourceType)) {
+      QueryResponse newResponse = new QueryResponseImpl(resourceSet, queryResponse.isSortedResponse(), queryResponse.isPagedResponse(),
+          queryResponse.getTotalResourceCount());
+      PageResponse pageResponse = clusterController.getPage(resourceType, newResponse, request, queryPredicate, pageRequest, sortRequest);
+      // build a new set
+      Set<Resource> newResourceSet = new LinkedHashSet<Resource>();
+      for (Resource r : pageResponse.getIterable()) {
+        newResourceSet.add(r);
+      }
+      populatedQueryResults.put(null, new QueryResult(request, queryPredicate, userPredicate, getKeyValueMap(), new QueryResponseImpl(newResourceSet)));
+    }
+
     queryForSubResources();
   }
 
@@ -441,6 +468,9 @@ public class QueryImpl implements Query, ResourceInstance {
             resourceSet.addAll(queryResources);
           } catch (NoSuchResourceException e) {
             // do nothing ...
+          } catch (AuthorizationException e) {
+            // do nothing, since the user does not have access to the data ...
+            LOG.debug("User does not have authorization to get {} resources. The data will not be added to the response.", resourceType.name());
           }
           subResource.queryResults.put(resource,
               new QueryResult(request, queryPredicate, subResourcePredicate, map, new QueryResponseImpl(resourceSet)));

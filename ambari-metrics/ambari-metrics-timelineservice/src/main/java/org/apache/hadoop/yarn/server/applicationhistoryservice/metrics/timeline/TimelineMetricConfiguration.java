@@ -17,6 +17,7 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -63,6 +64,9 @@ public class TimelineMetricConfiguration {
   public static final String HOST_HOUR_TABLE_TTL =
     "timeline.metrics.host.aggregator.hourly.ttl";
 
+  public static final String CLUSTER_SECOND_TABLE_TTL =
+    "timeline.metrics.cluster.aggregator.second.ttl";
+
   public static final String CLUSTER_MINUTE_TABLE_TTL =
     "timeline.metrics.cluster.aggregator.minute.ttl";
 
@@ -73,7 +77,7 @@ public class TimelineMetricConfiguration {
     "timeline.metrics.cluster.aggregator.daily.ttl";
 
   public static final String CLUSTER_AGGREGATOR_TIMESLICE_INTERVAL =
-    "timeline.metrics.cluster.aggregator.minute.timeslice.interval";
+    "timeline.metrics.cluster.aggregator.second.timeslice.interval";
 
   public static final String AGGREGATOR_CHECKPOINT_DELAY =
     "timeline.metrics.service.checkpointDelay";
@@ -89,6 +93,9 @@ public class TimelineMetricConfiguration {
 
   public static final String HOST_AGGREGATOR_DAILY_SLEEP_INTERVAL =
     "timeline.metrics.host.aggregator.daily.interval";
+
+  public static final String CLUSTER_AGGREGATOR_SECOND_SLEEP_INTERVAL =
+    "timeline.metrics.cluster.aggregator.second.interval";
 
   public static final String CLUSTER_AGGREGATOR_MINUTE_SLEEP_INTERVAL =
     "timeline.metrics.cluster.aggregator.minute.interval";
@@ -107,6 +114,9 @@ public class TimelineMetricConfiguration {
 
   public static final String HOST_AGGREGATOR_DAILY_CHECKPOINT_CUTOFF_MULTIPLIER =
     "timeline.metrics.host.aggregator.daily.checkpointCutOffMultiplier";
+
+  public static final String CLUSTER_AGGREGATOR_SECOND_CHECKPOINT_CUTOFF_MULTIPLIER =
+    "timeline.metrics.cluster.aggregator.second.checkpointCutOffMultiplier";
 
   public static final String CLUSTER_AGGREGATOR_MINUTE_CHECKPOINT_CUTOFF_MULTIPLIER =
     "timeline.metrics.cluster.aggregator.minute.checkpointCutOffMultiplier";
@@ -135,6 +145,9 @@ public class TimelineMetricConfiguration {
   public static final String HOST_AGGREGATOR_DAILY_DISABLED =
     "timeline.metrics.host.aggregator.hourly.disabled";
 
+  public static final String CLUSTER_AGGREGATOR_SECOND_DISABLED =
+    "timeline.metrics.cluster.aggregator.second.disabled";
+
   public static final String CLUSTER_AGGREGATOR_MINUTE_DISABLED =
     "timeline.metrics.cluster.aggregator.minute.disabled";
 
@@ -161,6 +174,45 @@ public class TimelineMetricConfiguration {
 
   public static final String OUT_OFF_BAND_DATA_TIME_ALLOWANCE =
     "timeline.metrics.service.outofband.time.allowance.millis";
+
+  public static final String USE_GROUPBY_AGGREGATOR_QUERIES =
+    "timeline.metrics.service.use.groupBy.aggregators";
+
+  public static final String HANDLER_THREAD_COUNT =
+    "timeline.metrics.service.handler.thread.count";
+
+  public static final String WATCHER_DISABLED =
+    "timeline.metrics.service.watcher.disabled";
+
+  public static final String WATCHER_INITIAL_DELAY =
+    "timeline.metrics.service.watcher.initial.delay";
+
+  public static final String WATCHER_DELAY =
+    "timeline.metrics.service.watcher.delay";
+
+  public static final String WATCHER_TIMEOUT =
+    "timeline.metrics.service.watcher.timeout";
+
+  public static final String WATCHER_MAX_FAILURES =
+    "timeline.metrics.service.watcher.max.failures";
+
+  public static final String PRECISION_TABLE_SPLIT_POINTS =
+    "timeline.metrics.host.aggregate.splitpoints";
+
+  public static final String AGGREGATE_TABLE_SPLIT_POINTS =
+    "timeline.metrics.cluster.aggregate.splitpoints";
+
+  public static final String AGGREGATORS_SKIP_BLOCK_CACHE =
+    "timeline.metrics.aggregators.skip.blockcache.enabled";
+
+  public static final String DISABLE_METRIC_METADATA_MGMT =
+    "timeline.metrics.service.metadata.management.disabled";
+
+  public static final String METRICS_METADATA_SYNC_INIT_DELAY =
+    "timeline.metrics.service.metadata.sync.init.delay";
+
+  public static final String METRICS_METADATA_SYNC_SCHEDULE_DELAY =
+    "timeline.metrics.service.metadata.sync.delay";
 
   public static final String HOST_APP_ID = "HOST";
 
@@ -215,6 +267,48 @@ public class TimelineMetricConfiguration {
       return metricsConf.get(WEBAPP_HTTP_ADDRESS, defaultHttpAddress);
     }
     return defaultHttpAddress;
+  }
+
+  public int getTimelineMetricsServiceHandlerThreadCount() {
+    if (metricsConf != null) {
+      return Integer.parseInt(metricsConf.get(HANDLER_THREAD_COUNT, "20"));
+    }
+    return 20;
+  }
+
+  public boolean isTimelineMetricsServiceWatcherDisabled() {
+    if (metricsConf != null) {
+      return Boolean.parseBoolean(metricsConf.get(WATCHER_DISABLED, "false"));
+    }
+    return false;
+  }
+
+  public int getTimelineMetricsServiceWatcherInitDelay() {
+    if (metricsConf != null) {
+      return Integer.parseInt(metricsConf.get(WATCHER_INITIAL_DELAY, "600"));
+    }
+    return 600;
+  }
+
+  public int getTimelineMetricsServiceWatcherDelay() {
+    if (metricsConf != null) {
+      return Integer.parseInt(metricsConf.get(WATCHER_DELAY, "30"));
+    }
+    return 30;
+  }
+
+  public int getTimelineMetricsServiceWatcherTimeout() {
+    if (metricsConf != null) {
+      return Integer.parseInt(metricsConf.get(WATCHER_TIMEOUT, "30"));
+    }
+    return 30;
+  }
+
+  public int getTimelineMetricsServiceWatcherMaxFailures() {
+    if (metricsConf != null) {
+      return Integer.parseInt(metricsConf.get(WATCHER_MAX_FAILURES, "3"));
+    }
+    return 3;
   }
 
   public String getTimelineServiceRpcAddress() {

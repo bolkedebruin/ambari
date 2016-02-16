@@ -20,31 +20,57 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
   <property>
     <name>hadoop_pid_dir_prefix</name>
     <value>/var/run/hadoop</value>
     <description>Hadoop PID Dir Prefix</description>
+    <display-name>Hadoop PID Dir Prefix</display-name>
+    <value-attributes>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+      <visible>false</visible>
+    </value-attributes>
   </property>
  <property>
     <name>hadoop_heapsize</name>
     <value>1024</value>
+    <display-name>Hadoop maximum Java heap size</display-name>
     <description>Hadoop maximum Java heap size</description>
+   <value-attributes>
+     <unit>MB</unit>
+   </value-attributes>
   </property>
   <property>
     <name>glusterfs_user</name>
     <value>root</value>
-    <description></description>
+    <display-name>glusterfs user</display-name>
+    <description>glusterfs user</description>
+    <value-attributes>
+      <visible>false</visible>
+    </value-attributes>
   </property>
   <property>
     <name>hdfs_log_dir_prefix</name>
     <value>/var/log/hadoop</value>
+    <display-name>Hadoop Log Dir Prefix</display-name>
     <description>Hadoop Log Dir Prefix</description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+      <visible>false</visible>
+    </value-attributes>
   </property>
   <property>
     <name>namenode_heapsize</name>
     <value>1024</value>
+    <display-name>Name Node Heap Size</display-name>
     <description>NameNode Java heap size</description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+      <visible>false</visible>
+    </value-attributes>
   </property>
   <property>
     <name>namenode_host</name>
@@ -58,11 +84,13 @@
   </property>
   <property>
     <name>proxyuser_group</name>
+    <display-name>Proxy User Group</display-name>
     <value>users</value>
     <description>Proxy user group.</description>
   </property>
   <property>
     <name>hdfs_user</name>
+    <display-name>HDFS User</display-name>
     <value>hdfs</value>
     <description>User to run HDFS as</description>
   </property>
@@ -189,6 +217,9 @@ export HADOOP_LIBEXEC_DIR={{hadoop_libexec_dir}}
 #Mostly required for hadoop 2.0
 export JAVA_LIBRARY_PATH=${JAVA_LIBRARY_PATH}:/usr/lib/hadoop/lib/native/Linux-amd64-64
     </value>
+    <value-attributes>
+        <type>content</type>
+    </value-attributes>
   </property>
 
 </configuration>

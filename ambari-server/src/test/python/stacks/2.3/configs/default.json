@@ -36,6 +36,9 @@
         "mahout-env": {
              "mahout_user": "mahout"
         },
+        "yarn-env": {
+            "yarn_user": "yarn"
+        },
         "mahout-log4j": {
             "content": "\n            #\n            #\n            # Licensed to the Apache Software Foundation (ASF) under one\n            # or more contributor license agreements.  See the NOTICE file\n            # distributed with this work for additional information\n            # regarding copyright ownership.  The ASF licenses this file\n            # to you under the Apache License, Version 2.0 (the\n            # \"License\"); you may not use this file except in compliance\n            # with the License.  You may obtain a copy of the License at\n            #\n            #   http://www.apache.org/licenses/LICENSE-2.0\n            #\n            # Unless required by applicable law or agreed to in writing,\n            # software distributed under the License is distributed on an\n            # \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY\n            # KIND, either express or implied.  See the License for the\n            # specific language governing permissions and limitations\n            # under the License.\n            #\n            #\n            #\n\n            # Set everything to be logged to the console\n            log4j.rootCategory=WARN, console\n            log4j.appender.console=org.apache.log4j.ConsoleAppender\n            log4j.appender.console.target=System.err\n            log4j.appender.console.layout=org.apache.log4j.PatternLayout\n            log4j.appender.console.layout.ConversionPattern=%d{yy/MM/dd HH:mm:ss} %p %c{1}: %m%n\n\n            # Settings to quiet third party logs that are too verbose\n            log4j.logger.org.eclipse.jetty=WARN\n            log4j.logger.org.apache.spark.repl.SparkIMain$exprTyper=WARN\n            log4j.logger.org.apache.spark.repl.SparkILoop$SparkILoopInterpreter=WARN"
         },
@@ -161,6 +164,7 @@
         "log.retention.hours": "168"
       },
       "application-properties": {
+        "atlas.cluster.name" : "c2",
         "atlas.graph.storage.backend": "berkeleyje",
         "atlas.graph.storage.directory": "data/berkley",
         "atlas.graph.index.search.backend": "elasticsearch",
@@ -181,7 +185,14 @@
         "atlas.http.authentication.type": "simple",
         "atlas.http.authentication.kerberos.principal": "HTTP/_HOST@EXAMPLE.COM",
         "atlas.http.authentication.kerberos.keytab": "/etc/security/keytabs/spnego.service.keytab",
-        "atlas.http.authentication.kerberos.name.rules": "DEFAULT"
+        "atlas.http.authentication.kerberos.name.rules": "DEFAULT",
+        "atlas.server.http.port" : "21000",
+        "atlas.notification.embedded" : false,
+        "atlas.kafka.bootstrap.servers" : "c6401.ambari.apache.org:6667",
+        "atlas.kafka.data" : "/usr/hdp/current/atlas-server/data/kafka",
+        "atlas.kafka.entities.group.id" : "entities",
+        "atlas.kafka.hook.group.id" : "atlas",
+        "atlas.kafka.zookeeper.connect" : "c6401.ambari.apache.org:2181"
       },
       "atlas-env": {
         "content": "# The java implementation to use. If JAVA_HOME is not found we expect java and jar to be in path\nexport JAVA_HOME={{java64_home}}\n# any additional java opts you want to set. This will apply to both client and server operations\nexport METADATA_OPTS={{metadata_opts}}\n# metadata configuration directory\nexport METADATA_CONF={{conf_dir}}\n# Where log files are stored. Defatult is logs directory under the base install location\nexport METADATA_LOG_DIR={{log_dir}}\n# additional classpath entries\nexport METADATACPPATH={{metadata_classpath}}\n# data dir\nexport METADATA_DATA_DIR={{data_dir}}\n# Where do you want to expand the war file. By Default it is in /server/webapp dir under the base install dir.\nexport METADATA_EXPANDED_WEBAPP_DIR={{expanded_war_dir}}",

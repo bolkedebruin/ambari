@@ -28,6 +28,7 @@ import javax.persistence.TypedQuery;
 
 import org.apache.ambari.server.orm.RequiresSession;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
+import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.StackId;
 
@@ -43,21 +44,34 @@ import com.google.inject.persist.Transactional;
  * {@link org.apache.ambari.server.state.RepositoryVersionState#UPGRADING}.
  */
 @Singleton
-public class HostVersionDAO {
+public class HostVersionDAO extends CrudDAO<HostVersionEntity, Long> {
   @Inject
   Provider<EntityManager> entityManagerProvider;
   @Inject
   DaoUtils daoUtils;
 
   /**
-   * Get the object with the given id.
-   *
-   * @param id Primary key id
-   * @return Return the object with the given primary key
+   * Constructor.
    */
-  @RequiresSession
-  public HostVersionEntity findByPK(long id) {
-    return entityManagerProvider.get().find(HostVersionEntity.class, id);
+  public HostVersionDAO() {
+    super(HostVersionEntity.class);
+  }
+
+  /**
+   * Construct a Host Version. Additionally this will update parent connection relations without
+   * forcing refresh of parent entity
+   * @param entity entity to create
+   */
+  @Override
+  @Transactional
+  public void create(HostVersionEntity entity) throws IllegalArgumentException{
+    // check if repository version is not missing, to avoid NPE
+    if (entity.getRepositoryVersion() == null) {
+      throw new IllegalArgumentException("RepositoryVersion argument is not set for the entity");
+    }
+
+    super.create(entity);
+    entity.getRepositoryVersion().updateHostVersionEntityRelation(entity);
   }
 
   /**
@@ -189,31 +203,6 @@ public class HostVersionDAO {
     return daoUtils.selectSingle(query);
   }
 
-  @RequiresSession
-  public List<HostVersionEntity> findAll() {
-    return daoUtils.selectAll(entityManagerProvider.get(), HostVersionEntity.class);
-  }
-
-  @Transactional
-  public void refresh(HostVersionEntity hostVersionEntity) {
-    entityManagerProvider.get().refresh(hostVersionEntity);
-  }
-
-  @Transactional
-  public void create(HostVersionEntity hostVersionEntity) {
-    entityManagerProvider.get().persist(hostVersionEntity);
-  }
-
-  @Transactional
-  public HostVersionEntity merge(HostVersionEntity hostVersionEntity) {
-    return entityManagerProvider.get().merge(hostVersionEntity);
-  }
-
-  @Transactional
-  public void remove(HostVersionEntity hostVersionEntity) {
-    entityManagerProvider.get().remove(merge(hostVersionEntity));
-  }
-
   @Transactional
   public void removeByHostName(String hostName) {
     Collection<HostVersionEntity> hostVersions = this.findByHost(hostName);
@@ -222,8 +211,35 @@ public class HostVersionDAO {
     }
   }
 
+  /**
+   * Updates the host versions existing CURRENT record to the INSTALLED, and the target
+   * becomes CURRENT.  This method invokes {@code clear()} on the entity manager to force entities to be refreshed.
+   * @param target    the repo version that all hosts to mark as CURRENT
+   * @param current   the repo version that all hosts marked as INSTALLED
+   */
   @Transactional
-  public void removeByPK(long id) {
-    remove(findByPK(id));
+  public void updateVersions(RepositoryVersionEntity target, RepositoryVersionEntity current) {
+    // !!! first update target to be current
+    StringBuilder sb = new StringBuilder("UPDATE HostVersionEntity hve");
+    sb.append(" SET hve.state = ?1 ");
+    sb.append(" WHERE hve.repositoryVersion = ?2");
+
+    EntityManager em = entityManagerProvider.get();
+
+    TypedQuery<Long> query = em.createQuery(sb.toString(), Long.class);
+    daoUtils.executeUpdate(query, RepositoryVersionState.CURRENT, target);
+
+    // !!! then move existing current to installed
+    sb = new StringBuilder("UPDATE HostVersionEntity hve");
+    sb.append(" SET hve.state = ?1 ");
+    sb.append(" WHERE hve.repositoryVersion = ?2");
+    sb.append(" AND hve.state = ?3");
+
+    query = em.createQuery(sb.toString(), Long.class);
+    daoUtils.executeUpdate(query, RepositoryVersionState.INSTALLED, current,
+        RepositoryVersionState.CURRENT);
+
+    em.clear();
   }
+
 }

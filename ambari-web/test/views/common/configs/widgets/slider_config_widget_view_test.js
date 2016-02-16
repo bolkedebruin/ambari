@@ -138,53 +138,162 @@ describe('App.SliderConfigWidgetView', function () {
 
   describe('#mirrorValueObs', function () {
 
-    it('check int', function () {
-      viewInt.set('mirrorValue', 1000);
-      expect(viewInt.get('isMirrorValueValid')).to.be.true;
-      expect(viewInt.get('config.value')).to.equal('1000');
-      expect(viewInt.get('config.errorMessage')).to.equal('');
-      expect(viewInt.get('config.warnMessage')).to.equal('');
-      expect(viewInt.get('config.warn')).to.be.false;
+    describe('check int', function () {
 
-      viewInt.set('mirrorValue', 100500);
-      expect(viewInt.get('isMirrorValueValid')).to.be.false;
-      expect(viewInt.get('config.value')).to.equal('1000');
-      expect(viewInt.get('config.errorMessage')).to.equal('');
-      expect(viewInt.get('config.warnMessage')).to.have.property('length').that.is.least(1);
-      expect(viewInt.get('config.warn')).to.be.true;
+      describe('valid value', function () {
+
+        beforeEach(function () {
+          viewInt.set('mirrorValue', 1000);
+        });
+
+        it('isMirrorValueValid is true', function () {
+          expect(viewInt.get('isMirrorValueValid')).to.be.true;
+        });
+        it('config value is 1000', function () {
+          expect(viewInt.get('config.value')).to.equal('1000');
+        });
+        it('errorMessage is empty', function () {
+          expect(viewInt.get('config.errorMessage')).to.equal('');
+        });
+        it('warnMessage is empty', function () {
+          expect(viewInt.get('config.warnMessage')).to.equal('');
+        });
+        it('warn is false', function () {
+          expect(viewInt.get('config.warn')).to.be.false;
+        });
+
+      });
+
+      describe('invalid value', function () {
+
+        beforeEach(function () {
+          viewInt.set('mirrorValue', 100500);
+        });
+
+        it('isMirrorValueValid is false', function () {
+          expect(viewInt.get('isMirrorValueValid')).to.be.false;
+        });
+        it('config value is 486', function () {
+          expect(viewInt.get('config.value')).to.equal('486');
+        });
+        it('errorMessage is empty', function () {
+          expect(viewInt.get('config.errorMessage')).to.equal('');
+        });
+        it('warnMessage is not empty', function () {
+          expect(viewInt.get('config.warnMessage')).to.have.property('length').that.is.least(1);
+        });
+        it('warn is true', function () {
+          expect(viewInt.get('config.warn')).to.be.true;
+        });
+
+      });
+
     });
 
-    it('check float', function () {
-      viewFloat.set('mirrorValue', 55.5);
-      expect(viewFloat.get('isMirrorValueValid')).to.be.true;
-      expect(viewFloat.get('config.value')).to.equal('55.5');
-      expect(viewFloat.get('config.errorMessage')).to.equal('');
-      expect(viewFloat.get('config.warnMessage')).to.equal('');
-      expect(viewFloat.get('config.warn')).to.be.false;
+    describe('check float', function () {
 
-      viewFloat.set('mirrorValue', 100500.5);
-      expect(viewFloat.get('isMirrorValueValid')).to.be.false;
-      expect(viewFloat.get('config.value')).to.equal('55.5');
-      expect(viewFloat.get('config.errorMessage')).to.equal('');
-      expect(viewFloat.get('config.warnMessage')).to.have.property('length').that.is.least(1);
-      expect(viewFloat.get('config.warn')).to.be.true;
+      describe('valid value', function () {
+
+        beforeEach(function () {
+          viewFloat.set('mirrorValue', 55.5);
+        });
+
+        it('isMirrorValueValid is true', function () {
+          expect(viewFloat.get('isMirrorValueValid')).to.be.true;
+        });
+        it('config value is 1000', function () {
+          expect(viewFloat.get('config.value')).to.equal('55.5');
+        });
+        it('errorMessage is empty', function () {
+          expect(viewFloat.get('config.errorMessage')).to.equal('');
+        });
+        it('warnMessage is empty', function () {
+          expect(viewFloat.get('config.warnMessage')).to.equal('');
+        });
+        it('warn is false', function () {
+          expect(viewFloat.get('config.warn')).to.be.false;
+        });
+
+      });
+
+      describe('invalid value', function () {
+
+        beforeEach(function () {
+          viewFloat.set('mirrorValue', 100500.5);
+        });
+
+        it('isMirrorValueValid is false', function () {
+          expect(viewFloat.get('isMirrorValueValid')).to.be.false;
+        });
+        it('config value is 1000', function () {
+          expect(viewFloat.get('config.value')).to.equal('72.2');
+        });
+        it('errorMessage is empty', function () {
+          expect(viewFloat.get('config.errorMessage')).to.equal('');
+        });
+        it('warnMessage is not empty', function () {
+          expect(viewFloat.get('config.warnMessage')).to.have.property('length').that.is.least(1);
+        });
+        it('warn is true', function () {
+          expect(viewFloat.get('config.warn')).to.be.true;
+        });
+
+      });
+
     });
 
-    it('check percent', function () {
-      viewPercent.set('mirrorValue', 32);
-      expect(viewPercent.get('isMirrorValueValid')).to.be.true;
-      expect(viewPercent.get('config.value')).to.equal('0.32');
-      expect(viewPercent.get('config.errorMessage')).to.equal('');
-      expect(viewPercent.get('config.warnMessage')).to.equal('');
-      expect(viewPercent.get('config.warn')).to.be.false;
+    describe('check percent', function () {
 
-      viewPercent.set('mirrorValue', 100500.5);
-      expect(viewPercent.get('isMirrorValueValid')).to.be.false;
-      expect(viewPercent.get('config.value')).to.equal('0.32');
-      expect(viewPercent.get('config.errorMessage')).to.equal('');
-      expect(viewPercent.get('config.warnMessage')).to.have.property('length').that.is.least(1);
-      expect(viewPercent.get('config.warn')).to.be.true;
+      describe('valid value', function () {
+
+        beforeEach(function () {
+          viewPercent.set('mirrorValue', 32);
+        });
+
+        it('isMirrorValueValid is true', function () {
+          expect(viewPercent.get('isMirrorValueValid')).to.be.true;
+        });
+        it('config value is 1000', function () {
+          expect(viewPercent.get('config.value')).to.equal('0.32');
+        });
+        it('errorMessage is empty', function () {
+          expect(viewPercent.get('config.errorMessage')).to.equal('');
+        });
+        it('warnMessage is empty', function () {
+          expect(viewPercent.get('config.warnMessage')).to.equal('');
+        });
+        it('warn is false', function () {
+          expect(viewPercent.get('config.warn')).to.be.false;
+        });
+
+      });
+
+      describe('invalid value', function () {
+
+        beforeEach(function () {
+          viewPercent.set('mirrorValue', 100500.5);
+        });
+
+        it('isMirrorValueValid is false', function () {
+          expect(viewPercent.get('isMirrorValueValid')).to.be.false;
+        });
+        it('config value is 1000', function () {
+          expect(viewPercent.get('config.value')).to.equal('0.22');
+        });
+        it('errorMessage is empty', function () {
+          expect(viewPercent.get('config.errorMessage')).to.equal('');
+        });
+        it('warnMessage is not empty', function () {
+          expect(viewPercent.get('config.warnMessage')).to.have.property('length').that.is.least(1);
+        });
+        it('warn is true', function () {
+          expect(viewPercent.get('config.warn')).to.be.true;
+        });
+
+      });
+
     });
+
   });
 
   describe('#getValueAttributeByGroup', function() {
@@ -201,10 +310,24 @@ describe('App.SliderConfigWidgetView', function () {
 
   describe('#initSlider', function() {
     beforeEach(function() {
-      this.view = App.SliderConfigWidgetView;
+      this.view = App.SliderConfigWidgetView.create();
+      sinon.stub(this.view, '$')
+        .withArgs('input.slider-input').returns([])
+        .withArgs('.ui-slider-wrapper:eq(0) .slider-tick').returns({
+          eq: Em.K,
+          addClass: Em.K,
+          on: Em.K,
+          append: Em.K,
+          find: Em.K,
+          css: Em.K,
+          width: function() {},
+          last: Em.K,
+          hide: Em.K
+        });
     });
 
     afterEach(function() {
+      this.view.$.restore();
       this.view.destroy();
       this.view = null;
     });
@@ -421,41 +544,35 @@ describe('App.SliderConfigWidgetView', function () {
     ];
 
     tests.forEach(function(test) {
-      it('should generate ticks: {0} - tick labels: {1}'.format(test.e.ticks, test.e.ticksLabels), function() {
+      describe('should generate ticks: {0} - tick labels: {1}'.format(test.e.ticks, test.e.ticksLabels), function() {
         var ticks, ticksLabels;
-        this.view = this.view.create(test.viewSetup);
-        this.view.set('controller', {
-          isCompareMode: test.viewSetup.isCompareMode
-        });
-        var sliderCopy= window.Slider.prototype;
-        window.Slider = function(a, b) {
-          ticks = b.ticks;
-          ticksLabels = b.ticks_labels;
-          return {
-            on: function() {
-              return this;
-            }
-          };
-        };
-        sinon.stub(this.view, '$')
-          .withArgs('input.slider-input').returns([])
-          .withArgs('.ui-slider-wrapper:eq(0) .slider-tick').returns({
-            eq: Em.K,
-            addClass: Em.K,
-            on: Em.K,
-            append: Em.K,
-            find: Em.K,
-            css: Em.K,
-            width: function() {},
-            last: Em.K,
-            hide: Em.K
+        beforeEach(function () {
+          this.view.reopen(test.viewSetup);
+          this.view.set('controller', {
+            isCompareMode: test.viewSetup.isCompareMode
           });
-        this.view.willInsertElement();
-        this.view.initSlider();
-        window.Slider.prototype = sliderCopy;
-        this.view.$.restore();
-        expect(ticks.toArray()).to.be.eql(test.e.ticks);
-        expect(ticksLabels.toArray()).to.be.eql(test.e.ticksLabels);
+          var sliderCopy = window.Slider.prototype;
+          window.Slider = function(a, b) {
+            ticks = b.ticks;
+            ticksLabels = b.ticks_labels;
+            return {
+              on: function() {
+                return this;
+              }
+            };
+          };
+          this.view.willInsertElement();
+          this.view.initSlider();
+          window.Slider.prototype = sliderCopy;
+        });
+
+        it('ticks are ' + test.e.ticks, function () {
+          expect(ticks.toArray()).to.be.eql(test.e.ticks);
+        });
+
+        it('ticksLabels are ' + test.e.ticksLabels, function () {
+          expect(ticksLabels.toArray()).to.be.eql(test.e.ticksLabels);
+        });
       });
     });
   });
@@ -465,7 +582,7 @@ describe('App.SliderConfigWidgetView', function () {
 
     beforeEach(function() {
       viewInt.set('config', {});
-      stackConfigProperty = App.StackConfigProperty.createRecord({name: 'p1', widget: { units: [ { 'unit-name': "int"}]}, valueAttributes: {minimum: 1, maximum: 10, increment_step: 4, type: 'int'}});
+      stackConfigProperty = {name: 'p1', widget: { units: [ { 'unit-name': "int"}]}, valueAttributes: {minimum: 1, maximum: 10, increment_step: 4, type: 'int'}};
       viewInt.set('config.stackConfigProperty', stackConfigProperty);
       viewInt.set('config.isValid', true);
     });
@@ -517,6 +634,62 @@ describe('App.SliderConfigWidgetView', function () {
       expect(viewInt.get('warnMessage')).to.equal('');
       expect(viewInt.get('issueMessage')).to.equal('');
     });
+  });
+
+  describe('#formatTickLabel', function () {
+
+    var bytesView,
+      cases = [
+        {
+          unitLabel: 'B',
+          tick: 1024,
+          result: '1024B',
+          title: 'no conversion'
+        },
+        {
+          unitLabel: 'KB',
+          tick: 10240,
+          result: '10MB',
+          title: 'one exponent up conversion'
+        },
+        {
+          unitLabel: 'MB',
+          tick: 10000,
+          result: '9.766GB',
+          title: 'rounding to three decimals'
+        },
+        {
+          unitLabel: 'GB',
+          tick: 10752,
+          separator: ' ',
+          result: '10.5 TB',
+          title: 'rounding to less than three decimals, custom separator'
+        },
+        {
+          unitLabel: 'B',
+          tick: 20971520,
+          result: '20MB',
+          title: 'several exponents up conversion'
+        },
+        {
+          unitLabel: 'TB',
+          tick: 10000,
+          result: '10000TB',
+          title: 'no conversions for the highest exponent unit'
+        }
+      ];
+
+    beforeEach(function () {
+      bytesView = App.SliderConfigWidgetView.create();
+    });
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        bytesView.set('unitLabel', item.unitLabel);
+        expect(bytesView.formatTickLabel(item.tick, item.separator)).to.equal(item.result);
+      });
+    });
+
   });
 
 });

@@ -63,7 +63,9 @@ import org.apache.ambari.server.orm.entities.ViewInstanceEntity;
 import org.apache.ambari.server.orm.entities.ViewParameterEntity;
 import org.apache.ambari.server.orm.entities.ViewResourceEntity;
 import org.apache.ambari.server.security.SecurityHelper;
-import org.apache.ambari.server.security.authorization.AmbariGrantedAuthority;
+import org.apache.ambari.server.security.authorization.AuthorizationHelper;
+import org.apache.ambari.server.security.authorization.ResourceType;
+import org.apache.ambari.server.security.authorization.RoleAuthorization;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.stack.OsFamily;
@@ -91,7 +93,6 @@ import org.apache.ambari.view.events.Event;
 import org.apache.ambari.view.events.Listener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.core.GrantedAuthority;
 
 import javax.inject.Inject;
 import javax.inject.Provider;
@@ -464,7 +465,7 @@ public class ViewRegistry {
    * Read all view archives.
    */
   public void readViewArchives() {
-    readViewArchives(false, true, ALL_VIEWS_REG_EXP);
+    readViewArchives(false, false, ALL_VIEWS_REG_EXP);
   }
 
   /**
@@ -565,6 +566,18 @@ public class ViewRegistry {
       instanceDAO.merge(instanceEntity);
 
       syncViewInstance(instanceEntity);
+    }
+  }
+
+  /**
+   * Calls onUpdate hook on View class
+   *
+   * @param instanceEntity
+   */
+  public void updateView(ViewInstanceEntity instanceEntity){
+    ViewEntity viewEntity = getDefinition(instanceEntity.getViewName());
+    if(null != viewEntity && null != viewEntity.getView()){
+      viewEntity.getView().onUpdate(instanceEntity);
     }
   }
 
@@ -755,8 +768,7 @@ public class ViewRegistry {
 
     ResourceEntity resourceEntity = instanceEntity == null ? null : instanceEntity.getResource();
 
-    return !configuration.getApiAuthentication() ||
-        (resourceEntity == null && readOnly) || checkAuthorization(resourceEntity);
+    return (resourceEntity == null && readOnly) || checkAuthorization(resourceEntity);
   }
 
   /**
@@ -1355,7 +1367,7 @@ public class ViewRegistry {
 
   // create an admin resource for the given view instance entity and merge it
   @Transactional
-  private ViewInstanceEntity mergeViewInstance(ViewInstanceEntity instanceEntity, ResourceTypeEntity resourceTypeEntity) {
+  ViewInstanceEntity mergeViewInstance(ViewInstanceEntity instanceEntity, ResourceTypeEntity resourceTypeEntity) {
     // create an admin resource to represent this view instance
     instanceEntity.setResource(createViewInstanceResource(resourceTypeEntity));
 
@@ -1383,29 +1395,11 @@ public class ViewRegistry {
 
   // check that the current user is authorized to access the given view instance resource
   private boolean checkAuthorization(ResourceEntity resourceEntity) {
-    for (GrantedAuthority grantedAuthority : securityHelper.getCurrentAuthorities()) {
-      if (grantedAuthority instanceof AmbariGrantedAuthority) {
+    Long resourceId = (resourceEntity == null) ? null : resourceEntity.getId();
 
-        AmbariGrantedAuthority authority       = (AmbariGrantedAuthority) grantedAuthority;
-        PrivilegeEntity        privilegeEntity = authority.getPrivilegeEntity();
-        Integer                permissionId    = privilegeEntity.getPermission().getId();
-
-        // admin has full access
-        if (permissionId.equals(PermissionEntity.AMBARI_ADMIN_PERMISSION)) {
-          return true;
-        }
-        if (resourceEntity != null) {
-          // VIEW.USE for the given view instance resource.
-          if (privilegeEntity.getResource().equals(resourceEntity)) {
-            if (permissionId.equals(PermissionEntity.VIEW_USE_PERMISSION)) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-    // TODO : should we log this?
-    return false;
+    return (resourceId == null)
+        ? AuthorizationHelper.isAuthorized(ResourceType.AMBARI, null, RoleAuthorization.AMBARI_MANAGE_VIEWS)
+        : AuthorizationHelper.isAuthorized(ResourceType.VIEW, resourceId, RoleAuthorization.VIEW_USE);
   }
 
   // fire the onDeploy event.
@@ -1546,6 +1540,9 @@ public class ViewRegistry {
         }
         persistView(viewDefinition, instanceDefinitions);
 
+        // add auto instance configurations if required
+        addAutoInstanceDefinition(viewDefinition);
+
         setViewStatus(viewDefinition, ViewEntity.ViewStatus.DEPLOYED, "Deployed " + extractedArchiveDirPath + ".");
 
         LOG.info("View deployed: " + viewDefinition.getName() + ".");
@@ -1555,6 +1552,41 @@ public class ViewRegistry {
 
       setViewStatus(viewDefinition, ViewEntity.ViewStatus.ERROR, msg + " : " + e.getMessage());
       LOG.error(msg, e);
+    }
+  }
+
+  private void addAutoInstanceDefinition(ViewEntity viewEntity) {
+    ViewConfig viewConfig = viewEntity.getConfiguration();
+    String viewName = viewEntity.getViewName();
+
+    AutoInstanceConfig autoInstanceConfig = viewConfig.getAutoInstance();
+    if (autoInstanceConfig == null) {
+      return;
+    }
+
+    List<String> services = autoInstanceConfig.getServices();
+
+    Map<String, org.apache.ambari.server.state.Cluster> allClusters = clustersProvider.get().getClusters();
+    for (org.apache.ambari.server.state.Cluster cluster : allClusters.values()) {
+
+      String clusterName = cluster.getClusterName();
+      StackId stackId = cluster.getCurrentStackVersion();
+      Set<String> serviceNames = cluster.getServices().keySet();
+
+      for (String service : services) {
+        try {
+
+          if (checkAutoInstanceConfig(autoInstanceConfig, stackId, service, serviceNames)) {
+            LOG.info("Auto creating instance of view " + viewName + " for cluster " + clusterName + ".");
+            ViewInstanceEntity viewInstanceEntity = createViewInstanceEntity(viewEntity, viewConfig, autoInstanceConfig);
+            viewInstanceEntity.setClusterHandle(clusterName);
+            installViewInstance(viewInstanceEntity);
+          }
+        } catch (Exception e) {
+          LOG.error("Can't auto create instance of view " + viewName + " for cluster " + clusterName +
+            ".  Caught exception :" + e.getMessage(), e);
+        }
+      }
     }
   }
 
@@ -1610,7 +1642,7 @@ public class ViewRegistry {
 
   // persist the given view and its instances
   @Transactional
-  private void persistView(ViewEntity viewDefinition, Set<ViewInstanceEntity> instanceDefinitions) throws Exception {
+  void persistView(ViewEntity viewDefinition, Set<ViewInstanceEntity> instanceDefinitions) throws Exception {
     // ensure that the view entity matches the db
     syncView(viewDefinition, instanceDefinitions);
 

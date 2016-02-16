@@ -52,6 +52,20 @@ export default Ember.Service.extend({
     return defer.promise;
   },
 
+  // This will do a ajax call to fetch the current database by by-passing the store.
+  // As we want to retain the current state of databases in store and just want to
+  // find the current databases in the server
+  getDatabasesFromServer: function() {
+    var defer = Ember.RSVP.defer();
+    var url = this.get('baseUrl');
+    Ember.$.getJSON(url).then(function(data) {
+      defer.resolve(data.databases);
+    }, function(err) {
+      defer.reject(err);
+    });
+    return defer.promise;
+  },
+
   setDatabaseByName: function (name) {
     var database = this.databases.findBy('name', name);
 
@@ -69,7 +83,7 @@ export default Ember.Service.extend({
               table.get('name');
 
     url += '.page?searchId&count=' + this.get('pageCount');
-    url += '&columns=3,5';
+    url += '&columns=3,5,6,8';
 
     if (searchTerm) {
       url += '&searchId=searchColumns' + '&like=' + searchTerm;
@@ -86,10 +100,12 @@ export default Ember.Service.extend({
         var columns;
 
         columns = data.rows.map(function (row) {
-          return Ember.Object.create({
-            name: row[0],
-            type: row[1]
-          });
+            return Ember.Object.create({
+              name: row[0],
+              type: row[1],
+              precision : row[2],
+              scale : row[3]
+            });
         });
 
         defer.resolve({

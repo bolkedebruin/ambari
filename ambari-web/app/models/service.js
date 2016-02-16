@@ -22,9 +22,7 @@ require('utils/config');
 
 App.Service = DS.Model.extend({
   serviceName: DS.attr('string'),
-  displayName: function() {
-    return App.format.role(this.get('serviceName'));
-  }.property('serviceName'),
+  displayName: Em.computed.formatRole('serviceName'),
   passiveState: DS.attr('string'),
   workStatus: DS.attr('string'),
   rand: DS.attr('string'),
@@ -45,9 +43,7 @@ App.Service = DS.Model.extend({
   /**
    * @type {bool}
    */
-  isInPassive: function() {
-    return this.get('passiveState') === "ON";
-  }.property('passiveState'),
+  isInPassive: Em.computed.equal('passiveState', 'ON'),
 
   serviceComponents: function() {
     var clientComponents = this.get('clientComponents').mapProperty('componentName');
@@ -77,12 +73,9 @@ App.Service = DS.Model.extend({
         return 'yellow';
     }
   }.property('workStatus'),
-  isStopped: function () {
-    return this.get('workStatus') === 'INSTALLED';
-  }.property('workStatus'),
-  isStarted: function () {
-    return this.get('workStatus') === 'STARTED';
-  }.property('workStatus'),
+  isStopped: Em.computed.equal('workStatus', 'INSTALLED'),
+
+  isStarted: Em.computed.equal('workStatus', 'STARTED'),
 
   /**
    * Service Tagging by their type.
@@ -93,7 +86,8 @@ App.Service = DS.Model.extend({
       GANGLIA: ['MONITORING'],
       HDFS: ['HA_MODE'],
       YARN: ['HA_MODE'],
-      RANGER: ['HA_MODE']
+      RANGER: ['HA_MODE'],
+      HAWQ: ['HA_MODE']
     };
     return typeServiceMap[this.get('serviceName')] || [];
   }.property('serviceName'),
@@ -163,6 +157,49 @@ App.Service = DS.Model.extend({
   alertsCount: 0
 
 });
+
+/**
+ * Map of all service states
+ *
+ * @type {Object}
+ */
+App.Service.statesMap = {
+  init: 'INIT',
+  installing: 'INSTALLING',
+  install_failed: 'INSTALL_FAILED',
+  stopped: 'INSTALLED',
+  starting: 'STARTING',
+  started: 'STARTED',
+  stopping: 'STOPPING',
+  uninstalling: 'UNINSTALLING',
+  uninstalled: 'UNINSTALLED',
+  wiping_out: 'WIPING_OUT',
+  upgrading: 'UPGRADING',
+  maintenance: 'MAINTENANCE',
+  unknown: 'UNKNOWN'
+};
+
+/**
+ * @type {String[]}
+ */
+App.Service.inProgressStates = [
+  App.Service.statesMap.installing,
+  App.Service.statesMap.starting,
+  App.Service.statesMap.stopping,
+  App.Service.statesMap.uninstalling,
+  App.Service.statesMap.upgrading,
+  App.Service.statesMap.wiping_out
+];
+
+/**
+ * @type {String[]}
+ */
+App.Service.allowUninstallStates = [
+  App.Service.statesMap.init,
+  App.Service.statesMap.install_failed,
+  App.Service.statesMap.stopped,
+  App.Service.statesMap.unknown
+];
 
 App.Service.Health = {
   live: "LIVE",

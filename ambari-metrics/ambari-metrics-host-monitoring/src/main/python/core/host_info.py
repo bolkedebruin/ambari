@@ -57,14 +57,14 @@ class HostInfo():
 
     result = {
       'cpu_num': int(cpu_count),
-      'cpu_user': cpu_times.user*100 if hasattr(cpu_times, 'user') else 0,
-      'cpu_system': cpu_times.system*100 if hasattr(cpu_times, 'system') else 0,
-      'cpu_idle': cpu_times.idle*100 if hasattr(cpu_times, 'idle') else 0,
-      'cpu_nice': cpu_times.nice*100 if hasattr(cpu_times, 'nice') else 0,
-      'cpu_wio': cpu_times.iowait*100 if hasattr(cpu_times, 'iowait') else 0,
-      'cpu_intr': cpu_times.irq*100 if hasattr(cpu_times, 'irq') else 0,
-      'cpu_sintr': cpu_times.softirq*100 if hasattr(cpu_times, 'softirq') else 0,
-      'cpu_steal': cpu_times.steal*100 if hasattr(cpu_times, 'steal') else 0
+      'cpu_user': cpu_times.user if hasattr(cpu_times, 'user') else 0,
+      'cpu_system': cpu_times.system if hasattr(cpu_times, 'system') else 0,
+      'cpu_idle': cpu_times.idle if hasattr(cpu_times, 'idle') else 0,
+      'cpu_nice': cpu_times.nice if hasattr(cpu_times, 'nice') else 0,
+      'cpu_wio': cpu_times.iowait if hasattr(cpu_times, 'iowait') else 0,
+      'cpu_intr': cpu_times.irq if hasattr(cpu_times, 'irq') else 0,
+      'cpu_sintr': cpu_times.softirq if hasattr(cpu_times, 'softirq') else 0,
+      'cpu_steal': cpu_times.steal if hasattr(cpu_times, 'steal') else 0
     }
     if platform.system() != "Windows":
       load_avg = os.getloadavg()
@@ -90,8 +90,12 @@ class HostInfo():
     proc_total = 0
     for proc in proc_stats:
       proc_total += 1
-      if STATUS_RUNNING == proc.status():
-        proc_run += 1
+      try:
+        if STATUS_RUNNING == proc.status():
+          proc_run += 1
+      except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+        #NOP
+        pass
     pass
 
     return {
@@ -109,6 +113,7 @@ class HostInfo():
     swap_stats = psutil.swap_memory()
     disk_usage = self.get_combined_disk_usage()
     mem_total = self.__host_static_info.get('mem_total')
+    swap_total = self.__host_static_info.get('swap_total')
 
     bytes2kilobytes = lambda x: x / 1024
 
@@ -120,6 +125,7 @@ class HostInfo():
       'mem_buffered': bytes2kilobytes(mem_stats.buffers) if hasattr(mem_stats, 'buffers') else 0,
       'mem_cached': bytes2kilobytes(mem_stats.cached) if hasattr(mem_stats, 'cached') else 0,
       'swap_free': bytes2kilobytes(swap_stats.free) if hasattr(swap_stats, 'free') else 0,
+      'swap_total': bytes2kilobytes(swap_total) if swap_total else 0,
       'disk_free' : disk_usage.get("disk_free"),
       # todo: cannot send string
       #'part_max_used' : disk_usage.get("max_part_used")[0],
@@ -287,16 +293,8 @@ class HostInfo():
       return cached_hostname
 
     try:
-      hostname_script = self.__config.get_hostname_script()
-      logger.info('hostname_script: %s' % hostname_script)
-      try:
-        osStat = subprocess.Popen([hostname_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = osStat.communicate()
-        if (0 == osStat.returncode and 0 != len(out.strip())):
-          cached_hostname = out.strip()
-        else:
-          cached_hostname = socket.getfqdn().lower()
-      except:
+      cached_hostname = self.__config.get_hostname_config()
+      if not cached_hostname:
         cached_hostname = socket.getfqdn().lower()
     except:
       cached_hostname = socket.getfqdn().lower()

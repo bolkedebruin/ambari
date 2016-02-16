@@ -19,3 +19,4 @@
 require('controllers/queue');
 require('controllers/queues');
 require('controllers/trace');
+require('controllers/configs');

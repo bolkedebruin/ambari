@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -75,6 +75,10 @@ log4j.appender.EWMA.cleanupInterval=${yarn.ewma.cleanupInterval}
 log4j.appender.EWMA.messageAgeLimitSeconds=${yarn.ewma.messageAgeLimitSeconds}
 log4j.appender.EWMA.maxUniqueMessages=${yarn.ewma.maxUniqueMessages}
     </value>
+    <value-attributes>
+      <type>content</type>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 
 </configuration>

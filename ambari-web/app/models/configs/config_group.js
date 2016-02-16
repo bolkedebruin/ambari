@@ -16,11 +16,6 @@
  * limitations under the License.
  */
 
-/**
- * THIS IS NOT USED FOR NOW
- * FOR CONFIG GROUPS WE ARE USING OLD MODELS AND LOGIC
- */
-
 var App = require('app');
 
 App.ServiceConfigGroup = DS.Model.extend({
@@ -33,7 +28,7 @@ App.ServiceConfigGroup = DS.Model.extend({
 
   /**
    * original id for config group that is get from server
-   * for default groups "-1"
+   * for default groups -1
    * @property {number}
    */
   configGroupId: DS.attr('number'),
@@ -68,9 +63,7 @@ App.ServiceConfigGroup = DS.Model.extend({
    * defines if group is default
    * @type {boolean}
    */
-  isDefault: function() {
-    return this.get('configGroupId') == "-1";
-  }.property('configGroupId'),
+  isDefault: Em.computed.equal('configGroupId', -1),
 
   /**
    * list of group names that shows which config
@@ -96,39 +89,31 @@ App.ServiceConfigGroup = DS.Model.extend({
   childConfigGroups: DS.hasMany('App.ServiceConfigGroup'),
 
   hash: DS.attr('string'),
+
   /**
    * Provides a display friendly name. This includes trimming
    * names to a certain length.
    */
   displayName: function () {
-    var name = this.get('name');
-    if (name && name.length>App.config.CONFIG_GROUP_NAME_MAX_LENGTH) {
-      var middle = Math.floor(App.config.CONFIG_GROUP_NAME_MAX_LENGTH / 2);
-      name = name.substring(0, middle) + "..." + name.substring(name.length-middle);
-    }
-    return name;
+    return App.config.truncateGroupName(this.get('name'));
   }.property('name'),
 
   /**
    *
    */
-  displayNameHosts: function () {
-    return this.get('displayName') + ' (' + this.get('hosts.length') + ')';
-  }.property('displayName', 'hosts.length'),
+  displayNameHosts: Em.computed.format('{0} ({1})', 'displayName', 'hosts.length'),
 
   /**
    * Provides hosts which are available for inclusion in
    * non-default configuration groups.
+   * @type {Array}
    */
   availableHosts: function () {
     if (this.get('isDefault')) return [];
-    var unusedHostsMap = {};
+    var unusedHostsMap = this.get('parentConfigGroup.hosts').toWickMap();
     var availableHosts = [];
     var sharedHosts = this.get('clusterHosts');
     // parentConfigGroup.hosts(hosts from default group) - are available hosts, which don't belong to any group
-    this.get('parentConfigGroup.hosts').forEach(function (hostName) {
-      unusedHostsMap[hostName] = true;
-    });
     sharedHosts.forEach(function (host) {
       if (unusedHostsMap[host.get('id')]) {
         availableHosts.pushObject(Ember.Object.create({
@@ -141,15 +126,19 @@ App.ServiceConfigGroup = DS.Model.extend({
     return availableHosts;
   }.property('isDefault', 'parentConfigGroup', 'childConfigGroups', 'parentConfigGroup.hosts.@each', 'clusterHosts'),
 
-  isAddHostsDisabled: function () {
-    return (this.get('isDefault') || this.get('availableHosts.length') === 0);
-  }.property('availableHosts.length'),
+  /**
+   * @type {boolean}
+   */
+  isAddHostsDisabled: Em.computed.or('isDefault', '!availableHosts.length'),
 
   /**
    * @type {Array}
    */
   properties: DS.attr('array', {defaultValue: []}),
 
+  /**
+   * @type {string}
+   */
   propertiesList: function () {
     var result = '';
 
@@ -165,5 +154,9 @@ App.ServiceConfigGroup = DS.Model.extend({
 App.ServiceConfigGroup.FIXTURES = [];
 
 App.ServiceConfigGroup.getParentConfigGroupId = function(serviceName) {
-  return serviceName + '0';
+  return App.ServiceConfigGroup.groupId(serviceName, 'Default');
+};
+
+App.ServiceConfigGroup.groupId = function(serviceName, groupName) {
+  return serviceName + "_" + groupName;
 };

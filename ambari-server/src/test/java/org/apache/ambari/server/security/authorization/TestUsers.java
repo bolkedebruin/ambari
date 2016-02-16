@@ -99,8 +99,8 @@ public class TestUsers {
 
     // create admin permission
     ResourceTypeEntity resourceTypeEntity = new ResourceTypeEntity();
-    resourceTypeEntity.setId(ResourceTypeEntity.AMBARI_RESOURCE_TYPE);
-    resourceTypeEntity.setName(ResourceTypeEntity.AMBARI_RESOURCE_TYPE_NAME);
+    resourceTypeEntity.setId(ResourceType.AMBARI.getId());
+    resourceTypeEntity.setName(ResourceType.AMBARI.name());
     resourceTypeDAO.create(resourceTypeEntity);
 
     ResourceEntity resourceEntity = new ResourceEntity();
@@ -109,8 +109,8 @@ public class TestUsers {
     resourceDAO.create(resourceEntity);
 
     PermissionEntity adminPermissionEntity = new PermissionEntity();
-    adminPermissionEntity.setId(PermissionEntity.AMBARI_ADMIN_PERMISSION);
-    adminPermissionEntity.setPermissionName(PermissionEntity.AMBARI_ADMIN_PERMISSION_NAME);
+    adminPermissionEntity.setId(PermissionEntity.AMBARI_ADMINISTRATOR_PERMISSION);
+    adminPermissionEntity.setPermissionName(PermissionEntity.AMBARI_ADMINISTRATOR_PERMISSION_NAME);
     adminPermissionEntity.setResourceType(resourceTypeEntity);
     permissionDAO.create(adminPermissionEntity);
   }

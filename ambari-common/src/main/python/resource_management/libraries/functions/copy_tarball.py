@@ -35,6 +35,8 @@ STACK_VERSION_PATTERN = "{{ stack_version }}"
 
 TARBALL_MAP = {
   "HDP": {
+    "slider":      ("/usr/hdp/{0}/slider/lib/slider.tar.gz".format(STACK_VERSION_PATTERN),
+                  "/hdp/apps/{0}/slider/slider.tar.gz".format(STACK_VERSION_PATTERN)),    
     "tez":       ("/usr/hdp/{0}/tez/lib/tez.tar.gz".format(STACK_VERSION_PATTERN),
                   "/hdp/apps/{0}/tez/tez.tar.gz".format(STACK_VERSION_PATTERN)),
 
@@ -51,7 +53,10 @@ TARBALL_MAP = {
                   "/hdp/apps/{0}/sqoop/sqoop.tar.gz".format(STACK_VERSION_PATTERN)),
 
     "mapreduce": ("/usr/hdp/{0}/hadoop/mapreduce.tar.gz".format(STACK_VERSION_PATTERN),
-                  "/hdp/apps/{0}/mapreduce/mapreduce.tar.gz".format(STACK_VERSION_PATTERN))
+                  "/hdp/apps/{0}/mapreduce/mapreduce.tar.gz".format(STACK_VERSION_PATTERN)),
+
+    "spark": ("/usr/hdp/{0}/spark/lib/spark-hdp-assembly.jar".format(STACK_VERSION_PATTERN),
+                  "/hdp/apps/{0}/spark/spark-hdp-assembly.jar".format(STACK_VERSION_PATTERN))
   }
 }
 
@@ -96,7 +101,7 @@ def _get_single_version_from_hdp_select():
   return hdp_version
 
 def copy_to_hdfs(name, user_group, owner, file_mode=0444, custom_source_file=None, custom_dest_file=None, force_execute=False,
-                 use_ru_version_during_ru=True, replace_existing_files=False):
+                 use_upgrading_version_during_uprade=True, replace_existing_files=False, host_sys_prepped=False):
   """
   :param name: Tarball name, e.g., tez, hive, pig, sqoop.
   :param user_group: Group to own the directory.
@@ -105,7 +110,8 @@ def copy_to_hdfs(name, user_group, owner, file_mode=0444, custom_source_file=Non
   :param custom_source_file: Override the source file path
   :param custom_dest_file: Override the destination file path
   :param force_execute: If true, will execute the HDFS commands immediately, otherwise, will defer to the calling function.
-  :param use_ru_version_during_ru: If true, will use the version going to during RU. Otherwise, use the CURRENT (source) version.
+  :param use_upgrading_version_during_uprade: If true, will use the version going to during upgrade. Otherwise, use the CURRENT (source) version.
+  :param host_sys_prepped: If true, tarballs will not be copied as the cluster deployment uses prepped VMs.
   :return: Will return True if successful, otherwise, False.
   """
   import params
@@ -127,17 +133,21 @@ def copy_to_hdfs(name, user_group, owner, file_mode=0444, custom_source_file=Non
   if custom_dest_file is not None:
     dest_file = custom_dest_file
 
+  if host_sys_prepped:
+    Logger.info("Skipping copying {0} to {1} for {2} as its a sys_prepped host.".format(str(source_file), str(dest_file), str(name)))
+    return True
+
   upgrade_direction = default("/commandParams/upgrade_direction", None)
-  is_rolling_upgrade = upgrade_direction is not None
+  is_stack_upgrade = upgrade_direction is not None
   current_version = default("/hostLevelParams/current_version", None)
   Logger.info("Default version is {0}".format(current_version))
-  if is_rolling_upgrade:
-    if use_ru_version_during_ru:
+  if is_stack_upgrade:
+    if use_upgrading_version_during_uprade:
       # This is the version going to. In the case of a downgrade, it is the lower version.
       current_version = default("/commandParams/version", None)
-      Logger.info("Because this is a Rolling Upgrade, will use version {0}".format(current_version))
+      Logger.info("Because this is a Stack Upgrade, will use version {0}".format(current_version))
     else:
-      Logger.info("This is a Rolling Upgrade, but keep the version unchanged.")
+      Logger.info("This is a Stack Upgrade, but keep the version unchanged.")
   else:
     if current_version is None:
       # During normal operation, the first installation of services won't yet know about the version, so must rely
@@ -148,7 +158,7 @@ def copy_to_hdfs(name, user_group, owner, file_mode=0444, custom_source_file=Non
         current_version = hdp_version
 
   if current_version is None:
-    message_suffix = "during rolling %s" % str(upgrade_direction) if is_rolling_upgrade else ""
+    message_suffix = "during rolling %s" % str(upgrade_direction) if is_stack_upgrade else ""
     Logger.warning("Cannot copy {0} tarball because unable to determine current version {1}.".format(name, message_suffix))
     return False
 

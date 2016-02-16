@@ -19,7 +19,10 @@ limitations under the License.
 """
 from resource_management.core.logger import Logger
 
-def setup_ranger_storm(rolling_upgrade = False):
+def setup_ranger_storm(upgrade_type=None):
+  """
+  :param upgrade_type: Upgrade Type such as "rolling" or "nonrolling"
+  """
   import params
 
   if params.has_ranger_admin and params.security_enabled:
@@ -30,8 +33,33 @@ def setup_ranger_storm(rolling_upgrade = False):
       from resource_management.libraries.functions.setup_ranger_plugin import setup_ranger_plugin
     
     hdp_version = None
-    if rolling_upgrade:
+    if upgrade_type is not None:
       hdp_version = params.version
+
+    if params.retryAble:
+      Logger.info("Storm: Setup ranger: command retry enables thus retrying if ranger admin is down !")
+    else:
+      Logger.info("Storm: Setup ranger: command retry not enabled thus skipping if ranger admin is down !")
+
+    if params.xml_configurations_supported and params.enable_ranger_storm and params.xa_audit_hdfs_is_enabled:
+      if params.has_namenode:
+        params.HdfsResource("/ranger/audit",
+                           type="directory",
+                           action="create_on_execute",
+                           owner=params.hdfs_user,
+                           group=params.hdfs_user,
+                           mode=0755,
+                           recursive_chmod=True
+        )
+        params.HdfsResource("/ranger/audit/storm",
+                           type="directory",
+                           action="create_on_execute",
+                           owner=params.storm_user,
+                           group=params.storm_user,
+                           mode=0700,
+                           recursive_chmod=True
+        )
+        params.HdfsResource(None, action="execute")
 
     setup_ranger_plugin('storm-nimbus', 'storm',
                         params.downloaded_custom_connector, params.driver_curl_source,
@@ -47,6 +75,6 @@ def setup_ranger_storm(rolling_upgrade = False):
                         component_list=['storm-client', 'storm-nimbus'], audit_db_is_enabled=params.xa_audit_db_is_enabled,
                         credential_file=params.credential_file, xa_audit_db_password=params.xa_audit_db_password, 
                         ssl_truststore_password=params.ssl_truststore_password, ssl_keystore_password=params.ssl_keystore_password,
-                        hdp_version_override = hdp_version)
+                        hdp_version_override = hdp_version, skip_if_rangeradmin_down= not params.retryAble)
   else:
     Logger.info('Ranger admin not installed')

@@ -68,9 +68,7 @@ App.upgradeWizardView = Em.View.extend({
    * when downgrade already started
    * @type {boolean}
    */
-  isDowngradeAvailable: function () {
-    return !this.get('controller.isDowngrade');
-  }.property('controller.isDowngrade'),
+  isDowngradeAvailable: Em.computed.and('!controller.isDowngrade', 'controller.downgradeAllowed'),
 
   /**
    * progress value is rounded to floor
@@ -102,9 +100,7 @@ App.upgradeWizardView = Em.View.extend({
    * if upgrade group is in progress it should have currently running item
    * @type {object|undefined}
    */
-  runningItem: function () {
-    return this.get('activeGroup.upgradeItems') && this.get('activeGroup.upgradeItems').findProperty('status', 'IN_PROGRESS');
-  }.property('activeGroup.upgradeItems.@each.status'),
+  runningItem: Em.computed.findBy('activeGroup.upgradeItems', 'status', 'IN_PROGRESS'),
 
   /**
    * if upgrade group is failed it should have failed item
@@ -155,27 +151,55 @@ App.upgradeWizardView = Em.View.extend({
   isManualDone: false,
 
   /**
+   * if manualItem has been switched then isManualDone flag should be reset
+   */
+  resetManualDone: function() {
+    this.set('isManualDone', false);
+  }.observes('manualItem'),
+
+  /**
    * @type {boolean}
    */
-  isManualProceedDisabled: function () {
-    return !this.get('isManualDone') || this.get('controller.requestInProgress');
-  }.property('isManualDone'),
+  isManualProceedDisabled: Em.computed.or('!isManualDone', 'controller.requestInProgress'),
 
   /**
    * if upgrade group is manual it should have manual item
    * @type {object|undefined}
    */
-  manualItem: function () {
-    return this.get('activeGroup.upgradeItems') && this.get('activeGroup.upgradeItems').findProperty('status', 'HOLDING');
-  }.property('activeGroup.upgradeItems.@each.status'),
+  manualItem: Em.computed.findBy('activeGroup.upgradeItems', 'status', 'HOLDING'),
 
   /**
-   * indicate whether the step is Finalize
+   * plain manual item
+   * @type {object|undefined}
+   */
+  plainManualItem: function () {
+    return this.get('manualItem') && ![
+      this.get('controller.finalizeContext'),
+      this.get("controller.slaveFailuresContext"),
+      this.get("controller.serviceCheckFailuresContext")
+    ].contains(this.get('manualItem.context'));
+  }.property('manualItem.context'),
+
+  /**
+   * manualItem: indicate whether the step is "Slave component failures", a dialog with instructions will show up for manual steps
    * @type {boolean}
    */
-  isFinalizeItem: function () {
-    return this.get('manualItem.context') === this.get('controller.finalizeContext');
-  }.property('manualItem.context'),
+  isSlaveComponentFailuresItem: function () {
+    var item = this.get('activeGroup.upgradeItems') && this.get('activeGroup.upgradeItems').findProperty('context', this.get("controller.slaveFailuresContext"));
+    return item && ['HOLDING', 'HOLDING_FAILED'].contains(item.get('status'));
+  }.property('activeGroup.upgradeItems.@each.status', 'activeGroup.upgradeItems.@each.context'),
+
+  /**
+   * manualItem: indicate whether the step is "Service check failures", a dialog with instructions will show up for manual steps
+   * @type {boolean}
+   */
+  isServiceCheckFailuresItem: Em.computed.equalProperties('manualItem.context', 'controller.serviceCheckFailuresContext'),
+
+  /**
+   * manualItem: indicate whether the step is Finalize
+   * @type {boolean}
+   */
+  isFinalizeItem: Em.computed.equalProperties('manualItem.context', 'controller.finalizeContext'),
 
   /**
    * label of Upgrade status
@@ -193,7 +217,7 @@ App.upgradeWizardView = Em.View.extend({
         labelKey = 'admin.stackUpgrade.state.completed';
         break;
       case 'ABORTED':
-        labelKey = 'admin.stackUpgrade.state.aborted';
+        labelKey = 'admin.stackUpgrade.state.paused';
         break;
       case 'TIMEDOUT':
       case 'FAILED':
@@ -282,6 +306,39 @@ App.upgradeWizardView = Em.View.extend({
   },
 
   /**
+   * get slave-component failure hosts
+   */
+  getSlaveComponentItem: function() {
+    var controller = this.get('controller');
+    if (this.get('isSlaveComponentFailuresItem')) {
+      if (!this.get('controller.areSlaveComponentFailuresHostsLoaded')) {
+        var item = this.get('activeGroup.upgradeItems') && this.get('activeGroup.upgradeItems').findProperty('context', this.get("controller.slaveFailuresContext"));
+        controller.getUpgradeItem(item, 'getSlaveComponentItemSuccessCallback').complete(function () {
+          controller.set('areSlaveComponentFailuresHostsLoaded', true);
+        });
+      }
+    } else {
+      controller.set('areSlaveComponentFailuresHostsLoaded', false);
+    }
+  }.observes('isSlaveComponentFailuresItem'),
+
+  /**
+   * get service names of Service Check failures
+   */
+  getServiceCheckItem: function() {
+    var controller = this.get('controller');
+    if (this.get('isServiceCheckFailuresItem')) {
+      if (!this.get('controller.areServiceCheckFailuresServicenamesLoaded')) {
+        controller.getUpgradeItem(this.get('manualItem'), 'getServiceCheckItemSuccessCallback').complete(function () {
+            controller.set('areServiceCheckFailuresServicenamesLoaded', true);
+          });
+      }
+    } else {
+      controller.set('areServiceCheckFailuresServicenamesLoaded', false);
+    }
+  }.observes('isServiceCheckFailuresItem'),
+
+  /**
    * start polling upgrade data
    */
   willInsertElement: function () {
@@ -353,5 +410,28 @@ App.upgradeWizardView = Em.View.extend({
   complete: function (event) {
     this.get('controller').setUpgradeItemStatus(event.context, 'COMPLETED');
     this.set('isManualDone', false);
+  },
+
+  pauseUpgrade: function() {
+    this.get('controller').suspendUpgrade();
+    this.get('parentView').closeWizard();
+  },
+
+  /**
+   * @type {string}
+   */
+  failedHostsMessage: function() {
+    var count = this.get('controller.slaveComponentStructuredInfo.hosts.length') || 0;
+    return Em.I18n.t('admin.stackUpgrade.failedHosts.showHosts').format(count);
+  }.property('controller.slaveComponentStructuredInfo.hosts'),
+
+  showFailedHosts: function() {
+    return App.ModalPopup.show({
+      header: Em.I18n.t('admin.stackUpgrade.failedHosts.header'),
+      bodyClass: App.FailedHostsPopupBodyView,
+      secondary: null,
+      primary: Em.I18n.t('common.close'),
+      content: this.get('controller.slaveComponentStructuredInfo')
+    });
   }
 });

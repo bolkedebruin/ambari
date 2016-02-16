@@ -20,7 +20,7 @@
   {{#if isLoaded}}
     <div class="container-fluid">
       <div class="row-fluid">
-        <div class="span2 legend-column">
+        <div class="span2 legend-column background-text">
 
           {{view view.dropdownView}}
 
@@ -47,11 +47,11 @@
             {{view activeWidget.viewClass contentBinding="activeWidget" racksBinding = "racks" idBinding="activeWidget.id"}}
           </div>
         {{else}}
-          <div class="spinner"></div>
+          {{view App.SpinnerView}}
         {{/if}}
       </div>
     </div>
   {{else}}
-    <div class="spinner"></div>
+    {{view App.SpinnerView}}
   {{/if}}
 </div>

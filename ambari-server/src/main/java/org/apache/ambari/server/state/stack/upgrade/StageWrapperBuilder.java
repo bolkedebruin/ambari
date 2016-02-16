@@ -17,36 +17,161 @@
  */
 package org.apache.ambari.server.state.stack.upgrade;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.serveraction.upgrades.AutoSkipFailedSummaryAction;
 import org.apache.ambari.server.stack.HostsType;
 import org.apache.ambari.server.state.UpgradeContext;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 
 /**
- * Defines how to build stages.
+ * Defines how to build stages for an Upgrade or Downgrade.
  */
 public abstract class StageWrapperBuilder {
 
   /**
+   * The message for the task which checks for skipped failures.
+   */
+  private static final String AUTO_SKIPPED_TASK_SUMMARY = "Pauses the upgrade if there were failed steps that were automatically skipped.";
+
+  /**
+   * The upgrade/downgrade grouping that the builder is for.
+   */
+  protected final Grouping m_grouping;
+
+  /**
+   * Constructor.
+   *
+   * @param grouping
+   *          the upgrade/downgrade grouping (not {@code null}).
+   */
+  protected StageWrapperBuilder(Grouping grouping) {
+    m_grouping = grouping;
+  }
+
+  /**
    * Adds a processing component that will be built into stage wrappers.
    *
-   * @param ctx         the upgrade context
-   * @param hostsType   the hosts, along with their type
-   * @param service     the service name
-   * @param clientOnly  whether the service is client only, no service checks
-   * @param pc          the ProcessingComponent derived from the upgrade pack
+   * @param upgradeContext
+   *          the upgrade context
+   * @param hostsType
+   *          the hosts, along with their type
+   * @param service
+   *          the service name
+   * @param clientOnly
+   *          whether the service is client only, no service checks
+   * @param pc
+   *          the ProcessingComponent derived from the upgrade pack
+   * @param params
+   *          additional parameters
    */
-  public abstract void add(UpgradeContext ctx, HostsType hostsType, String service,
-      boolean clientOnly, ProcessingComponent pc);
+  public abstract void add(UpgradeContext upgradeContext, HostsType hostsType, String service,
+      boolean clientOnly, ProcessingComponent pc, Map<String, String> params);
+
+  /**
+   * Builds the stage wrappers, including any pre- and post-procesing that needs
+   * to be performed.
+   *
+   * @param upgradeContext
+   *          the upgrade context (not {@code null}).
+   * @return a list of stages, never {@code null}
+   */
+  public final List<StageWrapper> build(UpgradeContext upgradeContext) {
+    List<StageWrapper> stageWrappers = beforeBuild(upgradeContext);
+    stageWrappers = build(upgradeContext, stageWrappers);
+    stageWrappers = afterBuild(upgradeContext, stageWrappers);
+    return stageWrappers;
+  }
+
+  /**
+   * Performs any pre-processing that needs to be performed on the list of stage
+   * wrappers.
+   *
+   * @param upgradeContext
+   *          the upgrade context (not {@code null}).
+   * @return the initial list of stage wrappers, or an empty list (never
+   *         {@code null}).
+   */
+  protected List<StageWrapper> beforeBuild(UpgradeContext upgradeContext) {
+    List<StageWrapper> stageWrappers = new ArrayList<>(100);
+    return stageWrappers;
+  }
 
   /**
    * Builds the stage wrappers.
-   * @param ctx the upgrade context
-   * @return a list of stages, never {@code null}
+   *
+   * @param upgradeContext
+   *          the upgrade context (not {@code null}).
+   * @param stageWrappers
+   *          the list of stage wrappers created by
+   *          {@link #beforeBuild(UpgradeContext)}.
+   * @return the stage wrapper list, (never {@code null})
    */
-  public abstract List<StageWrapper> build(UpgradeContext ctx);
+  public abstract List<StageWrapper> build(UpgradeContext upgradeContext,
+      List<StageWrapper> stageWrappers);
+
+  /**
+   * Performs any post-processing that needs to be performed on the list of
+   * stage wrappers.
+   *
+   * @param upgradeContext
+   *          the upgrade context (not {@code null}).
+   * @param stageWrappers
+   *          the list of stage wrappers created by
+   *          {@link #build(UpgradeContext, List)}.
+   * @return the post-processed list of stage wrappers (never {@code null})
+   */
+  protected List<StageWrapper> afterBuild(UpgradeContext upgradeContext,
+      List<StageWrapper> stageWrappers) {
+
+    if (stageWrappers.isEmpty()) {
+      return stageWrappers;
+    }
+
+    // we only want to insert the auto skip summary if the group is skippable
+    // and the upgrade context says to auto skip failures
+    final boolean autoSkipFailures;
+    if (m_grouping instanceof ServiceCheckGrouping) {
+      autoSkipFailures = upgradeContext.isServiceCheckFailureAutoSkipped();
+    } else {
+      autoSkipFailures = upgradeContext.isComponentFailureAutoSkipped();
+    }
+
+    if (m_grouping.supportsAutoSkipOnFailure && m_grouping.skippable && autoSkipFailures) {
+      ServerActionTask skippedFailedCheck = new ServerActionTask();
+      skippedFailedCheck.implClass = AutoSkipFailedSummaryAction.class.getName();
+      skippedFailedCheck.summary = AUTO_SKIPPED_TASK_SUMMARY;
+
+      TaskWrapper skippedFailedTaskWrapper = new TaskWrapper(null, null,
+          Collections.<String> emptySet(), skippedFailedCheck);
+
+      StageWrapper skippedFailedStageWrapper = new StageWrapper(
+          StageWrapper.Type.SERVER_SIDE_ACTION, "Verifying Skipped Failures",
+          skippedFailedTaskWrapper);
+
+      stageWrappers.add(skippedFailedStageWrapper);
+    }
+
+    return stageWrappers;
+  }
+
+  /**
+   * Consistently formats a string.
+   * @param prefix
+   * @param component
+   * @param batchNum
+   * @param totalBatches
+   * @return the prepared string
+   */
+  protected String getStageText(String prefix, String component, Set<String> hosts, int batchNum, int totalBatches) {
+    String stageText = getStageText(prefix, component, hosts);
+    String batchText = 1 == totalBatches? "" : String.format(" (Batch %s of %s)", batchNum, totalBatches);
+    return stageText + batchText;
+  }
 
   /**
    * Consistently formats a string.
@@ -73,9 +198,14 @@ public abstract class StageWrapperBuilder {
    * @param forUpgrade  {@code true} if resolving for an upgrade, {@code false} for downgrade
    * @param preTasks    {@code true} if loading pre-upgrade or pre-downgrade
    * @param pc          the processing component holding task definitions
-   * @return
+   * @return A collection, potentially empty, of the tasks to run, which may contain either
+   * pre or post tasks if they exist, and the order depends on whether it's an upgrade or downgrade.
    */
   protected List<Task> resolveTasks(boolean forUpgrade, boolean preTasks, ProcessingComponent pc) {
+    if (null == pc) {
+      return Collections.emptyList();
+    }
+
     if (forUpgrade) {
       return preTasks ? pc.preTasks : pc.postTasks;
     } else {
@@ -84,6 +214,4 @@ public abstract class StageWrapperBuilder {
         (null == pc.postDowngradeTasks ? pc.postTasks : pc.postDowngradeTasks);
     }
   }
-
-
 }

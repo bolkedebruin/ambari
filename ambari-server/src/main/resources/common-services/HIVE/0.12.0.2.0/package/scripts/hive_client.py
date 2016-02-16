@@ -28,7 +28,7 @@ from ambari_commons import OSConst
 class HiveClient(Script):
   def install(self, env):
     import params
-    self.install_packages(env, exclude_packages=params.hive_exclude_packages)
+    self.install_packages(env)
     self.configure(env)
 
   def status(self, env):
@@ -50,7 +50,9 @@ class HiveClientDefault(HiveClient):
   def get_stack_to_component(self):
     return {"HDP": "hadoop-client"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
+    Logger.info("Executing Hive client Stack Upgrade pre-restart")
+
     import params
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:

@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <!-- flume-env.ps1 -->
   <property>
     <name>content</name>
@@ -53,5 +53,8 @@
       # $HIVE_HOME=
       # $HCAT_HOME=
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 </configuration>

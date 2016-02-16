@@ -21,6 +21,7 @@ Ambari Agent
 """
 import re
 import os
+import time
 from resource_management.core.environment import Environment
 from resource_management.core.base import Fail
 from resource_management.core.resources.system import Execute
@@ -37,7 +38,7 @@ from resource_management.libraries.functions import namenode_ha_utils
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 import subprocess
 
-JSON_PATH = '/var/lib/ambari-agent/data/hdfs_resources.json'
+JSON_PATH = '/var/lib/ambari-agent/tmp/hdfs_resources_{timestamp}.json'
 JAR_PATH = '/var/lib/ambari-agent/lib/fast-hdfs-resource.jar'
 
 RESOURCE_TO_JSON_FIELDS = {
@@ -50,7 +51,8 @@ RESOURCE_TO_JSON_FIELDS = {
   'mode': 'mode',
   'recursive_chown': 'recursiveChown',
   'recursive_chmod': 'recursiveChmod',
-  'change_permissions_for_parents': 'changePermissionforParents'
+  'change_permissions_for_parents': 'changePermissionforParents',
+  'dfs_type': 'dfs_type'
 }
 
 class HdfsResourceJar:
@@ -100,13 +102,14 @@ class HdfsResourceJar:
     logoutput = main_resource.resource.logoutput
     principal_name = main_resource.resource.principal_name
     jar_path=JAR_PATH
-    json_path=JSON_PATH
+    timestamp = time.time()
+    json_path=format(JSON_PATH)
 
     if security_enabled:
       main_resource.kinit()
 
     # Write json file to disk
-    File(JSON_PATH,
+    File(json_path,
          owner = user,
          content = json.dumps(env.config['hdfs_files'])
     )
@@ -127,8 +130,14 @@ class WebHDFSUtil:
                                                                           security_enabled, run_user)
     http_nn_address = namenode_ha_utils.get_property_for_active_namenode(hdfs_site, 'dfs.namenode.http-address',
                                                                          security_enabled, run_user)
-    self.is_https_enabled = hdfs_site['dfs.https.enable'] if not is_empty(hdfs_site['dfs.https.enable']) else False
-    
+
+    # check for dfs.http.policy and after that for deprecated(for newer stacks) dfs.https.enable
+    self.is_https_enabled = False
+    if not is_empty(hdfs_site['dfs.http.policy']):
+      self.is_https_enabled = hdfs_site['dfs.http.policy'].lower() == "https_only"
+    elif not is_empty(hdfs_site['dfs.https.enable']):
+      self.is_https_enabled = hdfs_site['dfs.https.enable']
+
     address = https_nn_address if self.is_https_enabled else http_nn_address
     protocol = "https" if self.is_https_enabled else "http"
     
@@ -209,6 +218,19 @@ class HdfsResourceWebHDFS:
   Since it's not available on non-hdfs FS and also can be disabled in scope of HDFS. 
   We should still have the other implementations for such a cases.
   """
+  
+  """
+  If we have more than this count of files to recursively chmod/chown
+  webhdfs won't be used, but 'hadoop fs -chmod (or chown) -R ..' As it can really slow.
+  (in one second ~17 files can be chmoded)
+  """
+  MAX_FILES_FOR_RECURSIVE_ACTION_VIA_WEBHDFS = 1000
+  """
+  This is used to avoid a lot of liststatus commands, which can take some time if directory
+  contains a lot of files. LISTSTATUS of directory with 1000 files takes ~0.5 seconds.
+  """
+  MAX_DIRECTORIES_FOR_RECURSIVE_ACTION_VIA_WEBHDFS = 250
+  
   def action_execute(self, main_resource):
     pass
   
@@ -334,7 +356,13 @@ class HdfsResourceWebHDFS:
     results = []
     
     if self.main_resource.resource.recursive_chown:
-      self._fill_directories_list(self.main_resource.resource.target, results)
+      content_summary = self.util.run_command(self.main_resource.resource.target, 'GETCONTENTSUMMARY', method='GET', assertable_result=False)
+      
+      if content_summary['ContentSummary']['fileCount'] <= HdfsResourceWebHDFS.MAX_FILES_FOR_RECURSIVE_ACTION_VIA_WEBHDFS and content_summary['ContentSummary']['directoryCount'] <= HdfsResourceWebHDFS.MAX_DIRECTORIES_FOR_RECURSIVE_ACTION_VIA_WEBHDFS:
+        self._fill_directories_list(self.main_resource.resource.target, results)
+      else: # avoid chmowning a lot of files and listing a lot dirs via webhdfs which can take a lot of time.
+        shell.checked_call(["hadoop", "fs", "-chown", "-R", format("{owner}:{group}"), self.main_resource.resource.target], user=self.main_resource.resource.user)
+
     if self.main_resource.resource.change_permissions_for_parents:
       self._fill_in_parent_directories(self.main_resource.resource.target, results)
       
@@ -351,7 +379,13 @@ class HdfsResourceWebHDFS:
     results = []
     
     if self.main_resource.resource.recursive_chmod:
-      self._fill_directories_list(self.main_resource.resource.target, results)
+      content_summary = self.util.run_command(self.main_resource.resource.target, 'GETCONTENTSUMMARY', method='GET', assertable_result=False)
+      
+      if content_summary['ContentSummary']['fileCount'] <= HdfsResourceWebHDFS.MAX_FILES_FOR_RECURSIVE_ACTION_VIA_WEBHDFS and content_summary['ContentSummary']['directoryCount'] <= HdfsResourceWebHDFS.MAX_DIRECTORIES_FOR_RECURSIVE_ACTION_VIA_WEBHDFS:
+        self._fill_directories_list(self.main_resource.resource.target, results)
+      else: # avoid chmoding a lot of files and listing a lot dirs via webhdfs which can take a lot of time.
+        shell.checked_call(["hadoop", "fs", "-chmod", "-R", self.mode, self.main_resource.resource.target], user=self.main_resource.resource.user)
+      
     if self.main_resource.resource.change_permissions_for_parents:
       self._fill_in_parent_directories(self.main_resource.resource.target, results)
       
@@ -381,9 +415,10 @@ class HdfsResourceWebHDFS:
 class HdfsResourceProvider(Provider):
   def __init__(self, resource):
     super(HdfsResourceProvider,self).__init__(resource)
-    self.assert_parameter_is_set('hdfs_site')
-    
-    self.webhdfs_enabled = self.resource.hdfs_site['dfs.webhdfs.enabled']
+    self.fsType = getattr(resource, 'dfs_type')
+    if self.fsType != 'HCFS':
+      self.assert_parameter_is_set('hdfs_site')
+      self.webhdfs_enabled = self.resource.hdfs_site['dfs.webhdfs.enabled']
     
   def action_delayed(self, action_name):
     self.assert_parameter_is_set('type')
@@ -400,7 +435,9 @@ class HdfsResourceProvider(Provider):
     self.get_hdfs_resource_executor().action_execute(self)
 
   def get_hdfs_resource_executor(self):
-    if WebHDFSUtil.is_webhdfs_available(self.webhdfs_enabled, self.resource.default_fs):
+    if self.fsType == 'HCFS':
+      return HdfsResourceJar()
+    elif WebHDFSUtil.is_webhdfs_available(self.webhdfs_enabled, self.resource.default_fs):
       return HdfsResourceWebHDFS()
     else:
       return HdfsResourceJar()

@@ -18,16 +18,8 @@
 
 package org.apache.ambari.server.topology;
 
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.ClusterRequest;
 import org.apache.ambari.server.controller.ConfigGroupRequest;
@@ -54,10 +46,18 @@ import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
 import org.easymock.Capture;
-import org.easymock.EasyMockSupport;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
+import java.lang.reflect.Field;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import static org.easymock.EasyMock.capture;
 import static org.easymock.EasyMock.createMock;
@@ -70,6 +70,7 @@ import static org.easymock.EasyMock.reset;
 import static org.easymock.EasyMock.verify;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 /**
  * AmbariContext unit tests
@@ -79,6 +80,7 @@ public class AmbariContextTest {
 
   private static final String BP_NAME = "testBP";
   private static final String CLUSTER_NAME = "testCluster";
+  private static final long CLUSTER_ID = 1L;
   private static final String STACK_NAME = "testStack";
   private static final String STACK_VERSION = "testVersion";
   private static final String HOST_GROUP_1 = "group1";
@@ -88,7 +90,7 @@ public class AmbariContextTest {
   StackId stackId = new StackId(STACK_NAME, STACK_VERSION);
 
   private static final AmbariContext context = new AmbariContext();
-  private static final AmbariManagementController controller = createStrictMock(AmbariManagementController.class);
+  private static final AmbariManagementController controller = createNiceMock(AmbariManagementController.class);
   private static final ClusterController clusterController = createStrictMock(ClusterController.class);
   private static final HostResourceProvider hostResourceProvider = createStrictMock(HostResourceProvider.class);
   private static final ServiceResourceProvider serviceResourceProvider = createStrictMock(ServiceResourceProvider.class);
@@ -98,8 +100,8 @@ public class AmbariContextTest {
   private static final ClusterTopology topology = createNiceMock(ClusterTopology.class);
   private static final Blueprint blueprint = createNiceMock(Blueprint.class);
   private static final Stack stack = createNiceMock(Stack.class);
-  private static final Clusters clusters = createStrictMock(Clusters.class);
-  private static final Cluster cluster = createStrictMock(Cluster.class);
+  private static final Clusters clusters = createNiceMock(Clusters.class);
+  private static final Cluster cluster = createNiceMock(Cluster.class);
   private static final HostGroupInfo group1Info = createNiceMock(HostGroupInfo.class);
   private static final ConfigHelper configHelper = createNiceMock(ConfigHelper.class);
   private static final ConfigGroup configGroup1 = createMock(ConfigGroup.class);
@@ -171,7 +173,7 @@ public class AmbariContextTest {
     blueprintServices.add("service1");
     blueprintServices.add("service2");
 
-    expect(topology.getClusterName()).andReturn(CLUSTER_NAME).anyTimes();
+    expect(topology.getClusterId()).andReturn(CLUSTER_ID).anyTimes();
     expect(topology.getBlueprint()).andReturn(blueprint).anyTimes();
     expect(topology.getHostGroupInfo()).andReturn(Collections.singletonMap(HOST_GROUP_1, group1Info)).anyTimes();
 
@@ -193,8 +195,12 @@ public class AmbariContextTest {
     expect(controller.getConfigHelper()).andReturn(configHelper).anyTimes();
 
     expect(clusters.getCluster(CLUSTER_NAME)).andReturn(cluster).anyTimes();
+    expect(clusters.getClusterById(CLUSTER_ID)).andReturn(cluster).anyTimes();
     expect(clusters.getHost(HOST1)).andReturn(host1).anyTimes();
     expect(clusters.getHost(HOST2)).andReturn(host2).anyTimes();
+
+    expect(cluster.getClusterId()).andReturn(CLUSTER_ID).anyTimes();
+    expect(cluster.getClusterName()).andReturn(CLUSTER_NAME).anyTimes();
 
     expect(host1.getHostId()).andReturn(1L).anyTimes();
     expect(host2.getHostId()).andReturn(2L).anyTimes();
@@ -229,8 +235,6 @@ public class AmbariContextTest {
     Capture<ClusterRequest> clusterRequestCapture = new Capture<ClusterRequest>();
     controller.createCluster(capture(clusterRequestCapture));
     expectLastCall().once();
-    expect(controller.getClusters()).andReturn(clusters).anyTimes();
-    expect(clusters.getCluster(CLUSTER_NAME)).andReturn(cluster).anyTimes();
     expect(cluster.getServices()).andReturn(clusterServices).anyTimes();
 
     Capture<Set<ServiceRequest>> serviceRequestCapture = new Capture<Set<ServiceRequest>>();
@@ -254,7 +258,7 @@ public class AmbariContextTest {
     replayAll();
 
     // test
-    context.createAmbariResources(topology);
+    context.createAmbariResources(topology, CLUSTER_NAME, null);
 
     // assertions
     ClusterRequest clusterRequest = clusterRequestCapture.getValue();
@@ -424,6 +428,110 @@ public class AmbariContextTest {
     // verify that wait returns successfully with non-empty list
     // with all configuration types tagged as "TOPOLOGY_RESOLVED"
     context.waitForConfigurationResolution(CLUSTER_NAME, testUpdatedConfigTypes);
+  }
+
+  @Test
+  public void testIsTopologyResolved_True() throws Exception {
+
+    // Given
+    DesiredConfig testHdfsDesiredConfig1 = new DesiredConfig();
+    testHdfsDesiredConfig1.setTag(TopologyManager.INITIAL_CONFIG_TAG);
+    testHdfsDesiredConfig1.setVersion(1L);
+
+    DesiredConfig testHdfsDesiredConfig2 = new DesiredConfig();
+    testHdfsDesiredConfig2.setTag(TopologyManager.TOPOLOGY_RESOLVED_TAG);
+    testHdfsDesiredConfig2.setVersion(2L);
+
+    DesiredConfig testHdfsDesiredConfig3 = new DesiredConfig();
+    testHdfsDesiredConfig3.setTag("ver123");
+    testHdfsDesiredConfig3.setVersion(3L);
+
+    DesiredConfig testCoreSiteDesiredConfig = new DesiredConfig();
+    testCoreSiteDesiredConfig.setTag("ver123");
+    testCoreSiteDesiredConfig.setVersion(1L);
+
+
+    Map<String, Set<DesiredConfig>> testDesiredConfigs = ImmutableMap.<String, Set<DesiredConfig>>builder()
+      .put("hdfs-site", ImmutableSet.of(testHdfsDesiredConfig2, testHdfsDesiredConfig3, testHdfsDesiredConfig1))
+      .put("core-site", ImmutableSet.of(testCoreSiteDesiredConfig))
+      .build();
+
+    expect(cluster.getAllDesiredConfigVersions()).andReturn(testDesiredConfigs).atLeastOnce();
+
+    replayAll();
+
+    // When
+    boolean topologyResolved = context.isTopologyResolved(CLUSTER_ID);
+
+    // Then
+    assertTrue(topologyResolved);
+  }
+
+  @Test
+  public void testIsTopologyResolved_WrongOrder_False() throws Exception {
+
+    // Given
+    DesiredConfig testHdfsDesiredConfig1 = new DesiredConfig();
+    testHdfsDesiredConfig1.setTag(TopologyManager.INITIAL_CONFIG_TAG);
+    testHdfsDesiredConfig1.setVersion(2L);
+
+    DesiredConfig testHdfsDesiredConfig2 = new DesiredConfig();
+    testHdfsDesiredConfig2.setTag(TopologyManager.TOPOLOGY_RESOLVED_TAG);
+    testHdfsDesiredConfig2.setVersion(1L);
+
+    DesiredConfig testHdfsDesiredConfig3 = new DesiredConfig();
+    testHdfsDesiredConfig3.setTag("ver123");
+    testHdfsDesiredConfig3.setVersion(3L);
+
+    DesiredConfig testCoreSiteDesiredConfig = new DesiredConfig();
+    testCoreSiteDesiredConfig.setTag("ver123");
+    testCoreSiteDesiredConfig.setVersion(1L);
+
+
+    Map<String, Set<DesiredConfig>> testDesiredConfigs = ImmutableMap.<String, Set<DesiredConfig>>builder()
+      .put("hdfs-site", ImmutableSet.of(testHdfsDesiredConfig2, testHdfsDesiredConfig3, testHdfsDesiredConfig1))
+      .put("core-site", ImmutableSet.of(testCoreSiteDesiredConfig))
+      .build();
+
+    expect(cluster.getAllDesiredConfigVersions()).andReturn(testDesiredConfigs).atLeastOnce();
+
+    replayAll();
+
+    // When
+    boolean topologyResolved = context.isTopologyResolved(CLUSTER_ID);
+
+    // Then due to INITIAL -> TOPOLOGY_RESOLVED not honored
+    assertFalse(topologyResolved);
+  }
+
+  @Test
+  public void testIsTopologyResolved_False() throws Exception {
+
+    // Given
+    DesiredConfig testHdfsDesiredConfig1 = new DesiredConfig();
+    testHdfsDesiredConfig1.setTag("ver1222");
+    testHdfsDesiredConfig1.setVersion(1L);
+
+
+    DesiredConfig testCoreSiteDesiredConfig = new DesiredConfig();
+    testCoreSiteDesiredConfig.setTag("ver123");
+    testCoreSiteDesiredConfig.setVersion(1L);
+
+
+    Map<String, Set<DesiredConfig>> testDesiredConfigs = ImmutableMap.<String, Set<DesiredConfig>>builder()
+      .put("hdfs-site", ImmutableSet.of(testHdfsDesiredConfig1))
+      .put("core-site", ImmutableSet.of(testCoreSiteDesiredConfig))
+      .build();
+
+    expect(cluster.getAllDesiredConfigVersions()).andReturn(testDesiredConfigs).atLeastOnce();
+
+    replayAll();
+
+    // When
+    boolean topologyResolved = context.isTopologyResolved(CLUSTER_ID);
+
+    // Then
+    assertFalse(topologyResolved);
   }
 
 

@@ -19,13 +19,14 @@
 var App = require('app');
 var filters = require('views/common/filter_view');
 
-App.MainDashboardWidgetsView = Em.View.extend(App.UserPref, App.LocalStorage, {
+App.MainDashboardWidgetsView = Em.View.extend(App.UserPref, App.LocalStorage, App.TimeRangeMixin, {
 
   name: 'mainDashboardWidgetsView',
 
   templateName: require('templates/main/dashboard/widgets'),
 
   didInsertElement: function () {
+    this._super();
     this.setWidgetsDataModel();
     this.setInitPrefObject();
     this.setOnLoadVisibleWidgets();
@@ -50,6 +51,8 @@ App.MainDashboardWidgetsView = Em.View.extend(App.UserPref, App.LocalStorage, {
    * @type {boolean}
    */
   isMoving: false,
+
+  timeRangeClassName: 'pull-left',
 
   /**
    * Make widgets' list sortable on New Dashboard style
@@ -471,13 +474,10 @@ App.MainDashboardWidgetsView = Em.View.extend(App.UserPref, App.LocalStorage, {
    * Key-name to store data in Local Storage and Persist
    * @type {string}
    */
-  persistKey: function () {
-    return 'user-pref-' + App.router.get('loginName') + '-dashboard';
-  }.property(),
+  persistKey: Em.computed.format('user-pref-{0}-dashboard', 'App.router.loginName'),
 
   getUserPrefSuccessCallback: function (response, request, data) {
     if (response) {
-      console.log('Got persist value from server with key ' + data.key + '. Value is: ' + response);
       var initPrefObject = this.get('initPrefObject');
       initPrefObject.get('threshold');
       for(var k in response.threshold) {
@@ -492,10 +492,6 @@ App.MainDashboardWidgetsView = Em.View.extend(App.UserPref, App.LocalStorage, {
   },
 
   getUserPrefErrorCallback: function (request) {
-    // this user is first time login
-    if (request.status == 404) {
-      console.log('Persist did NOT find the key');
-    }
   },
 
   /**
@@ -508,16 +504,14 @@ App.MainDashboardWidgetsView = Em.View.extend(App.UserPref, App.LocalStorage, {
         self.postUserPref(self.get('persistKey'), self.get('initPrefObject'));
         self.setDBProperty(self.get('persistKey'), self.get('initPrefObject'));
       }
+      self.setProperties({
+        currentTimeRangeIndex: 0,
+        customStartTime: null,
+        customEndTime: null
+      });
       self.translateToReal(self.get('initPrefObject'));
     });
   },
-
-  /**
-   * @type {string}
-   */
-  gangliaUrl: function () {
-    return App.router.get('clusterController.gangliaUrl') + "/?r=hour&cs=&ce=&m=&s=by+name&c=HDPSlaves&tab=m&vn=";
-  }.property('App.router.clusterController.gangliaUrl'),
 
   showAlertsPopup: Em.K
 

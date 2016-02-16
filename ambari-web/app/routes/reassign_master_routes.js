@@ -25,6 +25,7 @@ module.exports = App.WizardRoute.extend({
     var reassignMasterController = router.get('reassignMasterController');
     App.router.get('updateController').set('isWorking', true);
     reassignMasterController.finish();
+    App.router.get('wizardWatcherController').resetUser();
     App.clusterStatus.setClusterStatus({
       clusterName: App.router.get('content.cluster.name'),
       clusterState: 'DEFAULT',
@@ -32,12 +33,13 @@ module.exports = App.WizardRoute.extend({
     }, {alwaysCallback: function () {
       context.hide();
       router.transitionTo('main.index');
-      location.reload();
+      Em.run.next(function() {
+        location.reload();
+      });
     }});
   },
 
   enter: function (router) {
-    console.log('in /service/reassign:enter');
     var context = this;
     var reassignMasterController = router.get('reassignMasterController');
 
@@ -102,6 +104,7 @@ module.exports = App.WizardRoute.extend({
                 break;
             }
           }
+          App.router.get('wizardWatcherController').setUser(reassignMasterController.get('name'));
           router.transitionTo('step' + currStep);
         });
       } else {
@@ -115,7 +118,6 @@ module.exports = App.WizardRoute.extend({
   step1: Em.Route.extend({
     route: '/step1',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step1:connectOutlets');
       var controller = router.get('reassignMasterController');
       var step1Controller = router.get('reassignMasterWizardStep1Controller');
       controller.setCurrentStep('1');
@@ -140,7 +142,6 @@ module.exports = App.WizardRoute.extend({
   step2: Em.Route.extend({
     route: '/step2',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step2:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('2');
       router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
@@ -180,7 +181,6 @@ module.exports = App.WizardRoute.extend({
   step3: Em.Route.extend({
     route: '/step3',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step3:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('3');
       controller.dataLoading().done(function () {
@@ -209,7 +209,6 @@ module.exports = App.WizardRoute.extend({
   step4: Em.Route.extend({
     route: '/step4',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step4:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('4');
       controller.setLowerStepsDisable(4);
@@ -244,7 +243,9 @@ module.exports = App.WizardRoute.extend({
         }, {alwaysCallback: function () {
           controller.get('popup').hide();
           router.transitionTo('main.index');
-          location.reload();
+          Em.run.next(function() {
+            location.reload();
+          });
         }});
       }
     },
@@ -257,7 +258,6 @@ module.exports = App.WizardRoute.extend({
   step5: Em.Route.extend({
     route: '/step5',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step5:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('5');
       router.get('mainController').isLoading.call(router.get('clusterController'), 'isServiceContentFullyLoaded').done(function () {
@@ -286,7 +286,6 @@ module.exports = App.WizardRoute.extend({
   step6: Em.Route.extend({
     route: '/step6',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step6:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('6');
       controller.setLowerStepsDisable(6);
@@ -309,7 +308,9 @@ module.exports = App.WizardRoute.extend({
         }, {alwaysCallback: function () {
           controller.get('popup').hide();
           router.transitionTo('main.index');
-          location.reload();
+          Em.run.next(function() {
+            location.reload();
+          });
         }});
       }
     },
@@ -322,7 +323,6 @@ module.exports = App.WizardRoute.extend({
   step7: Em.Route.extend({
     route: '/step7',
     connectOutlets: function (router) {
-      console.log('in reassignMaster.step7:connectOutlets');
       var controller = router.get('reassignMasterController');
       controller.setCurrentStep('7');
       controller.setLowerStepsDisable(7);
@@ -342,11 +342,15 @@ module.exports = App.WizardRoute.extend({
           clusterName: router.get('reassignMasterController.content.cluster.name'),
           clusterState: 'DEFAULT',
           localdb: App.db.data
-        }, {alwaysCallback: function () {
-          controller.get('popup').hide();
-          router.transitionTo('main.index');
-          location.reload();
-        }});
+        }, {
+          alwaysCallback: function () {
+            controller.get('popup').hide();
+            router.transitionTo('main.index');
+            Em.run.next(function() {
+              location.reload();
+            });
+          }
+        });
       }
     },
 
@@ -360,11 +364,15 @@ module.exports = App.WizardRoute.extend({
           clusterName: router.get('reassignMasterController.content.cluster.name'),
           clusterState: 'DEFAULT',
           localdb: App.db.data
-        }, {alwaysCallback: function () {
-          controller.get('popup').hide();
-          router.transitionTo('main.index');
-          location.reload();
-        }});
+        }, {
+          alwaysCallback: function () {
+            controller.get('popup').hide();
+            router.transitionTo('main.index');
+            Em.run.next(function() {
+              location.reload();
+            });
+          }
+        });
       }
     },
 

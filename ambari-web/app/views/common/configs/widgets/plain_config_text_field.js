@@ -30,13 +30,9 @@ App.PlainConfigTextField = Ember.View.extend(App.SupportsDependentConfigs, App.W
   classNames: ['widget-config-plain-text-field'],
   placeholderBinding: 'config.savedValue',
 
-  disabled: function() {
-    return !this.get('config.isEditable');
-  }.property('config.isEditable'),
+  disabled: Em.computed.not('config.isEditable'),
 
-  configLabel: function() {
-    return this.get('config.stackConfigProperty.displayName') || this.get('config.displayName') || this.get('config.name');
-  }.property('config.name', 'config.displayName'),
+  configLabel: Em.computed.firstNotBlank('config.stackConfigProperty.displayName', 'config.displayName', 'config.name'),
 
   /**
    * @type {string|boolean}

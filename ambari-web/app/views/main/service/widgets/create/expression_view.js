@@ -201,13 +201,8 @@ App.AddNumberExpressionView = Em.TextField.extend({
  */
 App.AddMetricExpressionView = Em.View.extend({
   templateName: require('templates/main/service/widgets/create/step2_add_metric'),
-  controller: function () {
-    return this.get('parentView.controller');
-  }.property('parentView.controller'),
-  elementId: function () {
-    var expressionId = "_" + this.get('parentView').get('expression.id');
-    return 'add-metric-menu' + expressionId;
-  }.property(),
+  controller: Em.computed.alias('parentView.controller'),
+  elementId: Em.computed.format('add-metric-menu_{0}','parentView.expression.id'),
   didInsertElement: function () {
     //prevent dropdown closing on click select
     $('html').on('click.dropdown', '.dropdown-menu li', function (e) {
@@ -347,8 +342,7 @@ App.AddMetricExpressionView = Em.View.extend({
       for (var componentId in servicesMap[serviceName].components) {
         // Hide the option if none of the hostComponent is created in the cluster yet
         var componentName = servicesMap[serviceName].components[componentId].component_name;
-        var isHostComponentAbsent = !App.HostComponent.find().filterProperty('componentName',componentName).length;
-        if (isHostComponentAbsent) continue;
+        if (App.HostComponent.getCount(componentName, 'totalCount') === 0) continue;
         var component = Em.Object.create({
           componentName: servicesMap[serviceName].components[componentId].component_name,
           level: servicesMap[serviceName].components[componentId].level,
@@ -367,9 +361,7 @@ App.AddMetricExpressionView = Em.View.extend({
           id: componentId + expressionId,
           aggregatorId: componentId + expressionId + '_aggregator',
           serviceName: serviceName,
-          showAggregateSelect: function () {
-            return this.get('level') === 'COMPONENT';
-          }.property('level'),
+          showAggregateSelect: Em.computed.equal('level', 'COMPONENT'),
           selectedMetric: null,
           selectedAggregation: Em.I18n.t('dashboard.widgets.wizard.step2.aggregateFunction.scanOps'),
           isAddEnabled: function () {

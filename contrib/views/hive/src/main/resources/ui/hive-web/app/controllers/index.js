@@ -227,6 +227,11 @@ export default Ember.Controller.extend({
       self.set('jobSaveSucceeded');
       originalModel.set('isRunning', undefined);
       defer.reject(err);
+
+      if(err.status == 401) {
+          self.send('passwordLDAP', job, originalModel);
+      }
+
     };
 
     job.save().then(function () {
@@ -289,7 +294,7 @@ export default Ember.Controller.extend({
           return constants.namingConventions.explainPrefix + query;
         }
       } else {
-        return query.replace(/explain formatted|explain/gi, '');
+        return query;
       }
     });
 
@@ -477,6 +482,51 @@ export default Ember.Controller.extend({
   }.observes('model', 'model.status'),
 
   actions: {
+    passwordLDAP: function(){
+      var job = arguments[0],
+            originalModel = arguments[1],
+            self = this,
+            defer = Ember.RSVP.defer();
+
+        self.createJob = this.createJob;
+
+        this.send('openModal', 'modal-save', {
+          heading: "modals.authenticationLDAP.heading",
+          text:"",
+          type: "password",
+          defer: defer
+        });
+
+        defer.promise.then(function (text) {
+            // make a post call with the given ldap password.
+            var password = text;
+            var pathName = window.location.pathname;
+            var pathNameArray = pathName.split("/");
+            var hiveViewVersion = pathNameArray[3];
+            var hiveViewName = pathNameArray[4];
+            var ldapAuthURL = "/api/v1/views/HIVE/versions/"+ hiveViewVersion + "/instances/" + hiveViewName + "/jobs/auth";
+
+
+            $.ajax({
+                url: ldapAuthURL,
+                dataType: "json",
+                type: 'post',
+                headers: {'X-Requested-With': 'XMLHttpRequest', 'X-Requested-By': 'ambari'},
+                contentType: 'application/json',
+                data: JSON.stringify({ "password" : password}),
+                success: function( data, textStatus, jQxhr ){
+                    console.log( "LDAP done: " + data );
+                    self.createJob (job,originalModel);
+                },
+                error: function( jqXhr, textStatus, errorThrown ){
+                    console.log( "LDAP fail: " + errorThrown );
+                        self.get('notifyService').error( "Wrong Credentials." );
+                }
+            });
+
+          });
+    },
+
     stopCurrentJob: function () {
       this.get('jobService').stopJob(this.get('model'));
     },
@@ -610,6 +660,14 @@ export default Ember.Controller.extend({
 
     executeQuery: function (referrer, query) {
       var self = this;
+
+      var isExplainQuery = (self.get('openQueries.currentQuery.fileContent').toUpperCase().trim().indexOf(constants.namingConventions.explainPrefix) === 0);
+
+      if(isExplainQuery){
+        self.send('explainQuery');
+        return;
+      }
+
       var subroute;
 
       if (query) {

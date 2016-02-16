@@ -30,7 +30,6 @@ from resource_management.libraries.functions.version import format_hdp_stack_ver
 from resource_management.libraries.functions.default import default
 from resource_management.libraries import functions
 
-
 import status_params
 
 # a map of the Ambari role to the component name
@@ -58,7 +57,7 @@ stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version_major = format_hdp_stack_version(stack_version_unformatted)
 hdp_stack_version = functions.get_hdp_version('hadoop-yarn-resourcemanager')
 
-# New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade.
+# New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade.
 # It cannot be used during the initial Cluser Install because the version is not yet known.
 version = default("/commandParams/version", None)
 
@@ -74,6 +73,7 @@ hadoop_mapred2_jar_location = "/usr/lib/hadoop-mapreduce"
 mapred_bin = "/usr/lib/hadoop-mapreduce/sbin"
 yarn_bin = "/usr/lib/hadoop-yarn/sbin"
 yarn_container_bin = "/usr/lib/hadoop-yarn/bin"
+hadoop_java_io_tmpdir = os.path.join(tmp_dir, "hadoop_java_io_tmpdir")
 
 # hadoop parameters for 2.2+
 if Script.is_hdp_stack_greater_or_equal("2.2"):
@@ -98,6 +98,12 @@ if Script.is_hdp_stack_greater_or_equal("2.2"):
   # Timeline Service property that was added in 2.2
   ats_leveldb_state_store_dir = config['configurations']['yarn-site']['yarn.timeline-service.leveldb-state-store.path']
 
+# ats 1.5 properties
+entity_groupfs_active_dir = config['configurations']['yarn-site']['yarn.timeline-service.entity-group-fs-store.active-dir']
+entity_groupfs_active_dir_mode = 01777
+entity_groupfs_store_dir = config['configurations']['yarn-site']['yarn.timeline-service.entity-group-fs-store.done-dir']
+entity_groupfs_store_dir_mode = 0700
+
 hadoop_conf_secure_dir = os.path.join(hadoop_conf_dir, "secure")
 
 limits_conf_dir = "/etc/security/limits.d"
@@ -118,6 +124,10 @@ hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smokeuser_principal = config['configurations']['cluster-env']['smokeuser_principal_name']
 security_enabled = config['configurations']['cluster-env']['security_enabled']
+nm_security_marker_dir = "/var/lib/hadoop-yarn"
+nm_security_marker = format('{nm_security_marker_dir}/nm_security_enabled')
+current_nm_security_state = os.path.isfile(nm_security_marker)
+toggle_nm_security = (current_nm_security_state and not security_enabled) or (not current_nm_security_state and security_enabled)
 smoke_user_keytab = config['configurations']['cluster-env']['smokeuser_keytab']
 yarn_executor_container_group = config['configurations']['yarn-site']['yarn.nodemanager.linux-container-executor.group']
 yarn_nodemanager_container_executor_class =  config['configurations']['yarn-site']['yarn.nodemanager.container-executor.class']
@@ -139,12 +149,14 @@ resourcemanager_heapsize = config['configurations']['yarn-env']['resourcemanager
 nodemanager_heapsize = config['configurations']['yarn-env']['nodemanager_heapsize']
 apptimelineserver_heapsize = default("/configurations/yarn-env/apptimelineserver_heapsize", 1024)
 ats_leveldb_dir = config['configurations']['yarn-site']['yarn.timeline-service.leveldb-timeline-store.path']
+ats_leveldb_lock_file = os.path.join(ats_leveldb_dir, "leveldb-timeline-store.ldb", "LOCK")
 yarn_log_dir_prefix = config['configurations']['yarn-env']['yarn_log_dir_prefix']
 yarn_pid_dir_prefix = status_params.yarn_pid_dir_prefix
 mapred_pid_dir_prefix = status_params.mapred_pid_dir_prefix
 mapred_log_dir_prefix = config['configurations']['mapred-env']['mapred_log_dir_prefix']
 mapred_env_sh_template = config['configurations']['mapred-env']['content']
 yarn_env_sh_template = config['configurations']['yarn-env']['content']
+yarn_nodemanager_recovery_dir = default('/configurations/yarn-site/yarn.nodemanager.recovery.dir', None)
 
 if len(rm_hosts) > 1:
   additional_rm_host = rm_hosts[1]
@@ -163,8 +175,13 @@ if hostname and nm_address and nm_address.startswith("0.0.0.0:"):
 nm_local_dirs = config['configurations']['yarn-site']['yarn.nodemanager.local-dirs']
 nm_log_dirs = config['configurations']['yarn-site']['yarn.nodemanager.log-dirs']
 
+nm_local_dirs_list = nm_local_dirs.split(',')
+nm_log_dirs_list = nm_log_dirs.split(',')
+
 distrAppJarName = "hadoop-yarn-applications-distributedshell-2.*.jar"
 hadoopMapredExamplesJarName = "hadoop-mapreduce-examples-2.*.jar"
+
+entity_file_history_directory = "/tmp/entity-file-history/active"
 
 yarn_pid_dir = status_params.yarn_pid_dir
 mapred_pid_dir = status_params.mapred_pid_dir
@@ -242,6 +259,9 @@ hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_nam
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
+dfs_type = default("/commandParams/dfs_type", "")
+
+
 import functools
 #create partial functions with common arguments for every HdfsResource call
 #to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
@@ -255,7 +275,8 @@ HdfsResource = functools.partial(
   hadoop_conf_dir = hadoop_conf_dir,
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
-  default_fs = default_fs
+  default_fs = default_fs,
+  dfs_type = dfs_type
  )
 update_exclude_file_only = default("/commandParams/update_exclude_file_only",False)
 
@@ -293,6 +314,23 @@ yarn_https_on = (yarn_http_policy.upper() == 'HTTPS_ONLY')
 scheme = 'http' if not yarn_https_on else 'https'
 yarn_rm_address = config['configurations']['yarn-site']['yarn.resourcemanager.webapp.address'] if not yarn_https_on else config['configurations']['yarn-site']['yarn.resourcemanager.webapp.https.address']
 rm_active_port = rm_https_port if yarn_https_on else rm_port
+
+rm_ha_enabled = False
+rm_ha_ids_list = []
+rm_webapp_addresses_list = [yarn_rm_address]
+rm_ha_ids = default("/configurations/yarn-site/yarn.resourcemanager.ha.rm-ids", None)
+
+if rm_ha_ids:
+  rm_ha_ids_list = rm_ha_ids.split(",")
+  if len(rm_ha_ids_list) > 1:
+    rm_ha_enabled = True
+
+if rm_ha_enabled:
+  rm_webapp_addresses_list = []
+  for rm_id in rm_ha_ids_list:
+    rm_webapp_address_property = format('yarn.resourcemanager.webapp.address.{rm_id}') if not yarn_https_on else format('yarn.resourcemanager.webapp.https.address.{rm_id}')
+    rm_webapp_address = config['configurations']['yarn-site'][rm_webapp_address_property]
+    rm_webapp_addresses_list.append(rm_webapp_address)
 
 #ranger yarn properties
 if has_ranger_admin:
@@ -341,7 +379,11 @@ if has_ranger_admin:
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'oracle':
       jdbc_jar_name = "ojdbc6.jar"
       jdbc_symlink_name = "oracle-jdbc-driver.jar"
-      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
+      colon_count = xa_db_host.count(':')
+      if colon_count == 2 or colon_count == 0:
+        audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
+      else:
+        audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
       jdbc_driver = "oracle.jdbc.OracleDriver"
     elif xa_audit_db_flavor and xa_audit_db_flavor == 'postgres':
       jdbc_jar_name = "postgresql.jar"
@@ -366,6 +408,7 @@ if has_ranger_admin:
 
     ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
     xa_audit_db_is_enabled = config['configurations']['ranger-yarn-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+    xa_audit_hdfs_is_enabled = config['configurations']['ranger-yarn-audit']['xasecure.audit.destination.hdfs'] if xml_configurations_supported else None
     ssl_keystore_password = unicode(config['configurations']['ranger-yarn-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
     ssl_truststore_password = unicode(config['configurations']['ranger-yarn-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
     credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None

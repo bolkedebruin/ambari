@@ -30,16 +30,22 @@ from ambari_commons.os_check import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons.os_utils import remove_file
 from ambari_server.BackupRestore import main as BackupRestore_main
-from ambari_server.dbConfiguration import DATABASE_NAMES
+from ambari_server.dbConfiguration import DATABASE_NAMES, LINUX_DBMS_KEYS_LIST
 from ambari_server.serverConfiguration import configDefaults, get_ambari_properties, PID_NAME
 from ambari_server.serverUtils import is_server_runing, refresh_stack_hash
 from ambari_server.serverSetup import reset, setup, setup_jce_policy
 from ambari_server.serverUpgrade import upgrade, upgrade_stack, set_current
 from ambari_server.setupHttps import setup_https, setup_truststore
+from ambari_server.setupSso import setup_sso
+from ambari_server.hostUpdate import update_host_names
+from ambari_server.checkDatabase import check_database
+from ambari_server.enableStack import enable_stack_version
 
 from ambari_server.setupActions import BACKUP_ACTION, LDAP_SETUP_ACTION, LDAP_SYNC_ACTION, PSTART_ACTION, \
-  REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, SETUP_ACTION, SETUP_SECURITY_ACTION, START_ACTION, \
-  STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, SETUP_JCE_ACTION, SET_CURRENT_ACTION
+  REFRESH_STACK_HASH_ACTION, RESET_ACTION, RESTORE_ACTION, UPDATE_HOST_NAMES_ACTION, CHECK_DATABASE_ACTION, \
+  SETUP_ACTION, SETUP_SECURITY_ACTION,START_ACTION, STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, \
+  SETUP_JCE_ACTION, SET_CURRENT_ACTION, START_ACTION, STATUS_ACTION, STOP_ACTION, UPGRADE_ACTION, UPGRADE_STACK_ACTION, SETUP_JCE_ACTION, \
+  SET_CURRENT_ACTION, ENABLE_STACK_ACTION, SETUP_SSO_ACTION
 from ambari_server.setupSecurity import setup_ldap, sync_ldap, setup_master_key, setup_ambari_krb5_jaas
 from ambari_server.userInput import get_validated_string_input
 
@@ -142,7 +148,7 @@ def stop(args):
 
   if status:
     try:
-      os.killpg(os.getpgid(pid), signal.SIGKILL)
+      os.kill(pid, signal.SIGTERM)
     except OSError, e:
       print_info_msg("Unable to stop Ambari Server - " + str(e))
       return
@@ -158,12 +164,15 @@ def stop(args):
 #
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def status(args):
-  from ambari_windows_service import AmbariServerService
-
   args.exit_message = None
+  status, statusStr = is_server_runing()
 
-  statusStr = AmbariServerService.QueryStatus()
   print "Ambari Server is " + statusStr
+
+  if status:
+    args.exit_code = 0
+  else:
+    args.exit_code = 3
 
 #
 # The Ambari Server status.
@@ -174,10 +183,12 @@ def status(args):
   status, pid = is_server_runing()
   pid_file_path = os.path.join(configDefaults.PID_DIR, PID_NAME)
   if status:
+    args.exit_code = 0
     print "Ambari Server running"
     print "Found Ambari Server PID: " + str(pid) + " at: " + pid_file_path
   else:
     print "Ambari Server not running. Stale PID File at: " + pid_file_path
+    args.exit_code = 3
 
 
 def refresh_stack_hash_action():
@@ -189,7 +200,7 @@ def refresh_stack_hash_action():
 def create_setup_security_actions(args):
   action_list = [
       ['Enable HTTPS for Ambari server.', UserActionRestart(setup_https, args)],
-      ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key)],
+      ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key, args)],
       ['Setup Ambari kerberos JAAS configuration.', UserAction(setup_ambari_krb5_jaas)],
       ['Setup truststore.', UserActionRestart(setup_truststore)],
       ['Import certificate to truststore.', UserActionRestart(setup_truststore, True)],
@@ -200,7 +211,7 @@ def create_setup_security_actions(args):
 def create_setup_security_actions(args):
   action_list = [
       ['Enable HTTPS for Ambari server.', UserActionRestart(setup_https, args)],
-      ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key)],
+      ['Encrypt passwords stored in ambari.properties file.', UserAction(setup_master_key, args)],
       ['Setup Ambari kerberos JAAS configuration.', UserAction(setup_ambari_krb5_jaas)],
       ['Setup truststore.', UserActionRestart(setup_truststore)],
       ['Import certificate to truststore.', UserActionRestart(setup_truststore, True)],
@@ -307,6 +318,8 @@ def init_parser_options(parser):
                     help="Database user password")
   parser.add_option('--jdbc-driver', default=None, dest="jdbc_driver",
                     help="Specifies the path to the JDBC driver JAR file")
+  parser.add_option('--skip-properties-validation', action="store_true", default=False, help="Skip properties file validation", dest="skip_properties_validation")
+  parser.add_option('--skip-database-validation', action="store_true", default=False, help="Skip database consistency validation", dest="skip_database_validation")
   # -b and -i the remaining available short options
   # -h reserved for help
 
@@ -371,7 +384,13 @@ def init_parser_options(parser):
                     dest="jdbc_db")
   parser.add_option('--cluster-name', default=None, help="Cluster name", dest="cluster_name")
   parser.add_option('--version-display-name', default=None, help="Display name of desired repo version", dest="desired_repo_version")
-
+  parser.add_option('--skip-properties-validation', action="store_true", default=False, help="Skip properties file validation", dest="skip_properties_validation")
+  parser.add_option('--skip-database-validation', action="store_true", default=False, help="Skip database consistency validation", dest="skip_database_validation")
+  parser.add_option('--force-version', action="store_true", default=False, help="Force version to current", dest="force_repo_version")
+  parser.add_option('--version', dest="stack_versions", default=None, action="append", type="string",
+                    help="Specify stack version that needs to be enabled. All other stacks versions will be disabled")
+  parser.add_option('--stack', dest="stack_name", default=None, type="string",
+                    help="Specify stack name for the stack versions that needs to be enabled")
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
 def are_cmd_line_db_args_blank(options):
@@ -454,6 +473,7 @@ def fix_database_options(options, parser):
     parser.error("Unsupported Database " + options.dbms)
   elif options.dbms is not None:
     options.dbms = options.dbms.lower()
+    options.database_index = LINUX_DBMS_KEYS_LIST.index(options.dbms)
 
   _validate_database_port(options, parser)
 
@@ -500,6 +520,7 @@ def create_user_action_map(args, options):
     LDAP_SETUP_ACTION: UserAction(setup_ldap),
     SETUP_SECURITY_ACTION: UserActionRestart(setup_security, options),
     REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action),
+    SETUP_SSO_ACTION: UserActionRestart(setup_sso, options)
   }
   return action_map
 
@@ -520,7 +541,11 @@ def create_user_action_map(args, options):
         SETUP_SECURITY_ACTION: UserActionRestart(setup_security, options),
         REFRESH_STACK_HASH_ACTION: UserAction(refresh_stack_hash_action),
         BACKUP_ACTION: UserActionPossibleArgs(backup, [1, 2], args),
-        RESTORE_ACTION: UserActionPossibleArgs(restore, [1, 2], args)
+        RESTORE_ACTION: UserActionPossibleArgs(restore, [1, 2], args),
+        UPDATE_HOST_NAMES_ACTION: UserActionPossibleArgs(update_host_names, [2], args, options),
+        CHECK_DATABASE_ACTION: UserAction(check_database, options),
+        ENABLE_STACK_ACTION: UserAction(enable_stack, options, args),
+        SETUP_SSO_ACTION: UserActionRestart(setup_sso, options)
       }
   return action_map
 
@@ -573,6 +598,7 @@ def main(options, args, parser):
     parser.error("Invalid number of arguments. Entered: " + str(len(args)) + ", required: " + possible_args)
 
   options.exit_message = "Ambari Server '%s' completed successfully." % action
+  options.exit_code = None
 
   try:
     action_obj.execute()
@@ -601,6 +627,9 @@ def main(options, args, parser):
   if options.exit_message is not None:
     print options.exit_message
 
+  if options.exit_code is not None:  # not all actions may return a system exit code
+    sys.exit(options.exit_code)
+
 def mainBody():
   parser = optparse.OptionParser(usage="usage: %prog [options] action [stack_id os]",)
   init_parser_options(parser)
@@ -627,6 +656,23 @@ def mainBody():
       print_error_msg("Unexpected {0}: {1}".format((e).__class__.__name__, str(e)) +\
       "\nFor more info run ambari-server with -v or --verbose option")
       sys.exit(1)     
+
+@OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
+def enable_stack(options, args):
+  if options.stack_name == None:
+     print_error_msg ("Please provide stack name using --stack option")
+     return -1
+  if options.stack_versions == None:
+     print_error_msg ("Please provide stack version using --version option")
+     return -1
+  print_info_msg ("Going to enable Stack Versions: " +  str(options.stack_versions) + " for the stack: " + str(options.stack_name))
+  retcode = enable_stack_version(options.stack_name,options.stack_versions)
+  if retcode == 0:
+     status, pid = is_server_runing()
+     if status:
+        print "restarting ambari server"
+        stop(options)
+        start(options)
       
 
 if __name__ == "__main__":

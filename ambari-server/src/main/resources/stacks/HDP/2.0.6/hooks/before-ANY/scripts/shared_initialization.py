@@ -29,8 +29,9 @@ def setup_users():
   Creates users before cluster installation
   """
   import params
+  should_create_users_and_groups = not params.host_sys_prepped and not params.ignore_groupsusers_create
 
-  if not params.host_sys_prepped and not params.ignore_groupsusers_create:
+  if should_create_users_and_groups:
     for group in params.group_list:
       Group(group,
       )
@@ -39,6 +40,7 @@ def setup_users():
       User(user,
           gid = params.user_to_gid_dict[user],
           groups = params.user_to_groups_dict[user],
+          fetch_nonlocal_groups = params.fetch_nonlocal_groups
       )
 
     if params.override_uid == "true":
@@ -54,7 +56,7 @@ def setup_users():
     Directory (params.hbase_tmp_dir,
                owner = params.hbase_user,
                mode=0775,
-               recursive = True,
+               create_parents = True,
                cd_access="a",
     )
     if not params.host_sys_prepped and params.override_uid == "true":
@@ -65,8 +67,10 @@ def setup_users():
 
   if not params.host_sys_prepped:
     if params.has_namenode:
-      create_dfs_cluster_admins()
+      if should_create_users_and_groups:
+        create_dfs_cluster_admins()
     if params.has_tez and params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.3') >= 0:
+      if should_create_users_and_groups:
         create_tez_am_view_acls()
   else:
     Logger.info('Skipping setting dfs cluster admin and tez view acls as host is sys prepped')
@@ -81,7 +85,7 @@ def create_dfs_cluster_admins():
 
   User(params.hdfs_user,
     groups = params.user_to_groups_dict[params.hdfs_user] + groups_list,
-    ignore_failures = params.ignore_groupsusers_create
+          fetch_nonlocal_groups = params.fetch_nonlocal_groups
   )
 
 def create_tez_am_view_acls():
@@ -107,12 +111,11 @@ def create_users_and_groups(user_and_groups):
 
   if users_list:
     User(users_list,
-         ignore_failures = params.ignore_groupsusers_create
+          fetch_nonlocal_groups = params.fetch_nonlocal_groups
     )
 
   if groups_list:
     Group(copy(groups_list),
-          ignore_failures = params.ignore_groupsusers_create
     )
   return groups_list
     
@@ -132,7 +135,8 @@ def set_uid(user, user_dirs):
 def setup_hadoop_env():
   import params
   stackversion = params.stack_version_unformatted
-  if params.has_namenode or stackversion.find('Gluster') >= 0:
+  Logger.info("FS Type: {0}".format(params.dfs_type))
+  if params.has_namenode or stackversion.find('Gluster') >= 0 or params.dfs_type == 'HCFS':
     if params.security_enabled:
       tc_owner = "root"
     else:
@@ -143,7 +147,7 @@ def setup_hadoop_env():
 
     # HDP < 2.2 used a conf -> conf.empty symlink for /etc/hadoop/
     if Script.is_hdp_stack_less_than("2.2"):
-      Directory(params.hadoop_conf_empty_dir, recursive=True, owner="root",
+      Directory(params.hadoop_conf_empty_dir, create_parents = True, owner="root",
         group=params.user_group )
 
       Link(params.hadoop_conf_dir, to=params.hadoop_conf_empty_dir,
@@ -155,6 +159,13 @@ def setup_hadoop_env():
         group=params.user_group,
         content=InlineTemplate(params.hadoop_env_sh_template))
 
+    # Create tmp dir for java.io.tmpdir
+    # Handle a situation when /tmp is set to noexec
+    Directory(params.hadoop_java_io_tmpdir,
+              owner=params.hdfs_user,
+              group=params.user_group,
+              mode=0777
+    )
 
 def setup_java():
   """
@@ -174,7 +185,7 @@ def setup_java():
       return
 
     Directory(params.artifact_dir,
-              recursive = True,
+              create_parents = True,
               )
 
     File(jdk_curl_target,
@@ -203,10 +214,6 @@ def setup_java():
          mode=0755,
          cd_access="a",
          )
-
-    Execute(("chgrp","-R", params.user_group, params.java_home),
-            sudo = True,
-            )
-    Execute(("chown","-R", getpass.getuser(), params.java_home),
-            sudo = True,
-            )
+    Execute(('chmod', '-R', '755', params.java_home),
+      sudo = True,
+    )

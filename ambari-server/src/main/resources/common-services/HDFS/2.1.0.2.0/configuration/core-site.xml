@@ -59,6 +59,7 @@
     <name>fs.defaultFS</name>
     <!-- cluster variant -->
     <value>hdfs://localhost:8020</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>The name of the default file system.  Either the
   literal string "local" or a host:port for HDFS.</description>
     <final>true</final>
@@ -177,6 +178,9 @@ If you want to treat all principals from APACHE.ORG with /admin as "admin", your
 RULE[2:$1%$2@$0](.%admin@APACHE.ORG)s/./admin/
 DEFAULT
     </description>
+    <value-attributes>
+      <type>multiLine</type>
+    </value-attributes>
   </property>
   <property>
     <name>net.topology.script.file.name</name>

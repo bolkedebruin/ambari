@@ -17,17 +17,11 @@
  */
 package org.apache.ambari.server.serveraction.upgrades;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
+import com.google.gson.Gson;
+import com.google.inject.Guice;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ServiceNotFoundException;
 import org.apache.ambari.server.actionmanager.ExecutionCommandWrapper;
@@ -55,25 +49,32 @@ import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceFactory;
 import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.ConfigurationKeyValue;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.Replace;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.Transfer;
 import org.apache.ambari.server.state.stack.upgrade.ConfigureTask;
-import org.apache.ambari.server.state.stack.upgrade.ConfigureTask.ConfigurationKeyValue;
 import org.apache.ambari.server.state.stack.upgrade.TransferCoercionType;
 import org.apache.ambari.server.state.stack.upgrade.TransferOperation;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.gson.Gson;
-import com.google.inject.Guice;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Tests upgrade-related server side actions
  */
 public class ConfigureActionTest {
-  
+
   private static final String HDP_2_2_0_0 = "2.2.0.0-2041";
   private static final String HDP_2_2_0_1 = "2.2.0.1-2270";
   private static final StackId HDP_211_STACK = new StackId("HDP-2.1.1");
@@ -131,7 +132,7 @@ public class ConfigureActionTest {
     c.addDesiredConfig("user", Collections.singleton(config));
     assertEquals(2, c.getConfigsByType("zoo.cfg").size());
 
-    List<ConfigurationKeyValue> configurations = new ArrayList<ConfigureTask.ConfigurationKeyValue>();
+    List<ConfigurationKeyValue> configurations = new ArrayList<ConfigurationKeyValue>();
     ConfigurationKeyValue keyValue = new ConfigurationKeyValue();
     configurations.add(keyValue);
     keyValue.key = "initLimit";
@@ -206,8 +207,8 @@ public class ConfigureActionTest {
     commandParams.put(ConfigureTask.PARAMETER_CONFIG_TYPE, "zoo.cfg");
 
     // delete all keys, preserving edits or additions
-    List<ConfigureTask.Transfer> transfers = new ArrayList<ConfigureTask.Transfer>();
-    ConfigureTask.Transfer transfer = new ConfigureTask.Transfer();
+    List<Transfer> transfers = new ArrayList<>();
+    Transfer transfer = new Transfer();
     transfer.operation = TransferOperation.DELETE;
     transfer.deleteKey = "*";
     transfer.preserveEdits = true;
@@ -266,7 +267,7 @@ public class ConfigureActionTest {
     c.addDesiredConfig("user", Collections.singleton(config));
     assertEquals(2, c.getConfigsByType("zoo.cfg").size());
 
-    List<ConfigurationKeyValue> configurations = new ArrayList<ConfigureTask.ConfigurationKeyValue>();
+    List<ConfigurationKeyValue> configurations = new ArrayList<>();
     ConfigurationKeyValue keyValue = new ConfigurationKeyValue();
     configurations.add(keyValue);
     keyValue.key = "initLimit";
@@ -280,15 +281,15 @@ public class ConfigureActionTest {
     commandParams.put(ConfigureTask.PARAMETER_KEY_VALUE_PAIRS, new Gson().toJson(configurations));
 
     // normal copy
-    List<ConfigureTask.Transfer> transfers = new ArrayList<ConfigureTask.Transfer>();
-    ConfigureTask.Transfer transfer = new ConfigureTask.Transfer();
+    List<Transfer> transfers = new ArrayList<>();
+    Transfer transfer = new Transfer();
     transfer.operation = TransferOperation.COPY;
     transfer.fromKey = "copyIt";
     transfer.toKey = "copyKey";
     transfers.add(transfer);
 
     // copy with default
-    transfer = new ConfigureTask.Transfer();
+    transfer = new Transfer();
     transfer.operation = TransferOperation.COPY;
     transfer.fromKey = "copiedFromMissingKeyWithDefault";
     transfer.toKey = "copiedToMissingKeyWithDefault";
@@ -296,14 +297,14 @@ public class ConfigureActionTest {
     transfers.add(transfer);
 
     // normal move
-    transfer = new ConfigureTask.Transfer();
+    transfer = new Transfer();
     transfer.operation = TransferOperation.MOVE;
     transfer.fromKey = "moveIt";
     transfer.toKey = "movedKey";
     transfers.add(transfer);
 
     // move with default
-    transfer = new ConfigureTask.Transfer();
+    transfer = new Transfer();
     transfer.operation = TransferOperation.MOVE;
     transfer.fromKey = "movedFromKeyMissingWithDefault";
     transfer.toKey = "movedToMissingWithDefault";
@@ -311,7 +312,7 @@ public class ConfigureActionTest {
     transfer.mask = true;
     transfers.add(transfer);
 
-    transfer = new ConfigureTask.Transfer();
+    transfer = new Transfer();
     transfer.operation = TransferOperation.DELETE;
     transfer.deleteKey = "deleteIt";
     transfers.add(transfer);
@@ -357,11 +358,17 @@ public class ConfigureActionTest {
     assertEquals("defaultValue2", map.get("movedToMissingWithDefault"));
 
     transfers.clear();
-    transfer = new ConfigureTask.Transfer();
+    transfer = new Transfer();
     transfer.operation = TransferOperation.DELETE;
     transfer.deleteKey = "*";
     transfer.preserveEdits = true;
     transfer.keepKeys.add("copyKey");
+    // The below key should be ignored/not added as it doesn't exist originally as part of transfer.
+    transfer.keepKeys.add("keyNotExisting");
+    // The 'null' passed as part of key should be ignored as part of transfer operation.
+    transfer.keepKeys.add(null);
+
+
     transfers.add(transfer);
     commandParams.put(ConfigureTask.PARAMETER_TRANSFERS, new Gson().toJson(transfers));
 
@@ -374,6 +381,9 @@ public class ConfigureActionTest {
     assertEquals(6, map.size());
     assertTrue(map.containsKey("initLimit")); // it just changed to 11 from 10
     assertTrue(map.containsKey("copyKey")); // is new
+    // Below two keys should not have been added in the map.
+    assertFalse(map.containsKey("keyNotExisting"));
+    assertFalse(map.containsKey(null));
   }
 
   @Test
@@ -404,8 +414,8 @@ public class ConfigureActionTest {
     commandParams.put(ConfigureTask.PARAMETER_CONFIG_TYPE, "zoo.cfg");
 
     // copy with coerce
-    List<ConfigureTask.Transfer> transfers = new ArrayList<ConfigureTask.Transfer>();
-    ConfigureTask.Transfer transfer = new ConfigureTask.Transfer();
+    List<Transfer> transfers = new ArrayList<Transfer>();
+    Transfer transfer = new Transfer();
     transfer.operation = TransferOperation.COPY;
     transfer.coerceTo = TransferCoercionType.YAML_ARRAY;
     transfer.fromKey = "zoo.server.csv";
@@ -472,14 +482,14 @@ public class ConfigureActionTest {
     commandParams.put(ConfigureTask.PARAMETER_CONFIG_TYPE, "zoo.cfg");
 
     // Replacement task
-    List<ConfigureTask.Replace> replacements = new ArrayList<ConfigureTask.Replace>();
-    ConfigureTask.Replace replace = new ConfigureTask.Replace();
+    List<Replace> replacements = new ArrayList<Replace>();
+    Replace replace = new Replace();
     replace.key = "key_to_replace";
     replace.find = "New Cat";
     replace.replaceWith = "Wet Dog";
     replacements.add(replace);
 
-    replace = new ConfigureTask.Replace();
+    replace = new Replace();
     replace.key = "key_with_no_match";
     replace.find = "abc";
     replace.replaceWith = "def";
@@ -514,6 +524,72 @@ public class ConfigureActionTest {
     assertEquals("WxyAndZ", config.getProperties().get("key_with_no_match"));
   }
 
+  /**
+   * Tests that replacing a {@code null} value works.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testValueReplacementWithMissingConfigurations() throws Exception {
+    makeUpgradeCluster();
+
+    Cluster c = m_injector.getInstance(Clusters.class).getCluster("c1");
+    assertEquals(1, c.getConfigsByType("zoo.cfg").size());
+
+    c.setDesiredStackVersion(HDP_220_STACK);
+    ConfigFactory cf = m_injector.getInstance(ConfigFactory.class);
+    Config config = cf.createNew(c, "zoo.cfg", new HashMap<String, String>() {
+      {
+        put("existing", "This exists!");
+        put("missing", null);
+      }
+    }, new HashMap<String, Map<String, String>>());
+    config.setTag("version2");
+    config.persist();
+
+    c.addConfig(config);
+    c.addDesiredConfig("user", Collections.singleton(config));
+    assertEquals(2, c.getConfigsByType("zoo.cfg").size());
+
+    Map<String, String> commandParams = new HashMap<String, String>();
+    commandParams.put("upgrade_direction", "upgrade");
+    commandParams.put("version", HDP_2_2_0_1);
+    commandParams.put("clusterName", "c1");
+    commandParams.put(ConfigureTask.PARAMETER_CONFIG_TYPE, "zoo.cfg");
+
+    // Replacement task
+    List<Replace> replacements = new ArrayList<Replace>();
+    Replace replace = new Replace();
+    replace.key = "missing";
+    replace.find = "foo";
+    replace.replaceWith = "bar";
+    replacements.add(replace);
+
+    commandParams.put(ConfigureTask.PARAMETER_REPLACEMENTS, new Gson().toJson(replacements));
+
+    ExecutionCommand executionCommand = new ExecutionCommand();
+    executionCommand.setCommandParams(commandParams);
+    executionCommand.setClusterName("c1");
+    executionCommand.setRoleParams(new HashMap<String, String>());
+    executionCommand.getRoleParams().put(ServerAction.ACTION_USER_NAME, "username");
+
+    HostRoleCommand hostRoleCommand = hostRoleCommandFactory.create(null, null, null, null);
+
+    hostRoleCommand.setExecutionCommandWrapper(new ExecutionCommandWrapper(executionCommand));
+
+    ConfigureAction action = m_injector.getInstance(ConfigureAction.class);
+    action.setExecutionCommand(executionCommand);
+    action.setHostRoleCommand(hostRoleCommand);
+
+    CommandReport report = action.execute(null);
+    assertNotNull(report);
+
+    assertEquals(3, c.getConfigsByType("zoo.cfg").size());
+
+    config = c.getDesiredConfigByType("zoo.cfg");
+    assertEquals(null, config.getProperties().get("missing"));
+  }
+
   @Test
   public void testMultipleKeyValuesPerTask() throws Exception {
     makeUpgradeCluster();
@@ -538,7 +614,7 @@ public class ConfigureActionTest {
     assertEquals(2, c.getConfigsByType("zoo.cfg").size());
 
     // create several configurations
-    List<ConfigurationKeyValue> configurations = new ArrayList<ConfigureTask.ConfigurationKeyValue>();
+    List<ConfigurationKeyValue> configurations = new ArrayList<ConfigurationKeyValue>();
     ConfigurationKeyValue fooKey2 = new ConfigurationKeyValue();
     configurations.add(fooKey2);
     fooKey2.key = "fooKey2";
@@ -633,8 +709,7 @@ public class ConfigureActionTest {
     String urlInfo = "[{'repositories':["
         + "{'Repositories/base_url':'http://foo1','Repositories/repo_name':'HDP','Repositories/repo_id':'HDP-2.2.0'}"
         + "], 'OperatingSystems/os_type':'redhat6'}]";
-    repoVersionDAO.create(stackEntity, HDP_2_2_0_1, String.valueOf(System.currentTimeMillis()),
-        "pack", urlInfo);
+    repoVersionDAO.create(stackEntity, HDP_2_2_0_1, String.valueOf(System.currentTimeMillis()), urlInfo);
 
 
     c.createClusterVersion(HDP_220_STACK, HDP_2_2_0_1, "admin", RepositoryVersionState.INSTALLING);

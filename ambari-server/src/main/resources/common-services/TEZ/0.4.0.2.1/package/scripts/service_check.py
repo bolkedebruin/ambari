@@ -50,6 +50,11 @@ class TezServiceCheckLinux(TezServiceCheck):
       mode = 0755
     )
 
+    params.HdfsResource("/tmp/tezsmokeoutput",
+      action = "delete_on_execute",
+      type = "directory"
+    )
+
     params.HdfsResource("/tmp/tezsmokeinput",
       action = "create_on_execute",
       type = "directory",
@@ -63,9 +68,15 @@ class TezServiceCheckLinux(TezServiceCheck):
     )
 
     if params.hdp_stack_version and compare_versions(params.hdp_stack_version, '2.2.0.0') >= 0:
-      copy_to_hdfs("tez", params.user_group, params.hdfs_user)
+      copy_to_hdfs("tez", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
 
     params.HdfsResource(None, action = "execute")
+
+    if params.security_enabled:
+      kinit_cmd = format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal};")
+      Execute(kinit_cmd,
+              user=params.smokeuser
+      )
 
     ExecuteHadoop(wordcount_command,
       tries = 3,

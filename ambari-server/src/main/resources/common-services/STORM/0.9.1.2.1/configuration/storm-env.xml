@@ -20,27 +20,73 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>storm_user</name>
+    <display-name>Storm User</display-name>
     <value>storm</value>
     <property-type>USER</property-type>
     <description></description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>storm_log_dir</name>
     <value>/var/log/storm</value>
     <description></description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
   <property>
     <name>storm_pid_dir</name>
     <value>/var/run/storm</value>
     <description></description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
   <property>
     <name>jmxremote_port</name>
     <value>56431</value>
     <description></description>
+  </property>
+
+
+  <property>
+    <name>storm_principal_name</name>
+    <description>Storm principal name</description>
+  </property>
+
+  <property>
+    <name>storm_principal_name</name>
+    <description>Storm principal name</description>
+  </property>
+
+  <property>
+    <name>storm_keytab</name>
+    <description>Storm keytab path</description>
+  </property>
+
+  <property>
+    <name>storm_ui_principal_name</name>
+    <description>Storm UI principal name</description>
+  </property>
+
+  <property>
+    <name>storm_ui_keytab</name>
+    <description>Storm UI keytab path</description>
+  </property>
+
+  <property>
+    <name>nimbus_keytab</name>
+    <description>Nimbus keytab path</description>
+  </property>
+
+  <property>
+    <name>nimbus_principal_name</name>
+    <description>Nimbus principal name</description>
   </property>
   
   <!-- storm-env.sh -->
@@ -61,6 +107,9 @@ export STORM_LOG_DIR={{log_dir}}
 export STORM_CONF_DIR={{conf_dir}}
 export STORM_HOME={{storm_component_home_dir}}
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
    <property>
@@ -68,5 +117,11 @@ export STORM_HOME={{storm_component_home_dir}}
      <value>false</value>
      <description></description>
    </property>
+   <property>
+     <name>storm_logs_supported</name>
+     <value>false</value>
+     <description></description>
+   </property>
+
 
 </configuration>

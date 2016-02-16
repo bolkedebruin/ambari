@@ -869,8 +869,9 @@ public class HostImpl implements Host {
 
   @Override
   public String getOsFamily() {
-	  String majorVersion = getHostAttributes().get(OS_RELEASE_VERSION).split("\\.")[0];
-	  return getHostAttributes().get(OSFAMILY) + majorVersion;
+    Map<String, String> hostAttributes = getHostAttributes();
+    String majorVersion = hostAttributes.get(OS_RELEASE_VERSION).split("\\.")[0];
+	  return hostAttributes.get(OSFAMILY) + majorVersion;
   }
 
   @Override
@@ -1355,7 +1356,12 @@ public class HostImpl implements Host {
             hostConfig = new HostConfig();
             hostConfigMap.put(configType, hostConfig);
             if (cluster != null) {
-              hostConfig.setDefaultVersionTag(cluster.getDesiredConfigByType(configType).getTag());
+              Config conf = cluster.getDesiredConfigByType(configType);
+              if(conf == null)
+                LOG.error("Config inconsistency exists:"+
+                    " unknown configType="+configType);
+              else
+                hostConfig.setDefaultVersionTag(conf.getTag());
             }
           }
           Config config = configEntry.getValue();

@@ -18,6 +18,7 @@
 
 package org.apache.ambari.view.filebrowser;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -68,6 +69,8 @@ public class DownloadService extends HdfsService {
    * Download entire file
    * @param path path to file
    * @param download download as octet strem or as file mime type
+   * @param checkperm used to check if the file can be downloaded. Takes precedence when both download and checkperm
+   *                  is set.
    * @param headers http headers
    * @param ui uri info
    * @return response with file
@@ -76,20 +79,28 @@ public class DownloadService extends HdfsService {
   @Path("/browse")
   @Produces(MediaType.TEXT_PLAIN)
   public Response browse(@QueryParam("path") String path, @QueryParam("download") boolean download,
+                         @QueryParam("checkperm") boolean checkperm,
                          @Context HttpHeaders headers, @Context UriInfo ui) {
     try {
       HdfsApi api = getApi(context);
       FileStatus status = api.getFileStatus(path);
       FSDataInputStream fs = api.open(path);
+      if(checkperm) {
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("allowed", true);
+        return Response.ok(jsonObject)
+          .header("Content-Type", MediaType.APPLICATION_JSON)
+          .build();
+      }
       ResponseBuilder result = Response.ok(fs);
       if (download) {
         result.header("Content-Disposition",
-            "inline; filename=\"" + status.getPath().getName() + "\"").type(MediaType.APPLICATION_OCTET_STREAM);
+          "inline; filename=\"" + status.getPath().getName() + "\"").type(MediaType.APPLICATION_OCTET_STREAM);
       } else {
         FileNameMap fileNameMap = URLConnection.getFileNameMap();
         String mimeType = fileNameMap.getContentTypeFor(status.getPath().getName());
         result.header("Content-Disposition",
-            "filename=\"" + status.getPath().getName() + "\"").type(mimeType);
+          "filename=\"" + status.getPath().getName() + "\"").type(mimeType);
       }
       return result.build();
     } catch (WebApplicationException ex) {
@@ -156,6 +167,11 @@ public class DownloadService extends HdfsService {
   @Produces(MediaType.APPLICATION_OCTET_STREAM)
   public Response downloadGZip(final DownloadRequest request) {
     try {
+      String name = "hdfs.zip";
+      if(request.entries.length == 1 ){
+        name = new File(request.entries[0]).getName() + ".zip";
+      }
+
       StreamingOutput result = new StreamingOutput() {
         public void write(OutputStream output) throws IOException,
             ServiceFormattedException {
@@ -197,7 +213,7 @@ public class DownloadService extends HdfsService {
         }
       };
       return Response.ok(result)
-          .header("Content-Disposition", "inline; filename=\"hdfs.zip\"").build();
+          .header("Content-Disposition", "inline; filename=\"" + name +"\"").build();
     } catch (WebApplicationException ex) {
       throw ex;
     } catch (Exception ex) {
@@ -222,7 +238,12 @@ public class DownloadService extends HdfsService {
           FSDataInputStream in = null;
           for (String path : request.entries) {
             try {
-              in = getApi(context).open(path);
+              try {
+                in = getApi(context).open(path);
+              } catch (AccessControlException ex) {
+                logger.error("Error in opening file {}. Ignoring concat of this files : {}", path.substring(1), ex.getMessage());
+                continue;
+              }
               byte[] chunk = new byte[1024];
               while (in.read(chunk) != -1) {
                 output.write(chunk);

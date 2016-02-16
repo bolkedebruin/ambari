@@ -354,11 +354,12 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
     }
 
     // Determine repositories for host
-    final List<RepositoryEntity> repoInfo = perOsRepos.get(host.getOsFamily());
+    String osFamily = host.getOsFamily();
+    final List<RepositoryEntity> repoInfo = perOsRepos.get(osFamily);
     if (repoInfo == null) {
       throw new SystemException(String.format("Repositories for os type %s are " +
                       "not defined. Repo version=%s, stackId=%s",
-              host.getOsFamily(), desiredRepoVersion, stackId));
+        osFamily, desiredRepoVersion, stackId));
     }
     // For every host at cluster, determine packages for all installed services
     List<ServiceOsSpecific.Package> packages = new ArrayList<ServiceOsSpecific.Package>();
@@ -367,7 +368,7 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
     for (ServiceComponentHost component : components) {
       servicesOnHost.add(component.getServiceName());
     }
-
+    List<String> blacklistedPackagePrefixes = configuration.getRollingUpgradeSkipPackagesPrefixes();
     for (String serviceName : servicesOnHost) {
       ServiceInfo info;
       try {
@@ -377,10 +378,19 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
       }
       List<ServiceOsSpecific.Package> packagesForService = managementController.getPackagesForServiceHost(info,
               new HashMap<String, String>(), // Contents are ignored
-              host.getOsFamily());
+        osFamily);
       for (ServiceOsSpecific.Package aPackage : packagesForService) {
         if (! aPackage.getSkipUpgrade()) {
-          packages.add(aPackage);
+          boolean blacklisted = false;
+          for(String prefix : blacklistedPackagePrefixes) {
+            if (aPackage.getName().startsWith(prefix)) {
+              blacklisted = true;
+              break;
+            }
+          }
+          if (! blacklisted) {
+            packages.add(aPackage);
+          }
         }
       }
     }
@@ -410,12 +420,21 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
     Map<String, String> hostLevelParams = new HashMap<String, String>();
     hostLevelParams.put(JDK_LOCATION, getManagementController().getJdkResourceUrl());
 
+    // Generate cluster host info
+    String clusterHostInfoJson;
+    try {
+      clusterHostInfoJson = StageUtils.getGson().toJson(
+        StageUtils.getClusterHostInfo(cluster));
+    } catch (AmbariException e) {
+      throw new SystemException("Could not build cluster topology", e);
+    }
+
     Stage stage = stageFactory.createNew(req.getId(),
             "/tmp/ambari",
             cluster.getClusterName(),
             cluster.getClusterId(),
             caption,
-            "{}",
+            clusterHostInfoJson,
             "{}",
             StageUtils.getGson().toJson(hostLevelParams));
 
@@ -427,7 +446,7 @@ public class HostStackVersionResourceProvider extends AbstractControllerResource
     req.addStages(Collections.singletonList(stage));
 
     try {
-      actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, false);
+      actionExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage);
     } catch (AmbariException e) {
       throw new SystemException("Can not modify stage", e);
     }

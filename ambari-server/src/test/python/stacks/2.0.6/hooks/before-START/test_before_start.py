@@ -42,18 +42,18 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'root',
                               group = 'hadoop',
                               mode = 0775,
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop',
                               owner = 'root',
                               group = 'root',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/tmp/hadoop-hdfs',
                               owner = 'hdfs',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/commons-logging.properties',
@@ -73,6 +73,7 @@ class TestHookBeforeStart(RMFTestCase):
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/hadoop-metrics2.properties',
                               content = Template('hadoop-metrics2.properties.j2'),
+                              group='hadoop',
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/task-log4j.properties',
@@ -115,18 +116,18 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'root',
                               group = 'hadoop',
                               mode = 0775,
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop',
                               owner = 'root',
                               group = 'root',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/tmp/hadoop-hdfs',
                               owner = 'hdfs',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/commons-logging.properties',
@@ -146,6 +147,7 @@ class TestHookBeforeStart(RMFTestCase):
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/hadoop-metrics2.properties',
                               content = Template('hadoop-metrics2.properties.j2'),
+                              group='hadoop',
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/task-log4j.properties',
@@ -193,18 +195,18 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'root',
                               group = 'hadoop',
                               mode = 0775,
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop',
                               owner = 'root',
                               group = 'root',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/tmp/hadoop-hdfs',
                               owner = 'hdfs',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/commons-logging.properties',
@@ -224,6 +226,7 @@ class TestHookBeforeStart(RMFTestCase):
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/hadoop-metrics2.properties',
                               content = Template('hadoop-metrics2.properties.j2'),
+                              group='hadoop',
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/task-log4j.properties',
@@ -273,18 +276,18 @@ class TestHookBeforeStart(RMFTestCase):
                               owner = 'root',
                               group = 'hadoop',
                               mode = 0775,
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop',
                               owner = 'root',
                               group = 'root',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('Directory', '/tmp/hadoop-hdfs',
                               owner = 'hdfs',
-                              recursive = True,
+                              create_parents = True,
                               cd_access = 'a',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/commons-logging.properties',
@@ -304,6 +307,7 @@ class TestHookBeforeStart(RMFTestCase):
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/hadoop-metrics2.properties',
                               content = Template('hadoop-metrics2.properties.j2'),
+                              group='hadoop',
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/task-log4j.properties',

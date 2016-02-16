@@ -23,30 +23,16 @@ import ambari_simplejson as json # simplejson is much faster comparing to Python
 import status_params
 
 from ambari_commons.constants import AMBARI_SUDO_BINARY
+from resource_management.libraries.functions.constants import Direction
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
+from resource_management.libraries.functions.get_bare_principal import get_bare_principal
 from resource_management.libraries.script import Script
-
-
-def get_bare_principal(normalized_principal_name):
-  """
-  Given a normalized principal name (nimbus/c6501.ambari.apache.org@EXAMPLE.COM) returns just the
-  primary component (nimbus)
-  :param normalized_principal_name: a string containing the principal name to process
-  :return: a string containing the primary component value or None if not valid
-  """
-
-  bare_principal = None
-
-  if normalized_principal_name:
-    match = re.match(r"([^/@]+)(?:/[^@])?(?:@.*)?", normalized_principal_name)
-
-    if match:
-      bare_principal = match.group(1)
-
-  return bare_principal
-
+from resource_management.libraries.resources.hdfs_resource import HdfsResource
+from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import get_kinit_path
 
 # server configurations
 config = Script.get_config()
@@ -54,6 +40,7 @@ tmp_dir = Script.get_tmp_dir()
 sudo = AMBARI_SUDO_BINARY
 
 stack_name = default("/hostLevelParams/stack_name", None)
+upgrade_direction = default("/commandParams/upgrade_direction", Direction.UPGRADE)
 version = default("/commandParams/version", None)
 
 storm_component_home_dir = status_params.storm_component_home_dir
@@ -73,7 +60,7 @@ if stack_is_hdp22_or_further:
   rest_lib_dir = format("{storm_component_home_dir}/contrib/storm-rest")
   storm_bin_dir = format("{storm_component_home_dir}/bin")
   storm_lib_dir = format("{storm_component_home_dir}/lib")
-
+  log4j_dir = format("{storm_component_home_dir}/log4j2")
 
 storm_user = config['configurations']['storm-env']['storm_user']
 log_dir = config['configurations']['storm-env']['storm_log_dir']
@@ -86,6 +73,7 @@ nimbus_port = config['configurations']['storm-site']['nimbus.thrift.port']
 storm_zookeeper_root_dir = default('/configurations/storm-site/storm.zookeeper.root', None)
 storm_zookeeper_servers = config['configurations']['storm-site']['storm.zookeeper.servers']
 storm_zookeeper_port = config['configurations']['storm-site']['storm.zookeeper.port']
+storm_logs_supported = config['configurations']['storm-env']['storm_logs_supported']
 
 # nimbus.seeds is supported in HDP 2.3.0.0 and higher
 nimbus_seeds_supported = default('/configurations/storm-env/nimbus_seeds_supported', False)
@@ -160,10 +148,26 @@ if stack_is_hdp22_or_further:
 ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
 has_metric_collector = not len(ams_collector_hosts) == 0
 if has_metric_collector:
-  metric_collector_host = ams_collector_hosts[0]
+  if 'cluster-env' in config['configurations'] and \
+      'metrics_collector_vip_host' in config['configurations']['cluster-env']:
+    metric_collector_host = config['configurations']['cluster-env']['metrics_collector_vip_host']
+  else:
+    metric_collector_host = ams_collector_hosts[0]
+  if 'cluster-env' in config['configurations'] and \
+      'metrics_collector_vip_port' in config['configurations']['cluster-env']:
+    metric_collector_port = config['configurations']['cluster-env']['metrics_collector_vip_port']
+  else:
+    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
+    if metric_collector_web_address.find(':') != -1:
+      metric_collector_port = metric_collector_web_address.split(':')[1]
+    else:
+      metric_collector_port = '6188'
+
   metric_collector_report_interval = 60
   metric_collector_app_id = "nimbus"
 
+metrics_report_interval = default("/configurations/ams-site/timeline.metrics.sink.report.interval", 60)
+metrics_collection_period = default("/configurations/ams-site/timeline.metrics.sink.collection.period", 10)
 metric_collector_sink_jar = "/usr/lib/storm/lib/ambari-metrics-storm-sink*.jar"
 
 # ranger host
@@ -188,6 +192,8 @@ repo_config_username = config['configurations']['ranger-storm-plugin-properties'
 ranger_env = config['configurations']['ranger-env']
 ranger_plugin_properties = config['configurations']['ranger-storm-plugin-properties']
 policy_user = config['configurations']['ranger-storm-plugin-properties']['policy_user']
+storm_cluster_log4j_content = config['configurations']['storm-cluster-log4j']['content']
+storm_worker_log4j_content = config['configurations']['storm-worker-log4j']['content']
 
 # some commands may need to supply the JAAS location when running as storm
 storm_jaas_file = format("{conf_dir}/storm_jaas.conf")
@@ -210,7 +216,11 @@ if has_ranger_admin:
   elif xa_audit_db_flavor == 'oracle':
     jdbc_jar_name = "ojdbc6.jar"
     jdbc_symlink_name = "oracle-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
+    colon_count = xa_db_host.count(':')
+    if colon_count == 2 or colon_count == 0:
+      audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
+    else:
+      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor == 'postgres':
     jdbc_jar_name = "postgresql.jar"
@@ -251,6 +261,7 @@ if has_ranger_admin:
 
   ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
   xa_audit_db_is_enabled = config['configurations']['ranger-storm-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+  xa_audit_hdfs_is_enabled = config['configurations']['ranger-storm-audit']['xasecure.audit.destination.hdfs'] if xml_configurations_supported else None
   ssl_keystore_password = unicode(config['configurations']['ranger-storm-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
   ssl_truststore_password = unicode(config['configurations']['ranger-storm-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
@@ -258,3 +269,31 @@ if has_ranger_admin:
   #For SQLA explicitly disable audit to DB for Ranger
   if xa_audit_db_flavor == 'sqla':
     xa_audit_db_is_enabled = False
+
+namenode_hosts = default("/clusterHostInfo/namenode_host", [])
+has_namenode = not len(namenode_hosts) == 0
+
+hdfs_user = config['configurations']['hadoop-env']['hdfs_user'] if has_namenode else None
+hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab'] if has_namenode else None
+hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name'] if has_namenode else None
+hdfs_site = config['configurations']['hdfs-site'] if has_namenode else None
+default_fs = config['configurations']['core-site']['fs.defaultFS'] if has_namenode else None
+hadoop_bin_dir = hdp_select.get_hadoop_dir("bin") if has_namenode else None
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir() if has_namenode else None
+kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
+
+import functools
+#create partial functions with common arguments for every HdfsResource call
+#to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
+HdfsResource = functools.partial(
+  HdfsResource,
+  user=hdfs_user,
+  security_enabled = security_enabled,
+  keytab = hdfs_user_keytab,
+  kinit_path_local = kinit_path_local,
+  hadoop_bin_dir = hadoop_bin_dir,
+  hadoop_conf_dir = hadoop_conf_dir,
+  principal_name = hdfs_principal_name,
+  hdfs_site = hdfs_site,
+  default_fs = default_fs
+)

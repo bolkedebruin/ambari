@@ -22,8 +22,8 @@ import backtype.storm.metric.api.IMetricsConsumer;
 import backtype.storm.task.IErrorReporter;
 import backtype.storm.task.TopologyContext;
 
-import org.apache.commons.lang.ClassUtils;
-import org.apache.commons.lang.math.NumberUtils;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.metrics2.sink.timeline.AbstractTimelineMetricsSink;
@@ -31,7 +31,6 @@ import org.apache.hadoop.metrics2.sink.timeline.UnableToConnectException;
 import org.apache.hadoop.metrics2.sink.timeline.cache.TimelineMetricsCache;
 import org.apache.hadoop.metrics2.sink.timeline.configuration.Configuration;
 
-import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -62,6 +61,10 @@ public class StormTimelineMetricsSink extends AbstractTimelineMetricsSink implem
     LOG.info("Preparing Storm Metrics Sink");
     try {
       hostname = InetAddress.getLocalHost().getHostName();
+      //If not FQDN , call  DNS
+      if ((hostname == null) || (!hostname.contains("."))) {
+        hostname = InetAddress.getLocalHost().getCanonicalHostName();
+      }
     } catch (UnknownHostException e) {
       LOG.error("Could not identify hostname.");
       throw new RuntimeException("Could not identify hostname.", e);
@@ -82,7 +85,7 @@ public class StormTimelineMetricsSink extends AbstractTimelineMetricsSink implem
     List<TimelineMetric> metricList = new ArrayList<TimelineMetric>();
     for (DataPoint dataPoint : dataPoints) {
       if (dataPoint.value != null && NumberUtils.isNumber(dataPoint.value.toString())) {
-        LOG.info(dataPoint.name + " = " + dataPoint.value);
+        LOG.debug(dataPoint.name + " = " + dataPoint.value);
         TimelineMetric timelineMetric = createTimelineMetric(taskInfo.timestamp,
             taskInfo.srcComponentId, dataPoint.name, dataPoint.value.toString());
         // Put intermediate values into the cache until it is time to send
@@ -103,8 +106,6 @@ public class StormTimelineMetricsSink extends AbstractTimelineMetricsSink implem
         emitMetrics(timelineMetrics);
       } catch (UnableToConnectException uce) {
         LOG.warn("Unable to send metrics to collector by address:" + uce.getConnectUrl());
-      } catch (IOException e) {
-        LOG.error("Unexpected error", e);
       }
     }
   }

@@ -33,15 +33,15 @@ from ambari_commons.os_family_impl import OsFamilyImpl
 class WebHCatServer(Script):
   def install(self, env):
     import params
-    self.install_packages(env, exclude_packages=params.hive_exclude_packages)
+    self.install_packages(env)
 
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env) # FOR SECURITY
-    webhcat_service(action='start', rolling_restart=rolling_restart)
+    webhcat_service(action='start', upgrade_type=upgrade_type)
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     webhcat_service(action='stop')
@@ -70,8 +70,8 @@ class WebHCatServerDefault(WebHCatServer):
     env.set_params(status_params)
     check_process_status(status_params.webhcat_pid_file)
 
-  def pre_rolling_restart(self, env):
-    Logger.info("Executing WebHCat Rolling Upgrade pre-restart")
+  def pre_upgrade_restart(self, env, upgrade_type=None):
+    Logger.info("Executing WebHCat Stack Upgrade pre-restart")
     import params
     env.set_params(params)
 

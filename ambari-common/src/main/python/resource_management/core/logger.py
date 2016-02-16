@@ -36,6 +36,8 @@ class Logger:
   
   @staticmethod
   def initialize_logger(name='resource_management', logging_level=logging.INFO, format='%(asctime)s - %(message)s'):
+    if Logger.logger:
+      return
     # set up logging (two separate loggers for stderr and stdout with different loglevels)
     logger = logging.getLogger(name)
     logger.setLevel(logging_level)
@@ -51,8 +53,6 @@ class Logger:
     logger.addHandler(chout)
 
     Logger.logger = logger
-    
-    return logger, chout, cherr
 
   @staticmethod
   def error(text):
@@ -104,6 +104,35 @@ class Logger:
   @staticmethod
   def _get_resource_repr(resource):
     return Logger.get_function_repr(repr(resource), resource.arguments, resource)
+  
+  @staticmethod
+  def _get_resource_name_repr(name):
+    if isinstance(name, basestring) and not isinstance(name, PasswordString):
+      name = "'" + name + "'" # print string cutely not with repr
+    else:
+      name = repr(name)
+      
+    return name
+  
+  @staticmethod
+  def format_command_for_output(command):
+    """
+    Format command to be output by replacing the PasswordStrings.
+    """
+    if isinstance(command, (list, tuple)):
+      result = []
+      for x in command:
+        if isinstance(x, PasswordString):
+          result.append(repr(x).strip("'")) # string ''
+        else:
+          result.append(x)
+    else:
+      if isinstance(command, PasswordString):
+        result = repr(command).strip("'") # string ''
+      else:
+        result = command
+    
+    return result
   
   @staticmethod
   def get_function_repr(name, arguments, resource=None):

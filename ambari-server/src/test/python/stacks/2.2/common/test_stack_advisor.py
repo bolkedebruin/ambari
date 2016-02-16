@@ -206,7 +206,9 @@ class TestHDP22StackAdvisor(TestCase):
 
 
   def test_validateHDFSConfigurations(self):
-    recommendedDefaults = None
+    recommendedDefaults = {
+      'dfs.datanode.du.reserved': '1024'
+    }
 
     unsecure_cluster_core_site = {
       'hadoop.security.authentication': 'simple',
@@ -220,6 +222,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Unsecured cluster, secure ports
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:1022',
     }
@@ -247,6 +250,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Unsecured cluster, unsecure ports
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.datanode.address': '0.0.0.0:55555',
                     'dfs.datanode.http.address': '0.0.0.0:55555',
                     }
@@ -276,6 +280,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, invalid dfs.http.policy value
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'WRONG_VALUE',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:1022',
@@ -310,6 +315,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, https address not defined
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     }
@@ -339,6 +345,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, https address defined and secure
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.https.address': '0.0.0.0:1022',
@@ -369,6 +376,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, https address defined and non secure
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.https.address': '0.0.0.0:50475',
@@ -399,6 +407,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, non secure dfs port, https property not defined
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:50010',
                  }
@@ -450,6 +459,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, non secure dfs port, https defined and secure
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:50010',
                     'dfs.datanode.https.address': '0.0.0.0:1022',
@@ -499,6 +509,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, valid non-root configuration
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:50010',
                     'dfs.datanode.https.address': '0.0.0.0:50475',
@@ -523,6 +534,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTP_ONLY, insecure port
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTP_ONLY',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:50475',
@@ -564,6 +576,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTP_ONLY, valid configuration
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTP_ONLY',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:1022',
@@ -587,6 +600,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, absent dfs.http.policy (typical situation)
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:1022',
                     }
@@ -609,6 +623,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTP_ONLY, misusage of dfs.data.transfer.protection warning
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTP_ONLY',
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:1022',
@@ -638,6 +653,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # TEST CASE: Secure cluster, dfs.http.policy=HTTPS_ONLY, wrong dfs.data.transfer.protection value
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.http.policy': 'HTTPS_ONLY',
                     'dfs.datanode.address': '0.0.0.0:50010',
                     'dfs.datanode.https.address': '0.0.0.0:50475',
@@ -667,6 +683,7 @@ class TestHDP22StackAdvisor(TestCase):
     # TEST CASE: Hadoop wire encryption enabled
 
     properties = {  # hdfs-site
+                    'dfs.datanode.du.reserved': '1024',
                     'dfs.encrypt.data.transfer': 'true',  # Wire encryption
                     'dfs.datanode.address': '0.0.0.0:1019',
                     'dfs.datanode.http.address': '0.0.0.0:1022',
@@ -691,6 +708,23 @@ class TestHDP22StackAdvisor(TestCase):
   def test_recommendYARNConfigurations(self):
     configurations = {}
     services = {"configurations": configurations}
+    services['services'] = [
+      {
+        "StackServices": {
+          "service_name": "HDFS"
+        },
+        },
+      {
+        "StackServices": {
+          "service_name": "YARN"
+        },
+        },
+      {
+        "StackServices": {
+          "service_name": "SLIDER"
+        },
+        }
+    ]
     clusterData = {
       "cpu": 4,
       "containers" : 5,
@@ -710,7 +744,8 @@ class TestHDP22StackAdvisor(TestCase):
           "yarn.scheduler.maximum-allocation-mb": "1280",
           "yarn.scheduler.maximum-allocation-vcores": "4",
           "yarn.scheduler.minimum-allocation-vcores": "1",
-          "yarn.nodemanager.resource.cpu-vcores": "4"
+          "yarn.nodemanager.resource.cpu-vcores": "4",
+          "hadoop.registry.rm.enabled": "true"
         }
       }
     }
@@ -753,7 +788,8 @@ class TestHDP22StackAdvisor(TestCase):
           "yarn.scheduler.maximum-allocation-vcores": "2",
           "yarn.scheduler.minimum-allocation-vcores": "1",
           "yarn.scheduler.maximum-allocation-mb": "1280",
-          "yarn.nodemanager.resource.cpu-vcores": "2"
+          "yarn.nodemanager.resource.cpu-vcores": "2",
+          "hadoop.registry.rm.enabled": "false"
         },
         "property_attributes": {
           'yarn.nodemanager.resource.memory-mb': {'maximum': '1877'},
@@ -837,15 +873,18 @@ class TestHDP22StackAdvisor(TestCase):
       "changed-configurations": [
         {
           "type": "yarn-site",
-          "name": "yarn.nodemanager.resource.memory-mb"
+          "name": "yarn.nodemanager.resource.memory-mb",
+          "old_value": "512"
         },
         {
           "type": "yarn-site",
-          "name": "yarn.scheduler.minimum-allocation-mb"
+          "name": "yarn.scheduler.minimum-allocation-mb",
+          "old_value": "512"
         },
         {
           "type": "yarn-site",
-          "name": "yarn.scheduler.maximum-allocation-mb"
+          "name": "yarn.scheduler.maximum-allocation-mb",
+          "old_value": "512"
         },
         {
           "type": "yarn-site",
@@ -926,7 +965,8 @@ class TestHDP22StackAdvisor(TestCase):
     configurations["yarn-site"]["properties"]["yarn.nodemanager.resource.percentage-physical-cpu-limit"] = '0.5'
     services["changed-configurations"].append({
           "type": "yarn-site",
-          "name": "yarn.nodemanager.resource.percentage-physical-cpu-limit"
+          "name": "yarn.nodemanager.resource.percentage-physical-cpu-limit",
+          "old_value": "6"
         })
     expected["yarn-site"]["properties"]["yarn.nodemanager.resource.cpu-vcores"] = '5'
     expected["yarn-site"]["properties"]["yarn.scheduler.minimum-allocation-vcores"] = '1'
@@ -937,7 +977,7 @@ class TestHDP22StackAdvisor(TestCase):
     expected["yarn-site"]["property_attributes"]["yarn.scheduler.maximum-allocation-vcores"]["maximum"] = '5'
     self.stackAdvisor.recommendYARNConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
-    
+
     # Test - with no 'changed-configurations', we should get updated 'maximum's.
     services.pop("changed-configurations", None)
     services.pop("configurations", None)
@@ -979,7 +1019,6 @@ class TestHDP22StackAdvisor(TestCase):
       },
       'hive-env': {
         'properties': {
-          'cost_based_optimizer': 'On',
           'hive_exec_orc_storage_strategy': 'SPEED',
           'hive_security_authorization': 'None',
           'hive_timeline_logging_enabled': 'true',
@@ -989,11 +1028,10 @@ class TestHDP22StackAdvisor(TestCase):
       'hive-site': {
         'properties': {
           'hive.server2.enable.doAs': 'true',
-          'hive.server2.tez.default.queues': "queue1,queue2",
+          'hive.server2.tez.default.queues': "default",
           'hive.server2.tez.initialize.default.sessions': 'false',
           'hive.server2.tez.sessions.per.default.queue': '1',
           'hive.auto.convert.join.noconditionaltask.size': '268435456',
-          'hive.cbo.enable': 'true',
           'hive.compactor.initiator.on': 'false',
           'hive.compactor.worker.threads': '0',
           'hive.compute.query.using.stats': 'true',
@@ -1029,14 +1067,13 @@ class TestHDP22StackAdvisor(TestCase):
         },
        'property_attributes': {
          'hive.auto.convert.join.noconditionaltask.size': {'maximum': '805306368'},
-         'hive.server2.authentication.pam.services': {'delete': 'true'}, 
-         'hive.server2.custom.authentication.class': {'delete': 'true'}, 
-         'hive.server2.authentication.ldap.baseDN': {'delete': 'true'}, 
-         'hive.server2.authentication.kerberos.principal': {'delete': 'true'}, 
-         'hive.server2.authentication.kerberos.keytab': {'delete': 'true'}, 
+         'hive.server2.authentication.pam.services': {'delete': 'true'},
+         'hive.server2.custom.authentication.class': {'delete': 'true'},
+         'hive.server2.authentication.kerberos.principal': {'delete': 'true'},
+         'hive.server2.authentication.kerberos.keytab': {'delete': 'true'},
          'hive.server2.authentication.ldap.url': {'delete': 'true'},
          'hive.server2.tez.default.queues': {
-           'entries': [{'value': 'queue1', 'label': 'queue1 queue'}, {'value': 'queue2', 'label': 'queue2 queue'}]
+           'entries': [{'value': 'default', 'label': 'default queue'}]
           }
         }
       },
@@ -1045,7 +1082,8 @@ class TestHDP22StackAdvisor(TestCase):
         },
         'property_attributes': {
          'hive.security.authorization.manager': {'delete': 'true'},
-         'hive.security.authenticator.manager': {'delete': 'true'}
+         'hive.security.authenticator.manager': {'delete': 'true'},
+         'hive.conf.restricted.list': {'delete': 'true'}
         }
       }
     }
@@ -1136,13 +1174,91 @@ class TestHDP22StackAdvisor(TestCase):
             "hive.server2.authentication.kerberos.keytab": "",
             "hive.server2.authentication.kerberos.principal": "",
             "hive.server2.authentication.pam.services": "",
-            "hive.server2.custom.authentication.class": ""
+            "hive.server2.custom.authentication.class": "",
+            "hive.cbo.enable": "true"
           }
         },
         "hiveserver2-site": {
           "properties": {
             "hive.security.authorization.manager": "",
-            "hive.security.authenticator.manager": ""
+            "hive.security.authenticator.manager": "",
+            "hive.conf.restricted.list": ""
+          }
+        }
+      },
+      "changed-configurations": [ ]
+    }
+
+    hiveService = {
+      "services": [
+        {
+          "href": "/api/v1/stacks/HDP/versions/2.2/services/HIVE",
+          "StackServices": {
+            "service_name": "HIVE",
+            "service_version": "2.6.0.2.2",
+            "stack_name": "HDP",
+            "stack_version": "2.2"
+          },
+          "components": [
+            {
+              "StackServiceComponents": {
+                "advertise_version": "false",
+                "cardinality": "1",
+                "component_category": "MASTER",
+                "component_name": "HIVE_SERVER",
+                "display_name": "HiveServer2",
+                "is_client": "false",
+                "is_master": "true",
+                "hostnames": [
+                  "c6402.ambari.apache.org"
+                ]
+              },
+              "dependencies": []
+            },
+            {
+              "StackServiceComponents": {
+                "advertise_version": "true",
+                "cardinality": "1+",
+                "component_category": "SLAVE",
+                "component_name": "HIVE_CLIENT",
+                "display_name": "Hive Client",
+                "is_client": "true",
+                "is_master": "false",
+                "hostnames": [
+                  "c6402.ambari.apache.org",
+                  "c6403.ambari.apache.org"
+                ]
+              },
+              "dependencies": []
+            }
+          ]
+        },
+      ],
+      "configurations": {
+        "hive-env": {
+          "properties": {
+            "hive.heapsize": "200",
+            "hive.metastore.heapsize": "200",
+            "hive.client.heapsize": "200"
+          }
+        },
+        "hive-site": {
+          "properties": {
+            "hive.server2.authentication": "none",
+            "hive.server2.authentication.ldap.url": "",
+            "hive.server2.authentication.ldap.baseDN": "",
+            "hive.server2.authentication.kerberos.keytab": "",
+            "hive.server2.authentication.kerberos.principal": "",
+            "hive.server2.authentication.pam.services": "",
+            "hive.server2.custom.authentication.class": "",
+            "hive.cbo.enable": "true"
+          }
+        },
+        "hiveserver2-site": {
+          "properties": {
+            "hive.security.authorization.manager": "",
+            "hive.security.authenticator.manager": "",
+            "hive.conf.restricted.list": ""
           }
         }
       },
@@ -1199,10 +1315,8 @@ class TestHDP22StackAdvisor(TestCase):
     #test recommendations
     services["configurations"]["hive-site"]["properties"]["hive.cbo.enable"] = "false"
     services["configurations"]["hive-env"]["properties"]["hive_security_authorization"] = "sqlstdauth"
-    services["changed-configurations"] = [{"type": "hive-site", "name": "hive.cbo.enable"},
-                                          {"type": "hive-env", "name": "hive_security_authorization"}]
+    services["changed-configurations"] = [{"type": "hive-env", "name": "hive_security_authorization"}]
     expected["hive-env"]["properties"]["hive_security_authorization"] = "sqlstdauth"
-    expected["hive-site"]["properties"]["hive.cbo.enable"] = "false"
     expected["hive-site"]["properties"]["hive.stats.fetch.partition.stats"]="false"
     expected["hive-site"]["properties"]["hive.stats.fetch.column.stats"]="false"
     expected["hive-site"]["properties"]["hive.security.authorization.enabled"]="true"
@@ -1212,6 +1326,7 @@ class TestHDP22StackAdvisor(TestCase):
     expected["hiveserver2-site"]["properties"]["hive.security.authorization.enabled"]="true"
     expected["hiveserver2-site"]["properties"]["hive.security.authorization.manager"]="org.apache.hadoop.hive.ql.security.authorization.plugin.sqlstd.SQLStdHiveAuthorizerFactory"
     expected["hiveserver2-site"]["properties"]["hive.security.authenticator.manager"]="org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator"
+    expected["hiveserver2-site"]["properties"]["hive.conf.restricted.list"]="hive.security.authenticator.manager,hive.security.authorization.manager,hive.users.in.admin.role"
 
     self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
@@ -1229,55 +1344,55 @@ class TestHDP22StackAdvisor(TestCase):
 
     # test 'hive.server2.tez.default.queues' leaf queues
     services["configurations"]['capacity-scheduler']['properties'] = {
-            "yarn.scheduler.capacity.maximum-am-resource-percent": "0.2",
-            "yarn.scheduler.capacity.maximum-applications": "10000",
-            "yarn.scheduler.capacity.node-locality-delay": "40",
-            "yarn.scheduler.capacity.queue-mappings-override.enable": "false",
-            "yarn.scheduler.capacity.resource-calculator": "org.apache.hadoop.yarn.util.resource.DefaultResourceCalculator",
-            "yarn.scheduler.capacity.root.accessible-node-labels": "*",
-            "yarn.scheduler.capacity.root.acl_administer_queue": "*",
-            "yarn.scheduler.capacity.root.capacity": "100",
-            "yarn.scheduler.capacity.root.default.a.a1.acl_administer_queue": "*",
-            "yarn.scheduler.capacity.root.default.a.a1.acl_submit_applications": "*",
-            "yarn.scheduler.capacity.root.default.a.a1.capacity": "75",
-            "yarn.scheduler.capacity.root.default.a.a1.maximum-capacity": "100",
-            "yarn.scheduler.capacity.root.default.a.a1.minimum-user-limit-percent": "100",
-            "yarn.scheduler.capacity.root.default.a.a1.ordering-policy": "fifo",
-            "yarn.scheduler.capacity.root.default.a.a1.state": "RUNNING",
-            "yarn.scheduler.capacity.root.default.a.a1.user-limit-factor": "1",
-            "yarn.scheduler.capacity.root.default.a.a2.acl_administer_queue": "*",
-            "yarn.scheduler.capacity.root.default.a.a2.acl_submit_applications": "*",
-            "yarn.scheduler.capacity.root.default.a.a2.capacity": "25",
-            "yarn.scheduler.capacity.root.default.a.a2.maximum-capacity": "25",
-            "yarn.scheduler.capacity.root.default.a.a2.minimum-user-limit-percent": "100",
-            "yarn.scheduler.capacity.root.default.a.a2.ordering-policy": "fifo",
-            "yarn.scheduler.capacity.root.default.a.a2.state": "RUNNING",
-            "yarn.scheduler.capacity.root.default.a.a2.user-limit-factor": "1",
-            "yarn.scheduler.capacity.root.default.a.acl_administer_queue": "*",
-            "yarn.scheduler.capacity.root.default.a.acl_submit_applications": "*",
-            "yarn.scheduler.capacity.root.default.a.capacity": "50",
-            "yarn.scheduler.capacity.root.default.a.maximum-capacity": "100",
-            "yarn.scheduler.capacity.root.default.a.minimum-user-limit-percent": "100",
-            "yarn.scheduler.capacity.root.default.a.ordering-policy": "fifo",
-            "yarn.scheduler.capacity.root.default.a.queues": "a1,a2",
-            "yarn.scheduler.capacity.root.default.a.state": "RUNNING",
-            "yarn.scheduler.capacity.root.default.a.user-limit-factor": "1",
-            "yarn.scheduler.capacity.root.default.acl_submit_applications": "*",
-            "yarn.scheduler.capacity.root.default.b.acl_administer_queue": "*",
-            "yarn.scheduler.capacity.root.default.b.acl_submit_applications": "*",
-            "yarn.scheduler.capacity.root.default.b.capacity": "50",
-            "yarn.scheduler.capacity.root.default.b.maximum-capacity": "50",
-            "yarn.scheduler.capacity.root.default.b.minimum-user-limit-percent": "100",
-            "yarn.scheduler.capacity.root.default.b.ordering-policy": "fifo",
-            "yarn.scheduler.capacity.root.default.b.state": "RUNNING",
-            "yarn.scheduler.capacity.root.default.b.user-limit-factor": "1",
-            "yarn.scheduler.capacity.root.default.capacity": "100",
-            "yarn.scheduler.capacity.root.default.maximum-capacity": "100",
-            "yarn.scheduler.capacity.root.default.queues": "a,b",
-            "yarn.scheduler.capacity.root.default.state": "RUNNING",
-            "yarn.scheduler.capacity.root.default.user-limit-factor": "1",
-            "yarn.scheduler.capacity.root.queues": "default"
-          }
+            "capacity-scheduler" : "yarn.scheduler.capacity.maximum-am-resource-percent=0.2\n"
+                                   "yarn.scheduler.capacity.maximum-applications=10000\n"
+                                   "yarn.scheduler.capacity.node-locality-delay=40\n"
+                                   "yarn.scheduler.capacity.queue-mappings-override.enable=false\n"
+                                   "yarn.scheduler.capacity.resource-calculator=org.apache.hadoop.yarn.util.resource.DefaultResourceCalculator\n"
+                                   "yarn.scheduler.capacity.root.accessible-node-labels=*\n"
+                                   "yarn.scheduler.capacity.root.acl_administer_queue=*\n"
+                                   "yarn.scheduler.capacity.root.capacity=100\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.acl_administer_queue=*\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.acl_submit_applications=*\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.capacity=75\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.maximum-capacity=100\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.minimum-user-limit-percent=100\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.ordering-policy=fifo\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.state=RUNNING\n"
+                                   "yarn.scheduler.capacity.root.default.a.a1.user-limit-factor=1\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.acl_administer_queue=*\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.acl_submit_applications=*\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.capacity=25\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.maximum-capacity=25\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.minimum-user-limit-percent=100\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.ordering-policy=fifo\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.state=RUNNING\n"
+                                   "yarn.scheduler.capacity.root.default.a.a2.user-limit-factor=1\n"
+                                   "yarn.scheduler.capacity.root.default.a.acl_administer_queue=*\n"
+                                   "yarn.scheduler.capacity.root.default.a.acl_submit_applications=*\n"
+                                   "yarn.scheduler.capacity.root.default.a.capacity=50\n"
+                                   "yarn.scheduler.capacity.root.default.a.maximum-capacity=100\n"
+                                   "yarn.scheduler.capacity.root.default.a.minimum-user-limit-percent=100\n"
+                                   "yarn.scheduler.capacity.root.default.a.ordering-policy=fifo\n"
+                                   "yarn.scheduler.capacity.root.default.a.queues=a1,a2\n"
+                                   "yarn.scheduler.capacity.root.default.a.state=RUNNING\n"
+                                   "yarn.scheduler.capacity.root.default.a.user-limit-factor=1\n"
+                                   "yarn.scheduler.capacity.root.default.acl_submit_applications=*\n"
+                                   "yarn.scheduler.capacity.root.default.b.acl_administer_queue=*\n"
+                                   "yarn.scheduler.capacity.root.default.b.acl_submit_applications=*\n"
+                                   "yarn.scheduler.capacity.root.default.b.capacity=50\n"
+                                   "yarn.scheduler.capacity.root.default.b.maximum-capacity=50\n"
+                                   "yarn.scheduler.capacity.root.default.b.minimum-user-limit-percent=100\n"
+                                   "yarn.scheduler.capacity.root.default.b.ordering-policy=fifo\n"
+                                   "yarn.scheduler.capacity.root.default.b.state=RUNNING\n"
+                                   "yarn.scheduler.capacity.root.default.b.user-limit-factor=1\n"
+                                   "yarn.scheduler.capacity.root.default.capacity=100\n"
+                                   "yarn.scheduler.capacity.root.default.maximum-capacity=100\n"
+                                   "yarn.scheduler.capacity.root.default.queues=a,b\n"
+                                   "yarn.scheduler.capacity.root.default.state=RUNNING\n"
+                                   "yarn.scheduler.capacity.root.default.user-limit-factor=1\n"
+                                   "yarn.scheduler.capacity.root.queues=default"}
+
     expected['hive-site']['properties']['hive.server2.tez.default.queues'] = 'default.a.a1,default.a.a2,default.b'
     expected['hive-site']['property_attributes']['hive.server2.tez.default.queues'] = {
            'entries': [{'value': 'default.a.a1', 'label': 'default.a.a1 queue'}, {'value': 'default.a.a2', 'label': 'default.a.a2 queue'}, {'value': 'default.b', 'label': 'default.b queue'}]
@@ -1285,6 +1400,29 @@ class TestHDP22StackAdvisor(TestCase):
     self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations['hive-site']['property_attributes']['hive.server2.tez.default.queues'], expected['hive-site']['property_attributes']['hive.server2.tez.default.queues'])
     self.assertEquals(configurations['hive-site']['properties']['hive.server2.tez.default.queues'], expected['hive-site']['properties']['hive.server2.tez.default.queues'])
+
+    # Hive heapsize properties
+    self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, hiveService, hosts)
+
+    # Recommended default values
+    self.assertEquals(configurations["hive-env"]["properties"]["hive.metastore.heapsize"], "512")
+    self.assertEquals(configurations["hive-env"]["properties"]["hive.heapsize"], "703")
+    self.assertEquals(configurations["hive-env"]["properties"]["hive.client.heapsize"], "1024")
+
+    # Recommended attributes for maximum values, minimum values defined in stack definition
+    self.assertEquals(configurations["hive-env"]["property_attributes"]["hive.heapsize"]["maximum"], "1877")
+    self.assertEquals(configurations["hive-env"]["property_attributes"]["hive.metastore.heapsize"]["maximum"], "1877")
+    self.assertEquals(configurations["hive-env"]["property_attributes"]["hive.client.heapsize"]["maximum"], "1877")
+
+    # test 'hive_security_authorization'=='ranger'
+    services["configurations"]["hive-env"]["properties"]["hive_security_authorization"] = "ranger"
+    expected["hiveserver2-site"]["properties"]["hive.security.authenticator.manager"] = "org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator"
+    expected["hiveserver2-site"]["properties"]["hive.security.authorization.manager"] = "com.xasecure.authorization.hive.authorizer.XaSecureHiveAuthorizerFactory"
+    expected["hiveserver2-site"]["properties"]["hive.security.authorization.enabled"] = "true"
+    expected["hiveserver2-site"]["properties"]["hive.conf.restricted.list"]="hive.security.authorization.enabled,hive.security.authorization.manager,hive.security.authenticator.manager"
+    self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations['hiveserver2-site'], expected["hiveserver2-site"])
+
 
   def test_recommendMapredConfigurationAttributesWithPigService(self):
     configurations = {
@@ -1358,7 +1496,8 @@ class TestHDP22StackAdvisor(TestCase):
           "yarn.scheduler.maximum-allocation-vcores": "1",
           "yarn.scheduler.minimum-allocation-vcores": "1",
           "yarn.scheduler.maximum-allocation-mb": "1792",
-          "yarn.nodemanager.resource.cpu-vcores": "1"
+          "yarn.nodemanager.resource.cpu-vcores": "1",
+          "hadoop.registry.rm.enabled": "false"
         },
         "property_attributes": {
           'yarn.nodemanager.resource.memory-mb': {'maximum': '1877'},
@@ -1504,7 +1643,8 @@ class TestHDP22StackAdvisor(TestCase):
       "changed-configurations": [
         {
           "type": "yarn-site",
-          "name": "yarn.scheduler.minimum-allocation-mb"
+          "name": "yarn.scheduler.minimum-allocation-mb",
+          "old_value": "512"
         },
         ]
 
@@ -1617,7 +1757,8 @@ class TestHDP22StackAdvisor(TestCase):
           "yarn.scheduler.maximum-allocation-vcores": "1",
           "yarn.scheduler.minimum-allocation-vcores": "1",
           "yarn.scheduler.maximum-allocation-mb": "1280",
-          "yarn.nodemanager.resource.cpu-vcores": "1"
+          "yarn.nodemanager.resource.cpu-vcores": "1",
+          "hadoop.registry.rm.enabled": "false"
         },
         "property_attributes": {
           'yarn.nodemanager.resource.memory-mb': {'maximum': '1877'},
@@ -1740,7 +1881,8 @@ class TestHDP22StackAdvisor(TestCase):
       "changed-configurations": [
         {
           "type": "yarn-site",
-          "name": "yarn.scheduler.minimum-allocation-mb"
+          "name": "yarn.scheduler.minimum-allocation-mb",
+          "old_value": "512"
         },
       ]
 
@@ -1828,7 +1970,8 @@ class TestHDP22StackAdvisor(TestCase):
                 "yarn.scheduler.maximum-allocation-vcores": "1",
                 "yarn.scheduler.minimum-allocation-vcores": "1",
                 "yarn.scheduler.maximum-allocation-mb": "1280",
-                "yarn.nodemanager.resource.cpu-vcores": "1"
+                "yarn.nodemanager.resource.cpu-vcores": "1",
+                "hadoop.registry.rm.enabled": "false"
             },
             "property_attributes": {
                 'yarn.nodemanager.resource.memory-mb': {'maximum': '1877'},
@@ -1851,9 +1994,16 @@ class TestHDP22StackAdvisor(TestCase):
       "services":  [ {
         "StackServices": {
           "service_name": "AMBARI_METRICS"
-        },"components": [{
+        },
+        "components": [{
           "StackServiceComponents": {
             "component_name": "METRICS_COLLECTOR",
+            "hostnames": ["host1"]
+          }
+
+        }, {
+          "StackServiceComponents": {
+            "component_name": "METRICS_MONITOR",
             "hostnames": ["host1"]
           }
 
@@ -1870,36 +2020,228 @@ class TestHDP22StackAdvisor(TestCase):
       }]
     }
 
+    # 1-node cluster
     expected = {
       "ams-hbase-env": {
         "properties": {
-          "hbase_master_heapsize": "512m"
-          }
+          "hbase_master_xmn_size": "128",
+          "hbase_master_heapsize": "512",
+          "hbase_regionserver_heapsize": "512"
+        }
       },
       "ams-env": {
         "properties": {
-          "metrics_collector_heapsize": "512m",
+          "metrics_collector_heapsize": "512",
         }
       },
       "ams-hbase-site": {
         "properties": {
+          "phoenix.coprocessor.maxMetaDataCacheSize": "20480000",
           "hbase.regionserver.global.memstore.lowerLimit": "0.3",
           "hbase.regionserver.global.memstore.upperLimit": "0.35",
+          "hbase.hregion.memstore.flush.size": "134217728",
           "hfile.block.cache.size": "0.3",
+          "hbase.cluster.distributed": "false",
           "hbase.rootdir": "file:///var/lib/ambari-metrics-collector/hbase",
           "hbase.tmp.dir": "/var/lib/ambari-metrics-collector/hbase-tmp",
-          "hbase_master_xmn_size" : "128m"
+          "hbase.zookeeper.property.clientPort": "61181",
         }
       },
       "ams-site": {
         "properties": {
-          "timeline.metrics.host.aggregator.ttl": "86400"
+          "timeline.metrics.cluster.aggregate.splitpoints": " ",
+          "timeline.metrics.host.aggregate.splitpoints": " ",
+          "timeline.metrics.host.aggregator.ttl": "1",
+          'timeline.metrics.service.watcher.disabled': 'false'
         }
       }
     }
     self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
-    
+
+    # 100-nodes cluster, but still only 1 sink (METRICS_COLLECTOR)
+    for i in range(2, 201):
+      hosts['items'].extend([{
+        "Hosts": {
+          "host_name": "host" + str(i)
+          }
+      }])
+
+    services['services'] = [
+      {
+        "StackServices": {
+          "service_name": "AMBARI_METRICS"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_COLLECTOR",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_MONITOR",
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
+            }
+          }
+        ]
+      }
+    ]
+    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '1408'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '320'
+    expected["ams-env"]['properties']['metrics_collector_heapsize'] = '512'
+
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Still 100 nodes, but with HDFS and YARN services installed on all nodes
+    services['services'] = [
+      {
+        "StackServices": {
+          "service_name": "HDFS"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "NAMENODE",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "DATANODE",
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
+            }
+          }
+        ]
+      },
+      {
+        "StackServices": {
+          "service_name": "YARN"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "RESOURCEMANAGER",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "NODEMANAGER",
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
+            }
+          }
+        ]
+      },
+      {
+        "StackServices": {
+          "service_name": "AMBARI_METRICS"
+        },
+        "components": [
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_COLLECTOR",
+              "hostnames": ["host1"]
+            }
+          },
+          {
+            "StackServiceComponents": {
+              "component_name": "METRICS_MONITOR",
+              "hostnames": ["host" + str(i) for i in range(1, 201)]
+            }
+          }
+        ]
+      }
+
+    ]
+    expected["ams-hbase-env"]['properties']['hbase_master_heapsize'] = '2432'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '448'
+    expected["ams-env"]['properties']['metrics_collector_heapsize'] = '640'
+
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Test splitpoints, AMS embedded mode
+    services['changed-configurations'] = [
+      {
+        "type": "ams-hbase-env",
+        "name": "hbase_master_heapsize",
+        "old_value": "1024"
+      }
+    ]
+
+    services['configurations'] = {
+      'core-site': {'properties': {}},
+      'ams-site': {'properties': {}},
+      'ams-hbase-site': {'properties': {}},
+      'ams-hbase-env': {'properties': {}}
+    }
+
+    # Embedded mode, 512m master heapsize, no splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512'
+    services["configurations"]['ams-hbase-site']['properties']['hbase.regionserver.global.memstore.lowerLimit'] = '0.3'
+    services["configurations"]['ams-hbase-site']['properties']['hbase.hregion.memstore.flush.size'] = '134217728'
+
+    expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = ' '
+    expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512'
+
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Embedded mode, 4096m master heapsize, some splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '4096'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = \
+      'master.Server.numDeadRegionServers'
+    expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '4096'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Embedded mode, 8192m master heapsize, more splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_master_heapsize'] = '8192'
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '8192'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 9)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'].split(',')), 2)
+
+    # Test splitpoints, AMS distributed mode
+    services['changed-configurations'] = [
+      {
+        "type": "ams-hbase-env",
+        "name": "hbase_regionserver_heapsize",
+        "old_value": "512"
+      }
+    ]
+    services["configurations"]['ams-site']['properties']['timeline.metrics.service.operation.mode'] = 'distributed'
+    services["configurations"]["core-site"]["properties"]["fs.defaultFS"] = 'hdfs://host1:8020'
+    expected['ams-hbase-site']['properties']['hbase.cluster.distributed'] = 'true'
+    expected['ams-hbase-site']['properties']['hbase.rootdir'] = 'hdfs://host1:8020/user/ams/hbase'
+    expected['ams-hbase-site']['properties']['hbase.zookeeper.property.clientPort'] = '2181'
+    expected['ams-hbase-env']['properties']['hbase_master_heapsize'] = '512'
+    expected['ams-hbase-site']['properties']['dfs.client.read.shortcircuit'] = 'true'
+
+    # Distributed mode, low memory, no splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'] = ' '
+    expected['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'] = ' '
+    expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '512'
+    expected["ams-hbase-env"]['properties']['hbase_master_xmn_size'] = '102'
+    expected['ams-hbase-env']['properties']['regionserver_xmn_size'] = '384'
+    expected['ams-site']['properties']['timeline.metrics.host.aggregator.ttl'] = '7'
+    expected['ams-site']['properties']['timeline.metrics.service.watcher.disabled'] = 'true'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(configurations, expected)
+
+    # Distributed mode, more memory, more splitpoints recommended
+    services["configurations"]['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '8192'
+    expected['ams-hbase-env']['properties']['hbase_regionserver_heapsize'] = '8192'
+    self.stackAdvisor.recommendAmsConfigurations(configurations, clusterData, services, hosts)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.host.aggregate.splitpoints'].split(',')), 9)
+    self.assertEquals(len(configurations['ams-site']['properties']['timeline.metrics.cluster.aggregate.splitpoints'].split(',')), 2)
+
   def test_recommendHbaseConfigurations(self):
     servicesList = ["HBASE"]
     configurations = {}
@@ -1958,6 +2300,137 @@ class TestHDP22StackAdvisor(TestCase):
     self.stackAdvisor.recommendHbaseConfigurations(configurations, clusterData, services, None)
     self.assertEquals(configurations, expected)
 
+  def test_recommendKnoxConfigurations(self):
+    servicesList = ["KNOX"]
+    configurations = {}
+    components = []
+
+    services_without_auth_provider_ranger_plugin_enabled = {
+      "services" : [
+      ],
+      "configurations": {
+        "ranger-env": {
+          "properties": {
+            "ranger-knox-plugin-enabled" : "Yes"
+          }
+        },
+        "ranger-knox-plugin-properties": {
+          "properties": {
+
+          }
+        },
+        "topology": {
+          "properties": {
+            "content" : "<topology> <gateway>  </gateway> </topology>"
+          }
+        }
+      }
+    }
+    services_without_auth_provider_ranger_plugin_disabled = {
+      "services" : [
+      ],
+      "configurations": {
+        "ranger-env": {
+          "properties": {
+            "ranger-knox-plugin-enabled" : "No"
+          }
+        },
+        "ranger-knox-plugin-properties": {
+          "properties": {
+
+          }
+        },
+        "topology": {
+          "properties": {
+            "content" : "<topology> <gateway>  </gateway> </topology>"
+          }
+        }
+      }
+    }
+    services_with_auth_provider_ranger_plugin_disabled = {
+      "services" : [
+      ],
+      "configurations": {
+        "ranger-env": {
+          "properties": {
+            "ranger-knox-plugin-enabled" : "No"
+          }
+        },
+        "ranger-knox-plugin-properties": {
+          "properties": {
+
+          }
+        },
+        "topology": {
+          "properties": {
+            "content" : "<topology> <gateway> <provider> <role>aaa</role><name>r</name><enabled>t</enabled></provider>"
+                        " <provider><role>authorization</role><name>XASecurePDPKnox</name><enabled>true</enabled> </provider>"
+                        "<provider><role>bbb</role><name>y</name><enabled>u</enabled></provider> </gateway> </topology>"
+          }
+        }
+      }
+    }
+    services_with_auth_provider_ranger_plugin_enabled = {
+      "services" : [
+      ],
+      "configurations": {
+        "ranger-env": {
+          "properties": {
+            "ranger-knox-plugin-enabled" : "Yes"
+          }
+        },
+        "ranger-knox-plugin-properties": {
+          "properties": {
+
+          }
+        },
+        "topology": {
+          "properties": {
+            "content" : "<topology> <gateway> <provider><role>authorization</role><name>AclsAuthz</name><enabled>true</enabled></provider> </gateway> </topology>"
+          }
+        }
+      }
+    }
+    expected1 = {'ranger-knox-plugin-properties':
+                  {'properties':
+                     {'ranger-knox-plugin-enabled': 'Yes'}},
+                'topology':
+                  {'properties':
+                     {'content': '<topology> <gateway>  <provider><role>authorization</role><name>XASecurePDPKnox</name><enabled>true</enabled></provider></gateway> </topology>'}}}
+
+    expected2 = {'ranger-knox-plugin-properties':
+                   {'properties':
+                      {'ranger-knox-plugin-enabled': 'No'}},
+                 'topology':
+                   {'properties':
+                      {'content': '<topology> <gateway>  <provider><role>authorization</role><name>AclsAuthz</name><enabled>true</enabled></provider></gateway> </topology>'}}}
+    expected3 = {'ranger-knox-plugin-properties':
+                   {'properties':
+                      {'ranger-knox-plugin-enabled': 'No'}},
+                 'topology':
+                   {'properties':
+                      {'content': '<topology> <gateway> <provider> <role>aaa</role><name>r</name><enabled>t</enabled></provider> <provider><role>authorization</role><name>AclsAuthz</name><enabled>true</enabled> </provider><provider><role>bbb</role><name>y</name><enabled>u</enabled></provider> </gateway> </topology>'}}}
+
+    expected4 = {'ranger-knox-plugin-properties':
+                   {'properties':
+                      {'ranger-knox-plugin-enabled': 'Yes'}},
+                 'topology':
+                   {'properties':
+                      {'content': '<topology> <gateway> <provider><role>authorization</role><name>XASecurePDPKnox</name><enabled>true</enabled></provider> </gateway> </topology>'}}}
+
+    self.stackAdvisor.recommendKnoxConfigurations(configurations, None, services_without_auth_provider_ranger_plugin_enabled, None)
+    self.assertEquals(configurations, expected1)
+
+    self.stackAdvisor.recommendKnoxConfigurations(configurations, None, services_without_auth_provider_ranger_plugin_disabled, None)
+    self.assertEquals(configurations, expected2)
+
+    self.stackAdvisor.recommendKnoxConfigurations(configurations, None, services_with_auth_provider_ranger_plugin_disabled, None)
+    self.assertEquals(configurations, expected3)
+
+    self.stackAdvisor.recommendKnoxConfigurations(configurations, None, services_with_auth_provider_ranger_plugin_enabled, None)
+    self.assertEquals(configurations, expected4)
+
+
   def test_recommendHbaseSiteConfigurations(self):
     servicesList = ["HBASE"]
     configurations = {}
@@ -1982,7 +2455,24 @@ class TestHDP22StackAdvisor(TestCase):
     }
     services = {
       "services" : [
+        {
+          "StackServices": {
+            "service_name": "RANGER",
+            "service_version": "0.4.0"
+          },
+          "components": [
+            {
+              "StackServiceComponents": {
+                "component_name": "RANGER_ADMIN",
+                "hostnames": ["host1"]
+              }
+            }
+          ]
+        }
       ],
+      "Versions": {
+        "stack_version": "2.2"
+      },
       "configurations": {
         "hbase-env": {
           "properties": {
@@ -1997,7 +2487,13 @@ class TestHDP22StackAdvisor(TestCase):
             "hbase.bucketcache.ioengine": "",
             "hbase.bucketcache.size": "",
             "hbase.bucketcache.percentage.in.combinedcache": "",
-            "hbase.coprocessor.regionserver.classes": ""
+            "hbase.coprocessor.regionserver.classes": "",
+            "hbase.coprocessor.region.classes": "{{hbase_coprocessor_region_classes}}"
+          }
+        },
+        "ranger-hbase-plugin-properties": {
+          "properties": {
+            "ranger-hbase-plugin-enabled" : "No"
           }
         }
       }
@@ -2008,7 +2504,9 @@ class TestHDP22StackAdvisor(TestCase):
           "hbase.regionserver.wal.codec": "org.apache.hadoop.hbase.regionserver.wal.IndexedWALEditCodec",
           "phoenix.functions.allowUserDefinedFunctions": "true",
           "hbase.regionserver.global.memstore.size": "0.4",
-          "hbase.coprocessor.region.classes": "org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint"
+          "hbase.coprocessor.region.classes": "org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint",
+          "hbase.coprocessor.regionserver.classes": "",
+          "hbase.coprocessor.master.classes": "",
         },
         'property_attributes': {
           "hbase.bucketcache.size": {
@@ -2043,7 +2541,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # Test when phoenix_sql_enabled = true
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test when Phoenix sql is enabled")
 
     # Test when phoenix_sql_enabled = false
     services['configurations']['hbase-env']['properties']['phoenix_sql_enabled'] = 'false'
@@ -2052,7 +2550,7 @@ class TestHDP22StackAdvisor(TestCase):
     expected['hbase-site']['property_attributes']['hbase.coprocessor.regionserver.classes'] = {'delete': 'true'}
     expected['hbase-site']['property_attributes']['phoenix.functions.allowUserDefinedFunctions'] = {'delete': 'true'}
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test when Phoenix sql is disabled")
 
     # Test hbase_master_heapsize maximum
     hosts['items'][0]['Hosts']['host_name'] = 'host1'
@@ -2087,27 +2585,53 @@ class TestHDP22StackAdvisor(TestCase):
     expected['hbase-site']['property_attributes']['phoenix.functions.allowUserDefinedFunctions'] = {'delete': 'true'}
     expected['hbase-env']['property_attributes']['hbase_master_heapsize'] = {'maximum': '49152'}
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, hosts)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test with Phoenix disabled")
 
     # Test when hbase.security.authentication = kerberos
     services['configurations']['hbase-site']['properties']['hbase.security.authentication'] = 'kerberos'
     expected['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint'
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test with Kerberos enabled")
 
     # Test when hbase.security.authentication = simple
     services['configurations']['hbase-site']['properties']['hbase.security.authentication'] = 'simple'
     expected['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint'
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test with Kerberos disabled")
+
+    # Test when Ranger plugin HBase is enabled in non-kerberos environment
+    configurations['hbase-site']['properties'].pop('hbase.coprocessor.region.classes', None)
+    configurations['hbase-site']['properties'].pop('hbase.coprocessor.master.classes', None)
+    configurations['hbase-site']['properties'].pop('hbase.coprocessor.regionserver.classes', None)
+    services['configurations']['ranger-hbase-plugin-properties']['properties']['ranger-hbase-plugin-enabled'] = 'Yes'
+    services['configurations']['hbase-site']['properties']['hbase.security.authentication'] = 'simple'
+    services['configurations']['hbase-site']['properties']['hbase.security.authorization'] = 'false'
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.region.classes'] = ''
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.master.classes'] = ''
+
+    expected['hbase-site']['properties']['hbase.security.authorization'] = "true"
+    expected['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint,com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor'
+    expected['hbase-site']['properties']['hbase.coprocessor.master.classes'] = 'com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor'
+    expected['hbase-site']['properties']['hbase.coprocessor.regionserver.classes'] = 'com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor'
+    self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations, expected, "Test when Ranger plugin HBase is enabled in non-kerberos environment")
 
     # Test when hbase.security.authentication = kerberos AND class already there
     configurations['hbase-site']['properties'].pop('hbase.coprocessor.region.classes', None)
+    configurations['hbase-site']['properties'].pop('hbase.coprocessor.master.classes', None)
+    configurations['hbase-site']['properties'].pop('hbase.coprocessor.regionserver.classes', None)
+    configurations['hbase-site']['properties'].pop('hbase.security.authorization', None)
+    services['configurations']['ranger-hbase-plugin-properties']['properties']['ranger-hbase-plugin-enabled'] = 'No'
+    services['configurations']['hbase-site']['properties']['hbase.security.authorization'] = 'false'
     services['configurations']['hbase-site']['properties']['hbase.security.authentication'] = 'kerberos'
-    services['configurations']['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'a.b.c.d'
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.master.classes'] = ''
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'a.b.c.d, {{hbase_coprocessor_region_classes}}'
     expected['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'a.b.c.d,org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint'
+    expected['hbase-site']['properties']['hbase.coprocessor.master.classes'] = ''
+    expected['hbase-site']['properties']['hbase.coprocessor.regionserver.classes'] = ''
+    del expected['hbase-site']['properties']['hbase.security.authorization']
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test with Kerberos enabled and hbase.coprocessor.region.classes predefined")
 
     # Test when hbase.security.authentication = kerberos AND authorization = true
     configurations['hbase-site']['properties'].pop('hbase.coprocessor.region.classes', None)
@@ -2118,7 +2642,21 @@ class TestHDP22StackAdvisor(TestCase):
     expected['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'org.apache.hadoop.hbase.security.access.AccessController,org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint'
     expected['hbase-site']['properties']['hbase.coprocessor.regionserver.classes'] = "org.apache.hadoop.hbase.security.access.AccessController"
     self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
-    self.assertEquals(configurations, expected)
+    self.assertEquals(configurations, expected, "Test with Kerberos enabled and authorization is true")
+
+    # Test when Ranger plugin HBase is enabled in kerberos environment
+    configurations['hbase-site']['properties'].pop('hbase.coprocessor.region.classes', None)
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.region.classes'] = ''
+    services['configurations']['hbase-site']['properties']['hbase.coprocessor.master.classes'] = ''
+    services['configurations']['hbase-site']['properties']['hbase.security.authentication'] = 'kerberos'
+    services['configurations']['hbase-site']['properties']['hbase.security.authorization'] = 'false'
+    services['configurations']['ranger-hbase-plugin-properties']['properties']['ranger-hbase-plugin-enabled'] = 'Yes'
+    expected['hbase-site']['properties']['hbase.security.authorization']  = 'true'
+    expected['hbase-site']['properties']['hbase.coprocessor.master.classes'] = 'com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor'
+    expected['hbase-site']['properties']['hbase.coprocessor.regionserver.classes'] = "com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor"
+    expected['hbase-site']['properties']['hbase.coprocessor.region.classes'] = 'org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint,com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor'
+    self.stackAdvisor.recommendHBASEConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations, expected, "Test with Kerberos enabled and HBase ranger plugin enabled")
 
     # Test - default recommendations should have certain configs deleted. HAS TO BE LAST TEST.
     services["configurations"] = {"hbase-site": {"properties": {"phoenix.functions.allowUserDefinedFunctions": '', "hbase.rpc.controllerfactory.class": ''}}}
@@ -2129,6 +2667,81 @@ class TestHDP22StackAdvisor(TestCase):
     self.assertEquals(configurations['hbase-site']['properties']['hbase.regionserver.wal.codec'], "org.apache.hadoop.hbase.regionserver.wal.WALCellCodec")
 
 
+  def test_recommendStormConfigurations(self):
+    configurations = {}
+    clusterData = {}
+    services = {
+      "services":
+        [
+          {
+            "StackServices": {
+              "service_name" : "STORM",
+              "service_version" : "2.6.0.2.2"
+            }
+          },
+          {
+            "StackServices": {
+              "service_name": "RANGER",
+              "service_version": "0.4.0"
+            },
+            "components": [
+              {
+                "StackServiceComponents": {
+                  "component_name": "RANGER_ADMIN",
+                  "hostnames": ["host1"]
+                }
+              }
+            ]
+          }
+        ],
+      "Versions": {
+        "stack_version": "2.2"
+      },
+      "configurations": {
+        "storm-site": {
+          "properties": {
+            "nimbus.authorizer" : "backtype.storm.security.auth.authorizer.SimpleACLAuthorizer"
+          },
+          "property_attributes": {}
+        },
+        "ranger-storm-plugin-properties": {
+          "properties": {
+            "ranger-storm-plugin-enabled": "No"
+          }
+        }
+      }
+    }
+
+    # Test nimbus.authorizer with Ranger Storm plugin disabled in non-kerberos environment
+    self.stackAdvisor.recommendStormConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations['storm-site']['property_attributes']['nimbus.authorizer'], {'delete': 'true'}, "Test nimbus.authorizer with Ranger Storm plugin disabled in non-kerberos environment")
+
+    # Test nimbus.authorizer with Ranger Storm plugin enabled in non-kerberos environment
+    configurations['storm-site']['properties'] = {}
+    configurations['storm-site']['property_attributes'] = {}
+    services['configurations']['ranger-storm-plugin-properties']['properties']['ranger-storm-plugin-enabled'] = 'Yes'
+    self.stackAdvisor.recommendStormConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations['storm-site']['property_attributes']['nimbus.authorizer'], {'delete': 'true'}, "Test nimbus.authorizer with Ranger Storm plugin enabled in non-kerberos environment")
+
+    # Test nimbus.authorizer with Ranger Storm plugin being enabled in kerberos environment
+    configurations['storm-site']['properties'] = {}
+    configurations['storm-site']['property_attributes'] = {}
+    services['configurations']['storm-site']['properties']['nimbus.authorizer'] = ''
+    services['configurations']['ranger-storm-plugin-properties']['properties']['ranger-storm-plugin-enabled'] = 'Yes'
+    services['configurations']['storm-site']['properties']['storm.zookeeper.superACL'] = 'sasl:{{storm_bare_jaas_principal}}'
+    self.stackAdvisor.recommendStormConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations['storm-site']['properties']['nimbus.authorizer'], 'com.xasecure.authorization.storm.authorizer.XaSecureStormAuthorizer', "Test nimbus.authorizer with Ranger Storm plugin enabled in kerberos environment")
+
+    # Test nimbus.authorizer with Ranger Storm plugin being disabled in kerberos environment
+    configurations['storm-site']['properties'] = {}
+    configurations['storm-site']['property_attributes'] = {}
+    services['configurations']['ranger-storm-plugin-properties']['properties']['ranger-storm-plugin-enabled'] = 'No'
+    services['configurations']['storm-site']['properties']['storm.zookeeper.superACL'] = 'sasl:{{storm_bare_jaas_principal}}'
+    services['configurations']['storm-site']['properties']['nimbus.authorizer'] = 'com.xasecure.authorization.storm.authorizer.XaSecureStormAuthorizer'
+    self.stackAdvisor.recommendStormConfigurations(configurations, clusterData, services, None)
+    self.assertEquals(configurations['storm-site']['properties']['nimbus.authorizer'], 'backtype.storm.security.auth.authorizer.SimpleACLAuthorizer', "Test nimbus.authorizer with Ranger Storm plugin being disabled in kerberos environment")
+
+
   def test_recommendHDFSConfigurations(self):
     configurations = {
       'ranger-hdfs-plugin-properties':{
@@ -2136,6 +2749,9 @@ class TestHDP22StackAdvisor(TestCase):
       },
       'hdfs-site': {
         "properties": {"dfs.datanode.data.dir": "/path/1,/path/2,/path/3,/path/4"}
+      },
+      "hadoop-env": {
+        "properties": {"hdfs_user": "hdfs"}
       }
     }
     clusterData = {
@@ -2149,7 +2765,8 @@ class TestHDP22StackAdvisor(TestCase):
         'properties': {
           'namenode_heapsize': '1024',
           'namenode_opt_newsize' : '128',
-          'namenode_opt_maxnewsize' : '128'
+          'namenode_opt_maxnewsize' : '128',
+          "hdfs_user": "hdfs"
         },
         'property_attributes': {
           'dtnode_heapsize': {'maximum': '2048'},
@@ -2158,6 +2775,7 @@ class TestHDP22StackAdvisor(TestCase):
       },
       'hdfs-site': {
         'properties': {
+          'dfs.datanode.du.reserved': '1024',
           'dfs.datanode.max.transfer.threads': '16384',
           'dfs.namenode.safemode.threshold-pct': '1.000',
           'dfs.datanode.failed.volumes.tolerated': '1',
@@ -2171,6 +2789,12 @@ class TestHDP22StackAdvisor(TestCase):
       'ranger-hdfs-plugin-properties': {
         'properties': {
           'ranger-hdfs-plugin-enabled': 'Yes'
+        }
+      },
+      "core-site": {
+        "properties": {
+          "hadoop.proxyuser.hdfs.hosts": "*",
+          "hadoop.proxyuser.hdfs.groups": "*",
         }
       }
     }
@@ -2278,7 +2902,11 @@ class TestHDP22StackAdvisor(TestCase):
             "ph_cpu_count" : 1,
             "public_host_name" : "host1",
             "rack_info" : "/default-rack",
-            "total_mem" : 2097152
+            "total_mem" : 2097152,
+            "disk_info": [{
+              "size": '8',
+              "mountpoint": "/"
+            }]
           }
         },
         {
@@ -2291,7 +2919,11 @@ class TestHDP22StackAdvisor(TestCase):
             "ph_cpu_count" : 1,
             "public_host_name" : "host2",
             "rack_info" : "/default-rack",
-            "total_mem" : 10485760
+            "total_mem" : 10485760,
+            "disk_info": [{
+              "size": '8',
+              "mountpoint": "/"
+            }]
           }
         },
       ]
@@ -2315,7 +2947,11 @@ class TestHDP22StackAdvisor(TestCase):
             "ph_cpu_count" : 1,
             "public_host_name" : hostname,
             "rack_info" : "/default-rack",
-            "total_mem" : 2097152
+            "total_mem" : 2097152,
+            "disk_info": [{
+              "size": '8',
+              "mountpoint": "/"
+            }]
           }
         }
       )
@@ -2338,7 +2974,11 @@ class TestHDP22StackAdvisor(TestCase):
             "ph_cpu_count" : 1,
             "public_host_name" : hostname,
             "rack_info" : "/default-rack",
-            "total_mem" : 2097152
+            "total_mem" : 2097152,
+            "disk_info": [{
+              "size": '8',
+              "mountpoint": "/"
+            }]
           }
         }
       )
@@ -2363,7 +3003,11 @@ class TestHDP22StackAdvisor(TestCase):
             "ph_cpu_count" : 1,
             "public_host_name" : hostname,
             "rack_info" : "/default-rack",
-            "total_mem" : 2097152
+            "total_mem" : 2097152,
+            "disk_info": [{
+              "size": '8',
+              "mountpoint": "/"
+            }]
           }
         }
       )
@@ -2374,7 +3018,7 @@ class TestHDP22StackAdvisor(TestCase):
 
     # Test 4 - KMS empty test from previous call
     self.assertTrue("dfs.encryption.key.provider.uri" not in configurations["hdfs-site"]["properties"])
-    
+
     # Test 5 - Calculated from hosts install location
     services["services"].append(
                     {"StackServices":
@@ -2414,22 +3058,22 @@ class TestHDP22StackAdvisor(TestCase):
     # Test 6 - Multiple RANGER_KMS_SERVERs
     services["services"][len(services["services"])-1]["components"][0]["StackServiceComponents"]["hostnames"].append("host2")
     self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, services, hosts)
-    self.assertEqual("kms://http@host1,host2:9292/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
+    self.assertEqual("kms://http@host1;host2:9292/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
 
     # Test 6 - Multiple RANGER_KMS_SERVERs and custom port
     configurations["kms-env"] = {"properties": {"kms_port": "1111"}}
     self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, services, hosts)
-    self.assertEqual("kms://http@host1,host2:1111/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
+    self.assertEqual("kms://http@host1;host2:1111/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
 
     # Test 7 - Override by API caller
     configurations["hadoop-env"] = {"properties": {"keyserver_host": "myhost1", "keyserver_port": "2222"}}
     self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, services, hosts)
-    self.assertEqual("kms://http@host1,host2:1111/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
+    self.assertEqual("kms://http@host1;host2:1111/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
 
     # Test - 'https' in KMS URL
     configurations["ranger-kms-site"] = {"properties": {"ranger.service.https.attrib.ssl.enabled": "true"}}
     self.stackAdvisor.recommendHDFSConfigurations(configurations, clusterData, services, hosts)
-    self.assertEqual("kms://https@host1,host2:1111/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
+    self.assertEqual("kms://https@host1;host2:1111/kms", configurations["hdfs-site"]["properties"]["dfs.encryption.key.provider.uri"])
 
     # Test 8 - Dynamic maximum for 'dfs.namenode.handler.count'
     hosts['items'][1]['Hosts']['cpu_count'] = 9
@@ -2618,10 +3262,39 @@ class TestHDP22StackAdvisor(TestCase):
     res = self.stackAdvisor.validateHiveConfigurationsEnv(properties, {}, configurations, {}, {})
     self.assertEquals(res, res_expected)
 
-    pass
+    # 2) fail: hive_security_authorization=Ranger but ranger plugin is disabled in ranger-env
+    properties = {"hive_security_authorization": "Ranger"}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-hive-plugin-enabled":"No",
+        }
+      },
+      "hive-env":{
+        "properties":{
+          "hive_security_authorization": "Ranger",
+        }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    services['configurations']['ranger-env']['properties']['ranger-hive-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'hive-env',
+                     'message': 'ranger-env/ranger-hive-plugin-enabled must be enabled when hive_security_authorization is set to Ranger',
+                     'type': 'configuration',
+                     'config-name': 'hive_security_authorization',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateHiveConfigurationsEnv(properties, {}, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
 
   def test_validateHiveConfigurations(self):
     properties = {"hive_security_authorization": "None",
+                  "hive.server2.authentication": "LDAP",
                   "hive.exec.orc.default.stripe.size": "8388608",
                   'hive.tez.container.size': '2048',
                   'hive.tez.java.opts': '-Xmx300m',
@@ -2642,11 +3315,46 @@ class TestHDP22StackAdvisor(TestCase):
     }
 
     # Test for 'ranger-hive-plugin-properties' not being in configs
-    res_expected = []
+    res_expected = [{'config-type': 'hive-site', 'message': 'According to LDAP value for hive.server2.authentication, '
+                   'you should add hive.server2.authentication.ldap.Domain property, if you are using AD, if not, '
+                   'then hive.server2.authentication.ldap.baseDN!', 'type': 'configuration', 'config-name':
+                  'hive.server2.authentication', 'level': 'WARN'}]
     res = self.stackAdvisor.validateHiveConfigurations(properties, recommendedDefaults, configurations, services, {})
     self.assertEquals(res, res_expected)
 
     pass
+
+  def test_validateHiveServer2Configurations(self):
+    properties = {"hive_security_authorization": "None",
+                  "hive.exec.orc.default.stripe.size": "8388608",
+                  'hive.tez.container.size': '2048',
+                  'hive.tez.java.opts': '-Xmx300m',
+                  'hive.auto.convert.join.noconditionaltask.size': '1100000000'}
+    recommendedDefaults = {'hive.tez.container.size': '1024',
+                           'hive.tez.java.opts': '-Xmx256m',
+                           'hive.auto.convert.join.noconditionaltask.size': '1000000000'}
+    configurations = {
+      "hive-site": {
+        "properties": {"hive.security.authorization.enabled": "true"}
+      },
+      "hive-env": {
+        "properties": {"hive_security_authorization": "ranger"}
+      }
+    }
+    services = {
+      "services": [
+        {
+          "StackServices": {
+            "service_name": "RANGER",
+          },
+        }
+      ],
+    }
+
+    # Test with ranger plugin enabled, validation fails
+    res_expected = [{'config-type': 'hiveserver2-site', 'message': 'If Ranger Hive Plugin is enabled. hive.security.authorization.manager under hiveserver2-site needs to be set to com.xasecure.authorization.hive.authorizer.XaSecureHiveAuthorizerFactory', 'type': 'configuration', 'config-name': 'hive.security.authorization.manager', 'level': 'WARN'}, {'config-type': 'hiveserver2-site', 'message': 'If Ranger Hive Plugin is enabled. hive.security.authenticator.manager under hiveserver2-site needs to be set to org.apache.hadoop.hive.ql.security.SessionStateUserAuthenticator', 'type': 'configuration', 'config-name': 'hive.security.authenticator.manager', 'level': 'WARN'}, {'config-type': 'hiveserver2-site', 'message': 'If Ranger Hive Plugin is enabled. hive.conf.restricted.list under hiveserver2-site needs to contain missing value hive.security.authorization.enabled,hive.security.authorization.manager,hive.security.authenticator.manager', 'type': 'configuration', 'config-name': 'hive.conf.restricted.list', 'level': 'WARN'}]
+    res = self.stackAdvisor.validateHiveServer2Configurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
 
   def test_recommendYarnCGroupConfigurations(self):
     servicesList = ["YARN"]
@@ -2715,7 +3423,8 @@ class TestHDP22StackAdvisor(TestCase):
           "yarn.nodemanager.resource.cpu-vcores": "4",
           "yarn.nodemanager.container-executor.cgroups.hierarchy": " /yarn",
           "yarn.scheduler.maximum-allocation-mb": "39424",
-          "yarn.nodemanager.container-executor.resources-handler.class": "org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler"
+          "yarn.nodemanager.container-executor.resources-handler.class": "org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler",
+          "hadoop.registry.rm.enabled": "false"
         },
         "property_attributes": {
           "yarn.scheduler.minimum-allocation-vcores": {
@@ -2769,7 +3478,8 @@ class TestHDP22StackAdvisor(TestCase):
           "yarn.nodemanager.resource.cpu-vcores": "4",
           "yarn.nodemanager.container-executor.cgroups.hierarchy": " /yarn",
           "yarn.scheduler.maximum-allocation-mb": "39424",
-          "yarn.nodemanager.container-executor.resources-handler.class": "org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler"
+          "yarn.nodemanager.container-executor.resources-handler.class": "org.apache.hadoop.yarn.server.nodemanager.util.CgroupsLCEResourcesHandler",
+          "hadoop.registry.rm.enabled": "false"
         },
         "property_attributes": {
           "yarn.nodemanager.container-executor.cgroups.mount": {
@@ -2807,3 +3517,275 @@ class TestHDP22StackAdvisor(TestCase):
     }
     self.stackAdvisor.recommendYARNConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations, expected)
+
+  def test_validateHDFSRangerPluginConfigurations(self):
+    configurations = {}
+      # 1) ok: ranger plugin is enabled in ranger-env and ranger-hdfs-plugin-properties
+    recommendedDefaults = {}
+    properties = {}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-hdfs-plugin-enabled":"Yes",
+          }
+      },
+      "ranger-hdfs-plugin-properties":{
+        "properties":{
+          "ranger-hdfs-plugin-enabled":"Yes",
+        }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    res = self.stackAdvisor.validateHDFSRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: ranger plugin is disabled in ranger-env
+    services['configurations']['ranger-env']['properties']['ranger-hdfs-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'ranger-hdfs-plugin-properties',
+                     'message': 'ranger-hdfs-plugin-properties/ranger-hdfs-plugin-enabled must correspond ranger-env/ranger-hdfs-plugin-enabled',
+                     'type': 'configuration',
+                     'config-name': 'ranger-hdfs-plugin-enabled',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateHDFSRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+  def test_validateYARNRangerPluginConfigurations(self):
+    configurations = {}
+    # 1) ok: ranger plugin is enabled in ranger-env and ranger-yarn-plugin-properties
+    recommendedDefaults = {}
+    properties = {}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-yarn-plugin-enabled":"Yes",
+          }
+      },
+      "ranger-yarn-plugin-properties":{
+        "properties":{
+          "ranger-yarn-plugin-enabled":"Yes",
+          }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    res = self.stackAdvisor.validateYARNRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: ranger plugin is disabled in ranger-env
+    services['configurations']['ranger-env']['properties']['ranger-yarn-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'ranger-yarn-plugin-properties',
+                     'message': 'ranger-yarn-plugin-properties/ranger-yarn-plugin-enabled must correspond ranger-env/ranger-yarn-plugin-enabled',
+                     'type': 'configuration',
+                     'config-name': 'ranger-yarn-plugin-enabled',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateYARNRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+  def test_validateHBASERangerPluginConfigurations(self):
+    configurations = {}
+    # 1) ok: ranger plugin is enabled in ranger-env and ranger-hbase-plugin-properties
+    recommendedDefaults = {}
+    properties = {}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-hbase-plugin-enabled":"Yes",
+          }
+      },
+      "ranger-hbase-plugin-properties":{
+        "properties":{
+          "ranger-hbase-plugin-enabled":"Yes",
+          }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    res = self.stackAdvisor.validateHBASERangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: ranger plugin is disabled in ranger-env
+    services['configurations']['ranger-env']['properties']['ranger-hbase-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'ranger-hbase-plugin-properties',
+                     'message': 'ranger-hbase-plugin-properties/ranger-hbase-plugin-enabled must correspond ranger-env/ranger-hbase-plugin-enabled',
+                     'type': 'configuration',
+                     'config-name': 'ranger-hbase-plugin-enabled',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateHBASERangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+  def test_validateKnoxRangerPluginConfigurations(self):
+    configurations = {}
+    # 1) ok: ranger plugin is enabled in ranger-env and ranger-knox-plugin-properties
+    recommendedDefaults = {}
+    properties = {}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-knox-plugin-enabled":"Yes",
+          }
+      },
+      "ranger-knox-plugin-properties":{
+        "properties":{
+          "ranger-knox-plugin-enabled":"Yes",
+          }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    res = self.stackAdvisor.validateKnoxRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: ranger plugin is disabled in ranger-env
+    services['configurations']['ranger-env']['properties']['ranger-knox-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'ranger-knox-plugin-properties',
+                     'message': 'ranger-knox-plugin-properties/ranger-knox-plugin-enabled must correspond ranger-env/ranger-knox-plugin-enabled',
+                     'type': 'configuration',
+                     'config-name': 'ranger-knox-plugin-enabled',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateKnoxRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+  def test_validateKafkaRangerPluginConfigurations(self):
+    configurations = {}
+    # 1) ok: ranger plugin is enabled in ranger-env and ranger-kafka-plugin-properties
+    recommendedDefaults = {}
+    properties = {}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-kafka-plugin-enabled":"Yes",
+          }
+      },
+      "ranger-kafka-plugin-properties":{
+        "properties":{
+          "ranger-kafka-plugin-enabled":"Yes",
+          }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    res = self.stackAdvisor.validateKafkaRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: ranger plugin is disabled in ranger-env
+    services['configurations']['ranger-env']['properties']['ranger-kafka-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'ranger-kafka-plugin-properties',
+                     'message': 'ranger-kafka-plugin-properties/ranger-kafka-plugin-enabled must correspond ranger-env/ranger-kafka-plugin-enabled',
+                     'type': 'configuration',
+                     'config-name': 'ranger-kafka-plugin-enabled',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateKafkaRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+  def test_validateStormRangerPluginConfigurations(self):
+    configurations = {}
+    # 1) ok: ranger plugin is enabled in ranger-env and ranger-storm-plugin-properties
+    recommendedDefaults = {}
+    properties = {}
+    configurations = {
+      "ranger-env":{
+        "properties":{
+          "ranger-storm-plugin-enabled":"Yes",
+          }
+      },
+      "ranger-storm-plugin-properties":{
+        "properties":{
+          "ranger-storm-plugin-enabled":"Yes",
+          }
+      }
+    }
+    services = {
+      "configurations": configurations
+    }
+    res_expected = []
+
+    res = self.stackAdvisor.validateStormRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+    # 2) fail: ranger plugin is disabled in ranger-env
+    services['configurations']['ranger-env']['properties']['ranger-storm-plugin-enabled'] = 'No'
+    res_expected = [{'config-type': 'ranger-storm-plugin-properties',
+                     'message': 'ranger-storm-plugin-properties/ranger-storm-plugin-enabled must correspond ranger-env/ranger-storm-plugin-enabled',
+                     'type': 'configuration',
+                     'config-name': 'ranger-storm-plugin-enabled',
+                     'level': 'WARN'}]
+
+    res = self.stackAdvisor.validateStormRangerPluginConfigurations(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)
+
+
+  def test_recommendRangerConfigurations(self):
+    clusterData = {}
+    # Recommend ranger-storm-plugin-enabled=No on non-kerberos cluster
+    services = {
+      "Versions" : {
+        "stack_version" : "2.3",
+        },
+      "services":  [
+        {
+          "StackServices": {
+            "service_name": "RANGER",
+          "service_version": "0.5.0.2.3"
+          },
+          "components": [
+            {
+              "StackServiceComponents": {
+                "component_name": "RANGER_ADMIN",
+                "hostnames": ["host1"]
+              }
+            }
+          ]
+        },
+        ],
+      "configurations": {
+        "cluster-env": {
+          "properties": {
+            "security_enabled": "false",
+          }
+        },
+      },
+    }
+
+    expected = {
+      'admin-properties': {'properties': {'policymgr_external_url': 'http://host1:6080'}}, 'ranger-env': {'properties': {'ranger-storm-plugin-enabled': 'No'}}
+    }
+
+    recommendedConfigurations = {}
+    self.stackAdvisor.recommendRangerConfigurations(recommendedConfigurations, clusterData, services, None)
+    self.assertEquals(recommendedConfigurations, expected)
+
+  def test_validateRangerConfigurationsEnv(self):
+    properties = {
+      "ranger-storm-plugin-enabled": "Yes",
+    }
+    recommendedDefaults = {
+      "ranger-storm-plugin-enabled": "No",
+    }
+    configurations = {}
+    services = {}
+
+    # Test with ranger plugin enabled, validation fails
+    res_expected = [{'config-type': 'ranger-env', 'message': 'Ranger Storm plugin should not be enabled in non-kerberos environment.', 'type': 'configuration', 'config-name': 'ranger-storm-plugin-enabled', 'level': 'WARN'}]
+    res = self.stackAdvisor.validateRangerConfigurationsEnv(properties, recommendedDefaults, configurations, services, {})
+    self.assertEquals(res, res_expected)

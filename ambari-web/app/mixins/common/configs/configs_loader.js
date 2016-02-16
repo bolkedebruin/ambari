@@ -44,6 +44,7 @@ App.ConfigsLoader = Em.Mixin.create(App.GroupsMappingMixin, {
    * @returns {$.ajax}
    */
   loadServiceConfigVersions: function () {
+    this.set('allVersionsLoaded', false);
     return App.ajax.send({
       name: 'service.serviceConfigVersions.get',
       data: {
@@ -98,6 +99,8 @@ App.ConfigsLoader = Em.Mixin.create(App.GroupsMappingMixin, {
   loadCurrentVersions: function() {
     this.set('isCompareMode', false);
     this.set('versionLoaded', false);
+    this.set('selectedVersion', this.get('currentDefaultVersion'));
+    this.set('preSelectedConfigVersion', null);
     this.trackRequest(App.ajax.send({
       name: 'service.serviceConfigVersions.get.current',
       sender: this,
@@ -114,11 +117,19 @@ App.ConfigsLoader = Em.Mixin.create(App.GroupsMappingMixin, {
    * @param opt
    * @param params
    */
-  loadCurrentVersionsSuccess: function(data, opt, params) {
+  loadCurrentVersionsSuccess: function (data, opt, params) {
+    var self = this;
     App.configGroupsMapper.map(data, true, params.serviceNames.split(','));
-    this.set('selectedConfigGroup', App.ServiceConfigGroup.find().filterProperty('serviceName', this.get('content.serviceName')).findProperty('isDefault'));
-    this.parseConfigData(data);
-    this.loadConfigGroups(params.serviceNames.split(','));
+    this.loadConfigGroups(params.serviceNames.split(',')).done(function () {
+      if (self.get('isHostsConfigsPage')) {
+        self.set('selectedConfigGroup', App.ServiceConfigGroup.find().filterProperty('serviceName', self.get('content.serviceName')).find(function (cg) {
+              return !cg.get('isDefault') && cg.get('hosts').contains(self.get('host.hostName'));
+            }) || App.ServiceConfigGroup.find().filterProperty('serviceName', self.get('content.serviceName')).findProperty('isDefault'));
+      } else {
+        self.set('selectedConfigGroup', App.ServiceConfigGroup.find().filterProperty('serviceName', self.get('content.serviceName')).findProperty('isDefault'));
+      }
+      self.parseConfigData(data);
+    });
   },
 
   /**
@@ -130,8 +141,8 @@ App.ConfigsLoader = Em.Mixin.create(App.GroupsMappingMixin, {
     this.set('versionLoaded', false);
     version = version || this.get('currentDefaultVersion');
     if (version === this.get('currentDefaultVersion') && (!switchToGroup || switchToGroup.get('isDefault'))) {
-      this.loadCurrentVersions();
       this.set('selectedVersion', this.get('currentDefaultVersion'));
+      this.loadCurrentVersions();
     } else {
       //version of non-default group require properties from current version of default group to correctly display page
       var versions = (this.isVersionDefault(version)) ? [version] : [this.get('currentDefaultVersion'), version];
@@ -148,7 +159,7 @@ App.ConfigsLoader = Em.Mixin.create(App.GroupsMappingMixin, {
         data: {
           serviceName: this.get('content.serviceName'),
           serviceConfigVersions: versions,
-          additionalParams: App.get('isClusterSupportsEnhancedConfigs') && this.get('dependentServiceNames.length') ? '|service_name.in(' +  this.get('dependentServiceNames') + ')&is_current=true' : ''
+          additionalParams: this.get('dependentServiceNames.length') ? '|service_name.in(' +  this.get('dependentServiceNames') + ')&is_current=true' : ''
         },
         success: 'loadSelectedVersionsSuccess'
       }));

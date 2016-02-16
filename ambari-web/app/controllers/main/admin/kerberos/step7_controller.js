@@ -48,13 +48,13 @@ App.KerberosWizardStep7Controller = App.KerberosProgressPageController.extend({
       }
     };
     if (isRetry) {
-      // on retry we have to unkerberize cluster
-      this.unkerberizeCluster().always(function() {
-        // clear current request object before start of kerberize process
-        self.set('request', kerberizeRequest);
-        self.clearStage();
-        self.loadStep();
+      // on retry send force update
+      self.set('request', {
+        name: 'KERBERIZE_CLUSTER',
+        ajaxName: 'admin.kerberize.cluster.force'
       });
+      self.clearStage();
+      self.loadStep();
     } else {
       this.set('request', kerberizeRequest);
     }
@@ -113,10 +113,11 @@ App.KerberosWizardStep7Controller = App.KerberosProgressPageController.extend({
 
   retry: function () {
     this.set('showRetry', false);
+    this.removeObserver('tasks.@each.status', this, 'onTaskStatusChange');
+    this.set('status', 'IN_PROGRESS');
     this.get('tasks').setEach('status', 'PENDING');
-    App.router.send('retry');
+    this.setRequest(true);
   },
-
 
   /**
    * Enable or disable previous steps according to tasks statuses

@@ -18,11 +18,6 @@
 
 package org.apache.ambari.server.controller.internal;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-
 import org.apache.ambari.server.api.predicate.InvalidQueryException;
 import org.apache.ambari.server.api.predicate.QueryLexer;
 import org.apache.ambari.server.api.predicate.Token;
@@ -34,7 +29,13 @@ import org.apache.ambari.server.topology.BlueprintFactory;
 import org.apache.ambari.server.topology.Configuration;
 import org.apache.ambari.server.topology.HostGroupInfo;
 import org.apache.ambari.server.topology.InvalidTopologyTemplateException;
+import org.apache.ambari.server.topology.SecurityConfiguration;
 import org.apache.ambari.server.topology.TopologyRequest;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Provides common cluster request functionality.
@@ -46,9 +47,9 @@ public abstract class BaseClusterRequest implements TopologyRequest {
   protected final Map<String, HostGroupInfo> hostGroupInfoMap = new HashMap<String, HostGroupInfo>();
 
   /**
-   * cluster name
+   * cluster id
    */
-  protected String clusterName;
+  protected Long clusterId;
 
   /**
    * blueprint
@@ -60,6 +61,11 @@ public abstract class BaseClusterRequest implements TopologyRequest {
    * configuration
    */
   protected Configuration configuration;
+
+  /**
+   * security configuration
+   */
+  protected SecurityConfiguration securityConfiguration;
 
   /**
    * blueprint factory
@@ -86,8 +92,8 @@ public abstract class BaseClusterRequest implements TopologyRequest {
   }
 
   @Override
-  public String getClusterName() {
-    return clusterName;
+  public Long getClusterId() {
+    return clusterId;
   }
 
   @Override
@@ -138,15 +144,6 @@ public abstract class BaseClusterRequest implements TopologyRequest {
   }
 
   /**
-   * Set the request cluster name.
-   *
-   * @param clusterName  cluster name
-   */
-  protected void setClusterName(String clusterName) {
-    this.clusterName = clusterName;
-  }
-
-  /**
    * Set the request blueprint.
    *
    * @param blueprint blueprint
@@ -169,6 +166,11 @@ public abstract class BaseClusterRequest implements TopologyRequest {
    */
   protected BlueprintFactory getBlueprintFactory() {
     return blueprintFactory;
+  }
+
+
+  public SecurityConfiguration getSecurityConfiguration() {
+    return securityConfiguration;
   }
 
   /**

@@ -19,18 +19,19 @@
 package org.apache.ambari.server.topology;
 
 import org.apache.ambari.server.controller.internal.Stack;
+import org.apache.ambari.server.orm.entities.BlueprintEntity;
+import org.apache.ambari.server.state.SecurityType;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.verify;
+import static org.easymock.EasyMock.*;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -53,13 +54,13 @@ public class BlueprintImplTest {
 
     Stack stack = createNiceMock(Stack.class);
 
-    HostGroup group1 = createNiceMock(HostGroup.class);
-    HostGroup group2 = createNiceMock(HostGroup.class);
+    HostGroup group1 = createMock(HostGroup.class);
+    HostGroup group2 = createMock(HostGroup.class);
     Collection<HostGroup> hostGroups = new HashSet<HostGroup>();
     hostGroups.add(group1);
     hostGroups.add(group2);
 
-    Set<String> group1Components = new HashSet<String>();
+    Collection<String> group1Components = new HashSet<String>();
     group1Components.add("c1");
     group1Components.add("c2");
 
@@ -92,11 +93,15 @@ public class BlueprintImplTest {
 
     expect(group1.getConfiguration()).andReturn(EMPTY_CONFIGURATION).atLeastOnce();
     expect(group1.getName()).andReturn("group1").anyTimes();
-    expect(group1.getComponents()).andReturn(group1Components).atLeastOnce();
+    expect(group1.getComponentNames()).andReturn(group1Components).atLeastOnce();
+    expect(group1.getCardinality()).andReturn("1").atLeastOnce();
+    expect(group1.getComponents()).andReturn(Arrays.asList(new Component("c1"), new Component("c2"))).atLeastOnce();
 
     expect(group2.getConfiguration()).andReturn(EMPTY_CONFIGURATION).atLeastOnce();
     expect(group2.getName()).andReturn("group2").anyTimes();
-    expect(group2.getComponents()).andReturn(group2Components).atLeastOnce();
+    expect(group2.getComponentNames()).andReturn(group2Components).atLeastOnce();
+    expect(group2.getCardinality()).andReturn("1").atLeastOnce();
+    expect(group2.getComponents()).andReturn(Arrays.asList(new Component("c1"), new Component("c3"))).atLeastOnce();
 
     replay(stack, group1, group2);
 
@@ -119,10 +124,14 @@ public class BlueprintImplTest {
     // for this basic test not ensuring that stack properties are ignored, this is tested in another test
     Configuration configuration = new Configuration(properties, attributes, EMPTY_CONFIGURATION);
 
-    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration);
+    SecurityConfiguration securityConfiguration = new SecurityConfiguration(SecurityType.KERBEROS, "testRef", null);
+    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration, securityConfiguration);
     blueprint.validateRequiredProperties();
+    BlueprintEntity entity = blueprint.toEntity();
 
     verify(stack, group1, group2);
+    assertTrue(entity.getSecurityType() == SecurityType.KERBEROS);
+    assertTrue(entity.getSecurityDescriptorReference().equals("testRef"));
   }
 
   @Test
@@ -136,11 +145,11 @@ public class BlueprintImplTest {
     hostGroups.add(group1);
     hostGroups.add(group2);
 
-    Set<String> group1Components = new HashSet<String>();
+    Collection<String> group1Components = new HashSet<String>();
     group1Components.add("c1");
     group1Components.add("c2");
 
-    Set<String> group2Components = new HashSet<String>();
+    Collection<String> group2Components = new HashSet<String>();
     group2Components.add("c1");
     group2Components.add("c3");
 
@@ -169,11 +178,11 @@ public class BlueprintImplTest {
 
     expect(group1.getConfiguration()).andReturn(EMPTY_CONFIGURATION).atLeastOnce();
     expect(group1.getName()).andReturn("group1").anyTimes();
-    expect(group1.getComponents()).andReturn(group1Components).atLeastOnce();
+    expect(group1.getComponentNames()).andReturn(group1Components).atLeastOnce();
 
     expect(group2.getConfiguration()).andReturn(EMPTY_CONFIGURATION).atLeastOnce();
     expect(group2.getName()).andReturn("group2").anyTimes();
-    expect(group2.getComponents()).andReturn(group2Components).atLeastOnce();
+    expect(group2.getComponentNames()).andReturn(group2Components).atLeastOnce();
 
     replay(stack, group1, group2);
 
@@ -183,7 +192,6 @@ public class BlueprintImplTest {
     properties.put("hdfs-site", hdfsProps);
     hdfsProps.put("foo", "val");
     hdfsProps.put("bar", "val");
-
     Map<String, String> category1Props = new HashMap<String, String>();
     properties.put("category1", category1Props);
     category1Props.put("prop1", "val");
@@ -192,7 +200,7 @@ public class BlueprintImplTest {
     // for this basic test not ensuring that stack properties are ignored, this is tested in another test
     Configuration configuration = new Configuration(properties, attributes, EMPTY_CONFIGURATION);
 
-    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration);
+    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration, null);
     try {
       blueprint.validateRequiredProperties();
       fail("Expected exception to be thrown for missing config property");
@@ -208,8 +216,8 @@ public class BlueprintImplTest {
 
     Stack stack = createNiceMock(Stack.class);
 
-    HostGroup group1 = createNiceMock(HostGroup.class);
-    HostGroup group2 = createNiceMock(HostGroup.class);
+    HostGroup group1 = createMock(HostGroup.class);
+    HostGroup group2 = createMock(HostGroup.class);
     Collection<HostGroup> hostGroups = new HashSet<HostGroup>();
     hostGroups.add(group1);
     hostGroups.add(group2);
@@ -252,10 +260,14 @@ public class BlueprintImplTest {
 
     expect(group1.getConfiguration()).andReturn(EMPTY_CONFIGURATION).atLeastOnce();
     expect(group1.getName()).andReturn("group1").anyTimes();
-    expect(group1.getComponents()).andReturn(group1Components).atLeastOnce();
+    expect(group1.getComponentNames()).andReturn(group1Components).atLeastOnce();
+    expect(group1.getCardinality()).andReturn("1").atLeastOnce();
+    expect(group1.getComponents()).andReturn(Arrays.asList(new Component("c1"), new Component("c2"))).atLeastOnce();
 
     expect(group2.getName()).andReturn("group2").anyTimes();
-    expect(group2.getComponents()).andReturn(group2Components).atLeastOnce();
+    expect(group2.getComponentNames()).andReturn(group2Components).atLeastOnce();
+    expect(group2.getCardinality()).andReturn("1").atLeastOnce();
+    expect(group2.getComponents()).andReturn(Arrays.asList(new Component("c1"), new Component("c3"))).atLeastOnce();
 
     // Blueprint config
     Map<String, Map<String, String>> properties = new HashMap<String, Map<String, String>>();
@@ -276,10 +288,75 @@ public class BlueprintImplTest {
 
     replay(stack, group1, group2);
 
-    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration);
+    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration, null);
     blueprint.validateRequiredProperties();
+    BlueprintEntity entity = blueprint.toEntity();
 
     verify(stack, group1, group2);
+    assertTrue(entity.getSecurityType() == SecurityType.NONE);
+    assertTrue(entity.getSecurityDescriptorReference() == null);
+  }
+
+  @Test
+  public void testValidateConfigurations__secretReference(){
+    Stack stack = createNiceMock(Stack.class);
+
+    HostGroup group1 = createNiceMock(HostGroup.class);
+    HostGroup group2 = createNiceMock(HostGroup.class);
+    Collection<HostGroup> hostGroups = new HashSet<HostGroup>();
+    hostGroups.add(group1);
+    hostGroups.add(group2);
+
+    Set<String> group1Components = new HashSet<String>();
+    group1Components.add("c1");
+    group1Components.add("c2");
+
+    Set<String> group2Components = new HashSet<String>();
+    group2Components.add("c1");
+    group2Components.add("c3");
+
+    Map<String, Map<String, String>> group2Props = new HashMap<String, Map<String, String>>();
+    Map<String, String> group2Category2Props = new HashMap<String, String>();
+    group2Props.put("category2", group2Category2Props);
+    group2Category2Props.put("prop2", "val");
+
+    Collection<Stack.ConfigProperty> requiredHDFSProperties = new HashSet<Stack.ConfigProperty>();
+    requiredHDFSProperties.add(new Stack.ConfigProperty("hdfs-site", "foo", null));
+    requiredHDFSProperties.add(new Stack.ConfigProperty("hdfs-site", "bar", null));
+    requiredHDFSProperties.add(new Stack.ConfigProperty("hdfs-site", "some_password", null));
+
+    requiredHDFSProperties.add(new Stack.ConfigProperty("category1", "prop1", null));
+
+    Collection<Stack.ConfigProperty> requiredService2Properties = new HashSet<Stack.ConfigProperty>();
+    requiredService2Properties.add(new Stack.ConfigProperty("category2", "prop2", null));
+
+
+    // Blueprint config
+    Map<String, Map<String, String>> properties = new HashMap<String, Map<String, String>>();
+    Map<String, String> hdfsProps = new HashMap<String, String>();
+    properties.put("hdfs-site", hdfsProps);
+    hdfsProps.put("foo", "val");
+    hdfsProps.put("bar", "val");
+    hdfsProps.put("secret", "SECRET:hdfs-site:1:test");
+
+    Map<String, String> category1Props = new HashMap<String, String>();
+    properties.put("category1", category1Props);
+    category1Props.put("prop1", "val");
+
+    Map<String, Map<String, Map<String, String>>> attributes = new HashMap<String, Map<String, Map<String, String>>>();
+    Configuration configuration = new Configuration(properties, attributes, EMPTY_CONFIGURATION);
+    // set config for group2 which contains a required property
+
+    replay(stack, group1, group2);
+
+    Blueprint blueprint = new BlueprintImpl("test", hostGroups, stack, configuration, null);
+    try {
+      blueprint.validateRequiredProperties();
+      fail("Expected exception to be thrown for using secret reference");
+    } catch (InvalidTopologyException e) {
+      System.out.println("****" + e.getMessage() + "***");
+    }
+
   }
 
   //todo: ensure coverage for these existing tests

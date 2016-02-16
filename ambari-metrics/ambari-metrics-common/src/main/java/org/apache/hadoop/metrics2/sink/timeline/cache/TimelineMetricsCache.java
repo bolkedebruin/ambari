@@ -38,11 +38,18 @@ public class TimelineMetricsCache {
   public static final int MAX_EVICTION_TIME_MILLIS = 59000; // ~ 1 min
   private final int maxRecsPerName;
   private final int maxEvictionTimeInMillis;
+  private boolean skipCounterTransform = true;
   private final Map<String, Double> counterMetricLastValue = new HashMap<String, Double>();
 
   public TimelineMetricsCache(int maxRecsPerName, int maxEvictionTimeInMillis) {
+    this(maxRecsPerName, maxEvictionTimeInMillis, false);
+  }
+
+  public TimelineMetricsCache(int maxRecsPerName, int maxEvictionTimeInMillis,
+                              boolean skipCounterTransform) {
     this.maxRecsPerName = maxRecsPerName;
     this.maxEvictionTimeInMillis = maxEvictionTimeInMillis;
+    this.skipCounterTransform = skipCounterTransform;
   }
 
   class TimelineMetricWrapper {
@@ -78,7 +85,7 @@ public class TimelineMetricsCache {
   }
 
   // TODO: Change to ConcurentHashMap with weighted eviction
-  class TimelineMetricHolder extends LinkedHashMap<String, TimelineMetricWrapper> {
+  class TimelineMetricHolder extends LinkedHashMap<String, TimelineMetricWrapper> {//
     private static final long serialVersionUID = 1L;
     private boolean gotOverflow = false;
     // To avoid duplication at the end of the buffer and beginning of the next
@@ -161,7 +168,7 @@ public class TimelineMetricsCache {
     Double value = counterMetricLastValue.get(metricName);
     double previousValue = value != null ? value : firstValue;
     Map<Long, Double> metricValues = timelineMetric.getMetricValues();
-    Map<Long, Double>   newMetricValues = new TreeMap<Long, Double>();
+    TreeMap<Long, Double>   newMetricValues = new TreeMap<Long, Double>();
     for (Map.Entry<Long, Double> entry : metricValues.entrySet()) {
       newMetricValues.put(entry.getKey(), entry.getValue() - previousValue);
       previousValue = entry.getValue();
@@ -171,7 +178,7 @@ public class TimelineMetricsCache {
   }
 
   public void putTimelineMetric(TimelineMetric timelineMetric, boolean isCounter) {
-    if (isCounter) {
+    if (isCounter && !skipCounterTransform) {
       transformMetricValuesToDerivative(timelineMetric);
     }
     putTimelineMetric(timelineMetric);

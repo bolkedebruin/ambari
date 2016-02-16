@@ -39,7 +39,15 @@ public class ActionExecutionContext {
   private Short timeout;
   private String expectedServiceName;
   private String expectedComponentName;
-  private boolean ignoreMaintenance = false;
+  private boolean hostsInMaintenanceModeExcluded = true;
+  private boolean allowRetry = false;
+
+  /**
+   * {@code true} if slave/client component failures should be automatically
+   * skipped. This will only automatically skip the failure if the task is
+   * skippable to begin with.
+   */
+  private boolean autoSkipFailures = false;
 
   /**
    * Create an ActionExecutionContext to execute an action from a request
@@ -71,7 +79,7 @@ public class ActionExecutionContext {
                                 List<RequestResourceFilter> resourceFilters,
                                 Map<String, String> parameters) {
     this.clusterName = clusterName;
-    this.actionName = commandName;
+    actionName = commandName;
     this.resourceFilters = resourceFilters;
     this.parameters = parameters;
   }
@@ -120,6 +128,46 @@ public class ActionExecutionContext {
     return expectedComponentName;
   }
 
+  /**
+   * Gets whether the action can be retried if it failed. The default is
+   * {@code true)}.
+   *
+   * @return {@code true} if the action can be retried if it fails.
+   */
+  public boolean isRetryAllowed() {
+    return allowRetry;
+  }
+
+  /**
+   * Sets whether the action can be retried if it fails.
+   *
+   * @param allowRetry
+   *          {@code true} if the action can be retried if it fails.
+   */
+  public void setRetryAllowed(boolean allowRetry){
+    this.allowRetry = allowRetry;
+  }
+
+  /**
+   * Gets whether skippable actions that failed are automatically skipped.
+   *
+   * @return the autoSkipFailures
+   */
+  public boolean isFailureAutoSkipped() {
+    return autoSkipFailures;
+  }
+
+  /**
+   * Sets whether skippable action that failed are automatically skipped.
+   *
+   * @param autoSkipFailures
+   *          {@code true} to automatically skip failures which are marked as
+   *          skippable.
+   */
+  public void setAutoSkipFailures(boolean autoSkipFailures) {
+    this.autoSkipFailures = autoSkipFailures;
+  }
+
   @Override
   public String toString() {
     return "ActionExecutionContext{" +
@@ -130,23 +178,33 @@ public class ActionExecutionContext {
       ", parameters=" + parameters +
       ", targetType=" + targetType +
       ", timeout=" + timeout +
-      ", ignoreMaintenance=" + ignoreMaintenance +
+      ", isMaintenanceModeHostExcluded=" + hostsInMaintenanceModeExcluded +
+      ", allowRetry=" + allowRetry +
+      ", autoSkipFailures=" + autoSkipFailures +
       '}';
   }
 
   /**
-   * @return {@code true} if the action context should schedule even if maintenance mode is
-   * enabled
+   * Gets whether hosts in maintenance mode should be excluded from the command.
+   *
+   * @return {@code true} to exclude any hosts in maintenance mode from the
+   *         command, {@code false} to include hosts which are in maintenance
+   *         mode.
    */
-  public boolean isIgnoreMaintenance() {
-    return ignoreMaintenance;
+  public boolean isMaintenanceModeHostExcluded() {
+    return hostsInMaintenanceModeExcluded;
   }
 
   /**
-   * @param ignore  {@code true} to ignore maintenace mode
+   * Sets whether hosts in maintenance mode should be excluded from the command.
+   *
+   * @param excluded
+   *          {@code true} to exclude any hosts in maintenance mode from the
+   *          command, {@code false} to include hosts which are in maintenance
+   *          mode.
    */
-  public void setIgnoreMaintenance(boolean ignore) {
-    ignoreMaintenance = ignore;
+  public void setMaintenanceModeHostExcluded(boolean excluded) {
+    hostsInMaintenanceModeExcluded = excluded;
   }
 
 }

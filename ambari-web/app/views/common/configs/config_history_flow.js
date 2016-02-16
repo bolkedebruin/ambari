@@ -27,12 +27,8 @@ App.ConfigHistoryFlowView = Em.View.extend({
   startIndex: 0,
   showLeftArrow: false,
   showRightArrow: false,
-  leftArrowTooltip: function () {
-    return this.get('showLeftArrow') ? Em.I18n.t('services.service.config.configHistory.leftArrow.tooltip') : null;
-  }.property('showLeftArrow'),
-  rightArrowTooltip: function () {
-    return this.get('showRightArrow') ? Em.I18n.t('services.service.config.configHistory.rightArrow.tooltip') : null;
-  }.property('showRightArrow'),
+  leftArrowTooltip: Em.computed.ifThenElse('showLeftArrow', Em.I18n.t('services.service.config.configHistory.leftArrow.tooltip'), null),
+  rightArrowTooltip: Em.computed.ifThenElse('showRightArrow', Em.I18n.t('services.service.config.configHistory.rightArrow.tooltip'), null),
   VERSIONS_IN_FLOW: 6,
   VERSIONS_IN_DROPDOWN: 6,
   /**
@@ -69,28 +65,17 @@ App.ConfigHistoryFlowView = Em.View.extend({
     return App.ServiceConfigVersion.find().filterProperty('serviceName', this.get('serviceName'));
   }.property('serviceName'),
 
-  showCompareVersionBar: function() {
-    return !Em.isNone(this.get('compareServiceVersion'));
-  }.property('compareServiceVersion'),
+  showCompareVersionBar: Em.computed.bool('compareServiceVersion'),
 
-  isSaveDisabled: function () {
-    return (this.get('controller.isSubmitDisabled') || !this.get('controller.versionLoaded') || !this.get('controller.isPropertiesChanged')) ;
-  }.property('controller.isSubmitDisabled', 'controller.versionLoaded', 'controller.isPropertiesChanged'),
+  isSaveDisabled: Em.computed.or('controller.isSubmitDisabled', '!controller.versionLoaded', '!controller.isPropertiesChanged'),
 
-  serviceName: function () {
-    return this.get('controller.selectedService.serviceName');
-  }.property('controller.selectedService.serviceName'),
+  serviceName: Em.computed.alias('controller.selectedService.serviceName'),
 
-  displayedServiceVersion: function () {
-    return this.get('serviceVersions').findProperty('isDisplayed');
-  }.property('serviceVersions.@each.isDisplayed'),
+  displayedServiceVersion: Em.computed.findBy('serviceVersions', 'isDisplayed', true),
   /**
    * identify whether to show link that open whole content of notes
    */
-  showMoreLink: function () {
-    //100 is number of symbols that fit into label
-    return (this.get('displayedServiceVersion.notes.length') > 100);
-  }.property('displayedServiceVersion.notes.length'),
+  showMoreLink: Em.computed.gt('displayedServiceVersion.notes.length', 100),
   /**
    * formatted notes ready to display
    */
@@ -106,6 +91,7 @@ App.ConfigHistoryFlowView = Em.View.extend({
     var groupName = this.get('controller.selectedConfigGroup.isDefault') ? 'default'
         : this.get('controller.selectedConfigGroup.name');
     var groupId = this.get('controller.selectedConfigGroup.configGroupId');
+    var self = this;
 
     this.get('allServiceVersions').forEach(function (version) {
       version.set('isDisabled', !(version.get('groupName') === groupName));
@@ -114,6 +100,13 @@ App.ConfigHistoryFlowView = Em.View.extend({
     var serviceVersions = this.get('allServiceVersions').filter(function(s) {
       return (s.get('groupId') === groupId) || s.get('groupName') == 'default';
     });
+
+    if (!serviceVersions.findProperty('isDisplayed')) {
+      //recompute serviceVersions if displayed version absent
+      Em.run.next(function() {
+        self.propertyDidChange('controller.selectedConfigGroup.name');
+      });
+    }
 
     return serviceVersions.sort(function (a, b) {
       return Em.get(b, 'createTime') - Em.get(a, 'createTime');
@@ -137,16 +130,12 @@ App.ConfigHistoryFlowView = Em.View.extend({
   /**
    * enable actions to manipulate version only after it's loaded
    */
-  versionActionsDisabled: function () {
-    return !this.get('controller.versionLoaded') || this.get('dropDownList.length') === 0;
-  }.property('controller.versionLoaded', 'dropDownList.length'),
+  versionActionsDisabled: Em.computed.or('!controller.versionLoaded', '!dropDownList.length'),
 
   /**
    * enable discard to manipulate version only after it's loaded and any property is changed
    */
-  isDiscardDisabled: function () {
-    return !this.get('controller.versionLoaded') || !this.get('controller.isPropertiesChanged');
-  }.property('controller.versionLoaded','controller.isPropertiesChanged'),
+  isDiscardDisabled: Em.computed.or('!controller.versionLoaded', '!controller.isPropertiesChanged'),
   /**
    * list of service versions
    * by default 6 is number of items in short list
@@ -202,8 +191,11 @@ App.ConfigHistoryFlowView = Em.View.extend({
     this.$('[data-toggle=tooltip], [data-toggle=arrow-tooltip]').remove();
   },
 
-
   willInsertElement: function () {
+    this.setDisplayVersion();
+  },
+
+  setDisplayVersion: function () {
     var serviceVersions = this.get('serviceVersions');
     var startIndex = 0;
     var currentIndex = 0;
@@ -224,7 +216,7 @@ App.ConfigHistoryFlowView = Em.View.extend({
     }
     this.set('startIndex', startIndex);
     this.adjustFlowView();
-  },
+  }.observes('allVersionsLoaded'),
 
   onChangeConfigGroup: function () {
     var serviceVersions = this.get('serviceVersions');
@@ -366,8 +358,10 @@ App.ConfigHistoryFlowView = Em.View.extend({
     this.get('controller').loadSelectedVersion(displayedVersion);
   },
   clearCompareVersionBar: function () {
-    this.set('compareServiceVersion', null);
-  }.observes('controller.selectedConfigGroup'),
+    if (this.get('controller.isCompareMode') === false) {
+      this.set('compareServiceVersion', null);
+    }
+  }.observes('controller.isCompareMode'),
   /**
    * revert config values to chosen version and apply reverted configs to server
    */
@@ -402,6 +396,14 @@ App.ConfigHistoryFlowView = Em.View.extend({
         serviceConfigVersion.set('serviceConfigNote', this.get('serviceConfigNote'));
         self.sendRevertCall(serviceConfigVersion);
         this.hide();
+      },
+      onSecondary: function () {
+        // force <code>serviceVersions</code> recalculating
+        self.propertyDidChange('controller.selectedConfigGroup.name');
+        this._super();
+      },
+      onThird: function () {
+        this.onSecondary();
       }
     });
   },
@@ -432,7 +434,8 @@ App.ConfigHistoryFlowView = Em.View.extend({
   sendRevertCallSuccess: function (data, opt, params) {
     // revert to an old version would generate a new version with latest version number,
     // so, need to loadStep to update
-     this.get('controller').loadStep();
+    App.router.get('updateController').updateComponentConfig(Em.K);
+    this.get('controller').loadStep();
   },
 
   /**
@@ -441,20 +444,28 @@ App.ConfigHistoryFlowView = Em.View.extend({
    */
   save: function () {
     var self = this;
+    var passwordWasChanged = this.get('controller.passwordConfigsAreChanged');
     return App.ModalPopup.show({
       header: Em.I18n.t('dashboard.configHistory.info-bar.save.popup.title'),
       serviceConfigNote: '',
       bodyClass: Em.View.extend({
         templateName: require('templates/common/configs/save_configuration'),
+        showPasswordChangeWarning: passwordWasChanged,
         notesArea: Em.TextArea.extend({
           classNames: ['full-width'],
+          value: passwordWasChanged ? Em.I18n.t('dashboard.configHistory.info-bar.save.popup.notesForPasswordChange') : '',
           placeholder: Em.I18n.t('dashboard.configHistory.info-bar.save.popup.placeholder'),
+          didInsertElement: function () {
+            if (this.get('value')) {
+              this.onChangeValue();
+            }
+          },
           onChangeValue: function() {
             this.get('parentView.parentView').set('serviceConfigNote', this.get('value'));
           }.observes('value')
         })
       }),
-      footerClass: Ember.View.extend({
+      footerClass: Em.View.extend({
         templateName: require('templates/main/service/info/save_popup_footer')
       }),
       primary: Em.I18n.t('common.save'),
@@ -518,17 +529,9 @@ App.ConfigsServiceVersionBoxView = Em.View.extend({
 
   actionTypesBinding: 'parentView.actionTypes',
 
-  disabledActionAttr: function() {
-    if (this.get('serviceVersion')) {
-      return this.get('serviceVersion').get('disabledActionAttr');
-    }
-  }.property('serviceVersion.disabledActionAttr'),
+  disabledActionAttr: Em.computed.alias('serviceVersion.disabledActionAttr'),
 
-  disabledActionMessages: function() {
-    if (this.get('serviceVersion')) {
-      return this.get('serviceVersion').get('disabledActionMessages');
-    }
-  }.property('serviceVersion.disabledActionMessages'),
+  disabledActionMessages: Em.computed.alias('serviceVersion.disabledActionMessages'),
 
   templateName: require('templates/common/configs/service_version_box'),
 

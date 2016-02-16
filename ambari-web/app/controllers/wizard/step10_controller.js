@@ -30,9 +30,7 @@ App.WizardStep10Controller = Em.Controller.extend({
    * is Add service wizard the ongoing wizard
    * @type {bool}
    */
-  isAddServiceWizard: function () {
-    return this.get('content.controllerName') === 'addServiceController';
-  }.property('content.controllerName'),
+  isAddServiceWizard: Em.computed.equal('content.controllerName', 'addServiceController'),
 
   /**
    * Clear <code>clusterInfo</code>
@@ -46,7 +44,6 @@ App.WizardStep10Controller = Em.Controller.extend({
    * @method loadStep
    */
   loadStep: function () {
-    console.log("TRACE: Loading step10: Summary Page");
     this.clearStep();
     this.loadInstalledHosts(this.loadRegisteredHosts());
     var installFlag = true;
@@ -75,6 +72,9 @@ App.WizardStep10Controller = Em.Controller.extend({
     slaveHosts = hostObj.mapProperty('hostName').uniq();
     var registeredHosts = App.Host.find().mapProperty('hostName').concat(masterHosts.concat(slaveHosts)).uniq();
     var registerHostsStatement = Em.I18n.t('installer.step10.hostsSummary').format(registeredHosts.length);
+    if (this.get('content.controllerName') === 'addHostController') {
+      registerHostsStatement = Em.I18n.t('installer.step10.hostsSummary').format(Object.keys(this.get('content.hosts') || {}).length);
+    }
     var registerHostsObj = Em.Object.create({
       id: 1,
       color: 'text-info',
@@ -103,7 +103,8 @@ App.WizardStep10Controller = Em.Controller.extend({
       return ['warning', 'failed'].contains(host.status);
     });
     if (succeededHosts.length) {
-      var successStatement = Em.I18n.t('installer.step10.servicesSummary').format(succeededHosts.length) + ((succeededHosts.length > 1) ? Em.I18n.t('installer.step8.hosts') : Em.I18n.t('installer.step8.host'));
+      var successMessage = this.get('content.cluster.status') === 'START_SKIPPED' ? Em.I18n.t('installer.step10.installed') : Em.I18n.t('installer.step10.installedAndStarted');
+      var successStatement = successMessage.format(succeededHosts.length) + ((succeededHosts.length > 1) ? Em.I18n.t('installer.step8.hosts') : Em.I18n.t('installer.step8.host'));
       this.get('clusterInfo').findProperty('id', 1).get('status').pushObject(Em.Object.create({
         id: 1,
         color: 'text-success',
@@ -174,7 +175,6 @@ App.WizardStep10Controller = Em.Controller.extend({
       }));
     }
 
-    console.log('STEP10 master components:  ' + JSON.stringify(components));
     components.forEach(function (_component) {
       var component = Em.Object.create(_component);
       if (['NAMENODE', 'SECONDARY_NAMENODE', 'JOBTRACKER', 'HISTORYSERVER', 'RESOURCEMANAGER', 'HBASE_MASTER',
@@ -207,7 +207,8 @@ App.WizardStep10Controller = Em.Controller.extend({
    * @method loadStartedServices
    */
   loadStartedServices: function () {
-    if (this.get('content.cluster.status') === 'STARTED') {
+    var status = this.get('content.cluster.status');
+    if (status === 'STARTED') {
       this.get('clusterInfo').pushObject(Em.Object.create({
         id: 3,
         color: 'text-success',
@@ -221,6 +222,14 @@ App.WizardStep10Controller = Em.Controller.extend({
         status: []
       }));
       return true;
+    } else if (status === 'START_SKIPPED') {
+      this.get('clusterInfo').pushObject(Em.Object.create({
+        id: 3,
+        color: 'text-warning',
+        displayStatement: Em.I18n.t('installer.step10.startStatus.skipped'),
+        status: []
+      }));
+      return false
     } else {
       this.get('clusterInfo').pushObject(Em.Object.create({
         id: 3,

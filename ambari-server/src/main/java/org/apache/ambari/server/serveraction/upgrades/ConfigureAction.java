@@ -17,16 +17,10 @@
  */
 package org.apache.ambari.server.serveraction.upgrades;
 
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
-
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.agent.CommandReport;
@@ -45,14 +39,22 @@ import org.apache.ambari.server.state.ConfigMergeHelper.ThreeWayValue;
 import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.ConfigurationKeyValue;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.Masked;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.Replace;
+import org.apache.ambari.server.state.stack.upgrade.ConfigUpgradeChangeDefinition.Transfer;
 import org.apache.ambari.server.state.stack.upgrade.ConfigureTask;
-import org.apache.ambari.server.state.stack.upgrade.ConfigureTask.ConfigurationKeyValue;
 import org.apache.commons.lang.StringUtils;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Provider;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * The {@link ConfigureAction} is used to alter a configuration property during
@@ -176,27 +178,27 @@ public class ConfigureAction extends AbstractServerAction {
     String configType = commandParameters.get(ConfigureTask.PARAMETER_CONFIG_TYPE);
 
     // extract transfers
-    List<ConfigureTask.ConfigurationKeyValue> keyValuePairs = Collections.emptyList();
+    List<ConfigurationKeyValue> keyValuePairs = Collections.emptyList();
     String keyValuePairJson = commandParameters.get(ConfigureTask.PARAMETER_KEY_VALUE_PAIRS);
     if (null != keyValuePairJson) {
       keyValuePairs = m_gson.fromJson(
-          keyValuePairJson, new TypeToken<List<ConfigureTask.ConfigurationKeyValue>>(){}.getType());
+          keyValuePairJson, new TypeToken<List<ConfigurationKeyValue>>(){}.getType());
     }
 
     // extract transfers
-    List<ConfigureTask.Transfer> transfers = Collections.emptyList();
+    List<Transfer> transfers = Collections.emptyList();
     String transferJson = commandParameters.get(ConfigureTask.PARAMETER_TRANSFERS);
     if (null != transferJson) {
       transfers = m_gson.fromJson(
-        transferJson, new TypeToken<List<ConfigureTask.Transfer>>(){}.getType());
+        transferJson, new TypeToken<List<Transfer>>(){}.getType());
     }
 
     // extract replacements
-    List<ConfigureTask.Replace> replacements = Collections.emptyList();
+    List<Replace> replacements = Collections.emptyList();
     String replaceJson = commandParameters.get(ConfigureTask.PARAMETER_REPLACEMENTS);
     if (null != replaceJson) {
       replacements = m_gson.fromJson(
-          replaceJson, new TypeToken<List<ConfigureTask.Replace>>(){}.getType());
+          replaceJson, new TypeToken<List<Replace>>(){}.getType());
     }
 
     // if there is nothing to do, then skip the task
@@ -240,7 +242,7 @@ public class ConfigureAction extends AbstractServerAction {
 
     // !!! do transfers first before setting defined values
     StringBuilder outputBuffer = new StringBuilder(250);
-    for (ConfigureTask.Transfer transfer : transfers) {
+    for (Transfer transfer : transfers) {
       switch (transfer.operation) {
         case COPY:
           String valueToCopy = null;
@@ -323,11 +325,13 @@ public class ConfigureAction extends AbstractServerAction {
             outputBuffer.append(MessageFormat.format("Deleted all keys from {0}\n", configType));
 
             for (String keeper : transfer.keepKeys) {
-              newValues.put(keeper, base.get(keeper));
+              if (base.containsKey(keeper) && base.get(keeper) != null) {
+                newValues.put(keeper, base.get(keeper));
 
-              // append standard output
-              outputBuffer.append(MessageFormat.format("Preserved {0}/{1} after delete\n",
+                // append standard output
+                outputBuffer.append(MessageFormat.format("Preserved {0}/{1} after delete\n",
                   configType, keeper));
+              }
             }
 
             // !!! with preserved edits, find the values that are different from
@@ -400,10 +404,11 @@ public class ConfigureAction extends AbstractServerAction {
     }
 
     // !!! string replacements happen only on the new values.
-    for (ConfigureTask.Replace replacement : replacements) {
-      if (newValues.containsKey(replacement.key)) {
-        String toReplace = newValues.get(replacement.key);
-
+    for (Replace replacement : replacements) {
+      // the key might exist but might be null, so we need to check this
+      // condition when replacing a part of the value
+      String toReplace = newValues.get(replacement.key);
+      if (StringUtils.isNotBlank(toReplace)) {
         if (!toReplace.contains(replacement.find)) {
           outputBuffer.append(MessageFormat.format("String \"{0}\" was not found in {1}/{2}\n",
               replacement.find, configType, replacement.key));
@@ -412,15 +417,19 @@ public class ConfigureAction extends AbstractServerAction {
 
           newValues.put(replacement.key, replaced);
 
-          outputBuffer.append(MessageFormat.format("Replaced {0}/{1} containing \"{2}\" with \"{3}\"\n",
-            configType, replacement.key, replacement.find, replacement.replaceWith));
+          outputBuffer.append(
+              MessageFormat.format("Replaced {0}/{1} containing \"{2}\" with \"{3}\"", configType,
+                  replacement.key, replacement.find, replacement.replaceWith));
+
+          outputBuffer.append(System.lineSeparator());
         }
       } else {
-        outputBuffer.append(MessageFormat.format("Property \"{0}\" was not found in {1} to replace content\n",
-            replacement.key, configType));
+        outputBuffer.append(MessageFormat.format(
+            "Skipping replacement for {0}/{1} because it does not exist or is empty.",
+            configType, replacement.key));
+        outputBuffer.append(System.lineSeparator());
       }
     }
-
 
     // !!! check to see if we're going to a new stack and double check the
     // configs are for the target.  Then simply update the new properties instead
@@ -534,7 +543,7 @@ public class ConfigureAction extends AbstractServerAction {
     return result;
   }
 
-  private static String mask(ConfigureTask.Masked mask, String value) {
+  private static String mask(Masked mask, String value) {
     if (mask.mask) {
       return StringUtils.repeat("*", value.length());
     }

@@ -32,11 +32,13 @@ import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
+import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.dao.HostDAO;
 import org.apache.ambari.server.orm.entities.HostEntity;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
@@ -48,10 +50,13 @@ import org.easymock.Capture;
 import org.easymock.IAnswer;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -78,6 +83,12 @@ public class ConfigGroupResourceProviderTest {
   private Injector injector;
 
   private HostDAO hostDAO = null;
+
+  @BeforeClass
+  public static void setupAuthentication() {
+    // Set authenticated user so that authorization checks will pass
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
+  }
 
   @Before
   public void setup() throws Exception {
@@ -253,7 +264,111 @@ public class ConfigGroupResourceProviderTest {
     assertNotNull(exception);
     assertTrue(exception instanceof ResourceAlreadyExistsException);
   }
+  @Test
+  public void testUpdateConfigGroupWithWrongConfigType() throws Exception {
+    AmbariManagementController managementController = createMock(AmbariManagementController.class);
+    RequestStatusResponse response = createNiceMock(RequestStatusResponse.class);
+    ConfigHelper configHelper = createNiceMock(ConfigHelper.class);
+    Clusters clusters = createNiceMock(Clusters.class);
+    Cluster cluster = createNiceMock(Cluster.class);
+    Host h1 = createNiceMock(Host.class);
+    Host h2 = createNiceMock(Host.class);
+    HostEntity hostEntity1 = createMock(HostEntity.class);
+    HostEntity hostEntity2 = createMock(HostEntity.class);
 
+    final ConfigGroup configGroup = createNiceMock(ConfigGroup.class);
+    ConfigGroupResponse configGroupResponse = createNiceMock
+        (ConfigGroupResponse.class);
+
+    expect(cluster.isConfigTypeExists("core-site")).andReturn(false).anyTimes();
+    expect(managementController.getClusters()).andReturn(clusters).anyTimes();
+    expect(managementController.getAuthName()).andReturn("admin").anyTimes();
+    expect(clusters.getCluster("Cluster100")).andReturn(cluster).anyTimes();
+    expect(clusters.getHost("h1")).andReturn(h1);
+    expect(clusters.getHost("h2")).andReturn(h2);
+    expect(hostDAO.findByName("h1")).andReturn(hostEntity1).anyTimes();
+    expect(hostDAO.findById(1L)).andReturn(hostEntity1).anyTimes();
+    expect(hostDAO.findByName("h2")).andReturn(hostEntity2).anyTimes();
+    expect(hostDAO.findById(2L)).andReturn(hostEntity2).anyTimes();
+    expect(hostEntity1.getHostId()).andReturn(1L).atLeastOnce();
+    expect(hostEntity2.getHostId()).andReturn(2L).atLeastOnce();
+    expect(h1.getHostId()).andReturn(1L).anyTimes();
+    expect(h2.getHostId()).andReturn(2L).anyTimes();
+
+    expect(configGroup.getName()).andReturn("test-1").anyTimes();
+    expect(configGroup.getId()).andReturn(25L).anyTimes();
+    expect(configGroup.getTag()).andReturn("tag-1").anyTimes();
+
+    expect(configGroup.convertToResponse()).andReturn(configGroupResponse).anyTimes();
+    expect(configGroupResponse.getClusterName()).andReturn("Cluster100").anyTimes();
+    expect(configGroupResponse.getId()).andReturn(25L).anyTimes();
+
+    expect(cluster.getConfigGroups()).andStubAnswer(new IAnswer<Map<Long, ConfigGroup>>() {
+      @Override
+      public Map<Long, ConfigGroup> answer() throws Throwable {
+        Map<Long, ConfigGroup> configGroupMap = new HashMap<Long, ConfigGroup>();
+        configGroupMap.put(configGroup.getId(), configGroup);
+        return configGroupMap;
+      }
+    });
+
+    replay(managementController, clusters, cluster,
+        configGroup, response, configGroupResponse, configHelper, hostDAO, hostEntity1, hostEntity2, h1, h2);
+
+    ResourceProvider provider = getConfigGroupResourceProvider
+        (managementController);
+
+    Map<String, Object> properties = new LinkedHashMap<String, Object>();
+
+    Set<Map<String, Object>> hostSet = new HashSet<Map<String, Object>>();
+    Map<String, Object> host1 = new HashMap<String, Object>();
+    host1.put(ConfigGroupResourceProvider.CONFIGGROUP_HOSTNAME_PROPERTY_ID, "h1");
+    hostSet.add(host1);
+    Map<String, Object> host2 = new HashMap<String, Object>();
+    host2.put(ConfigGroupResourceProvider.CONFIGGROUP_HOSTNAME_PROPERTY_ID, "h2");
+    hostSet.add(host2);
+
+    Set<Map<String, Object>> configSet = new HashSet<Map<String, Object>>();
+    Map<String, String> configMap = new HashMap<String, String>();
+    Map<String, Object> configs = new HashMap<String, Object>();
+    configs.put("type", "core-site");
+    configs.put("tag", "version100");
+    configMap.put("key1", "value1");
+    configs.put("properties", configMap);
+    configSet.add(configs);
+
+    properties.put(ConfigGroupResourceProvider
+        .CONFIGGROUP_CLUSTER_NAME_PROPERTY_ID, "Cluster100");
+    properties.put(ConfigGroupResourceProvider.CONFIGGROUP_NAME_PROPERTY_ID,
+        "test-1");
+    properties.put(ConfigGroupResourceProvider.CONFIGGROUP_TAG_PROPERTY_ID,
+        "tag-1");
+    properties.put(ConfigGroupResourceProvider.CONFIGGROUP_HOSTS_PROPERTY_ID,
+        hostSet );
+    properties.put(ConfigGroupResourceProvider.CONFIGGROUP_CONFIGS_PROPERTY_ID,
+        configSet);
+
+    Map<String, String> mapRequestProps = new HashMap<String, String>();
+    mapRequestProps.put("context", "Called from a test");
+
+    Request request = PropertyHelper.getUpdateRequest(properties, mapRequestProps);
+
+    Predicate predicate = new PredicateBuilder().property
+        (ConfigGroupResourceProvider.CONFIGGROUP_CLUSTER_NAME_PROPERTY_ID).equals
+        ("Cluster100").and().
+        property(ConfigGroupResourceProvider.CONFIGGROUP_ID_PROPERTY_ID).equals
+        (25L).toPredicate();
+    SystemException systemException = null;
+    try {
+      provider.updateResources(request, predicate);
+    }
+    catch (SystemException e){
+      systemException = e;
+    }
+    assertNotNull(systemException);
+    verify(managementController, clusters, cluster,
+        configGroup, response, configGroupResponse, configHelper, hostDAO, hostEntity1, hostEntity2, h1, h2);
+  }
   @Test
   public void testUpdateConfigGroup() throws Exception {
     AmbariManagementController managementController = createMock(AmbariManagementController.class);
@@ -270,6 +385,7 @@ public class ConfigGroupResourceProviderTest {
     ConfigGroupResponse configGroupResponse = createNiceMock
       (ConfigGroupResponse.class);
 
+    expect(cluster.isConfigTypeExists("core-site")).andReturn(true).anyTimes();
     expect(managementController.getClusters()).andReturn(clusters).anyTimes();
     expect(managementController.getAuthName()).andReturn("admin").anyTimes();
     expect(clusters.getCluster("Cluster100")).andReturn(cluster).anyTimes();
@@ -581,13 +697,16 @@ public class ConfigGroupResourceProviderTest {
     AmbariManagementController managementController = createMock(AmbariManagementController.class);
     Clusters clusters = createNiceMock(Clusters.class);
     Cluster cluster = createNiceMock(Cluster.class);
+    ConfigGroup configGroup = createNiceMock(ConfigGroup.class);
 
     expect(managementController.getAuthName()).andReturn("admin").anyTimes();
     expect(managementController.getClusters()).andReturn(clusters).anyTimes();
     expect(clusters.getCluster("Cluster100")).andReturn(cluster).anyTimes();
+    expect(cluster.getConfigGroups()).andReturn(Collections.singletonMap(1L, configGroup));
+
     cluster.deleteConfigGroup(1L);
 
-    replay(managementController, clusters, cluster);
+    replay(managementController, clusters, cluster, configGroup);
 
     ResourceProvider resourceProvider = getConfigGroupResourceProvider
       (managementController);
@@ -610,7 +729,7 @@ public class ConfigGroupResourceProviderTest {
     Assert.assertEquals(predicate, lastEvent.getPredicate());
     Assert.assertNull(lastEvent.getRequest());
 
-    verify(managementController, clusters, cluster);
+    verify(managementController, clusters, cluster, configGroup);
   }
 
   @Test

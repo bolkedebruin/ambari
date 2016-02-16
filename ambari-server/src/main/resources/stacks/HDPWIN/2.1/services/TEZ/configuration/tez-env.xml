@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>tez_user</name>
     <deleted>true</deleted>
@@ -31,5 +31,8 @@
     <name>content</name>
     <description>This is the jinja template for tez-env.cmd file</description>
     <value></value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 </configuration>

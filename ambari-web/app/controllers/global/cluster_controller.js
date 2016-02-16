@@ -18,8 +18,9 @@
 
 var App = require('app');
 var stringUtils = require('utils/string_utils');
+var credentialUtils = require('utils/credentials');
 
-App.ClusterController = Em.Controller.extend({
+App.ClusterController = Em.Controller.extend(App.ReloadPopupMixin, {
   name: 'clusterController',
   isLoaded: false,
   ambariProperties: null,
@@ -42,22 +43,21 @@ App.ClusterController = Em.Controller.extend({
   isServiceMetricsLoaded: false,
 
   /**
+   * @type {boolean}
+   */
+  isHostComponentMetricsLoaded: false,
+
+  /**
    * Ambari uses custom jdk.
    * @type {Boolean}
    */
   isCustomJDK: false,
 
-  isHostContentLoaded: function () {
-    return this.get('isHostsLoaded') && this.get('isComponentsStateLoaded');
-  }.property('isHostsLoaded', 'isComponentsStateLoaded'),
+  isHostContentLoaded: Em.computed.and('isHostsLoaded', 'isComponentsStateLoaded'),
 
-  isServiceContentFullyLoaded: function () {
-    return this.get('isServiceMetricsLoaded') && this.get('isComponentsStateLoaded') && this.get('isComponentsConfigLoaded');
-  }.property('isServiceMetricsLoaded', 'isComponentsStateLoaded', 'isComponentsConfigLoaded'),
+  isServiceContentFullyLoaded: Em.computed.and('isServiceMetricsLoaded', 'isComponentsStateLoaded', 'isComponentsConfigLoaded'),
 
-  clusterName: function () {
-    return App.get('clusterName');
-  }.property('App.clusterName'),
+  clusterName: Em.computed.alias('App.clusterName'),
 
   updateLoadStatus: function (item) {
     var loadList = this.get('dataLoadList');
@@ -89,8 +89,8 @@ App.ClusterController = Em.Controller.extend({
   /**
    * load cluster name
    */
-  loadClusterName: function (reload) {
-    var dfd = $.Deferred();
+  loadClusterName: function (reload, deferred) {
+    var dfd = deferred || $.Deferred();
 
     if (App.get('clusterName') && !reload) {
       App.set('clusterName', this.get('clusterName'));
@@ -100,30 +100,40 @@ App.ClusterController = Em.Controller.extend({
       App.ajax.send({
         name: 'cluster.load_cluster_name',
         sender: this,
-        success: 'loadClusterNameSuccessCallback',
-        error: 'loadClusterNameErrorCallback'
-      }).complete(function () {
-        if (!App.get('currentStackVersion')) {
-          App.set('currentStackVersion', App.defaultStackVersion);
+        data: {
+          reloadPopupText: Em.I18n.t('app.reloadPopup.noClusterName.text'),
+          errorLogMessage: 'failed on loading cluster name',
+          callback: this.loadClusterName,
+          args: [reload, dfd],
+          shouldUseDefaultHandler: true
+        },
+        success: 'reloadSuccessCallback',
+        error: 'reloadErrorCallback',
+        callback: function () {
+          if (!App.get('currentStackVersion')) {
+            App.set('currentStackVersion', App.defaultStackVersion);
+          }
         }
-        dfd.resolve();
-      });
+      }).then(
+        function () {
+          dfd.resolve();
+        },
+        null
+      );
     }
-    return dfd.promise()
+    return dfd.promise();
   },
 
-  loadClusterNameSuccessCallback: function (data) {
+  reloadSuccessCallback: function (data) {
+    this._super();
     if (data.items && data.items.length > 0) {
-      App.set('clusterName', data.items[0].Clusters.cluster_name);
-      App.set('currentStackVersion', data.items[0].Clusters.version);
+      App.setProperties({
+        clusterName: data.items[0].Clusters.cluster_name,
+        currentStackVersion: data.items[0].Clusters.version,
+        isKerberosEnabled: data.items[0].Clusters.security_type === 'KERBEROS'
+      });
       this.set('isClusterNameLoaded', true);
-      App.set('isKerberosEnabled', data.items[0].Clusters.security_type === 'KERBEROS');
     }
-  },
-
-  loadClusterNameErrorCallback: function (request, ajaxOptions, error) {
-    console.log('failed on loading cluster name');
-    this.set('isLoaded', true);
   },
 
   /**
@@ -154,10 +164,8 @@ App.ClusterController = Em.Controller.extend({
     serverClock = serverClock.length < 13 ? serverClock + '000' : serverClock;
     App.set('clockDistance', serverClock - clientClock);
     App.set('currentServerTime', parseInt(serverClock));
-    console.log('loading ambari server clock distance');
   },
   getServerClockErrorCallback: function () {
-    console.log('Cannot load ambari server clock');
   },
 
   getUrl: function (testUrl, url) {
@@ -169,6 +177,7 @@ App.ClusterController = Em.Controller.extend({
    */
   loadClusterData: function () {
     var self = this;
+    this.loadAuthorizations();
     this.getAllHostNames();
     this.loadAmbariProperties();
     if (!App.get('clusterName')) {
@@ -179,7 +188,7 @@ App.ClusterController = Em.Controller.extend({
       App.router.get('mainController').startPolling();
       return;
     }
-
+    App.router.get('userSettingsController').getAllUserSettings();
     var clusterUrl = this.getUrl('/data/clusters/cluster.json', '?fields=Clusters');
     var hostsController = App.router.get('mainHostController');
     hostsController.set('isCountersUpdating', true);
@@ -187,6 +196,7 @@ App.ClusterController = Em.Controller.extend({
 
     App.HttpClient.get(clusterUrl, App.clusterMapper, {
       complete: function (jqXHR, textStatus) {
+        App.set('isCredentialStorePersistent', Em.getWithDefault(App.Cluster.find().findProperty('clusterName', App.get('clusterName')), 'isCredentialStorePersistent', false));
       }
     }, function (jqXHR, textStatus) {
     });
@@ -196,6 +206,7 @@ App.ClusterController = Em.Controller.extend({
       self.restoreUpgradeState();
     }
 
+    App.router.get('wizardWatcherController').getUser();
 
     var updater = App.router.get('updateController');
 
@@ -221,6 +232,11 @@ App.ClusterController = Em.Controller.extend({
       self.updateLoadStatus('stackComponents');
       updater.updateServices(function () {
         self.updateLoadStatus('services');
+
+        //hosts should be loaded after services in order to properly populate host-component relation in App.cache.services
+        updater.updateHost(function () {
+          self.set('isHostsLoaded', true);
+        });
         App.config.loadConfigsFromStack(App.Service.find().mapProperty('serviceName')).complete(function () {
           App.config.loadClusterConfigsFromStack().complete(function () {
             self.set('isConfigsPropertiesLoaded', true);
@@ -233,6 +249,10 @@ App.ClusterController = Em.Controller.extend({
           // service metrics loading doesn't affect overall progress
           updater.updateServiceMetric(function () {
             self.set('isServiceMetricsLoaded', true);
+            // make second call, because first is light since it doesn't request host-component metrics
+            updater.updateServiceMetric(function() {
+              self.set('isHostComponentMetricsLoaded', true);
+            });
             // components config loading doesn't affect overall progress
             updater.updateComponentConfig(function () {
               self.set('isComponentsConfigLoaded', true);
@@ -244,11 +264,6 @@ App.ClusterController = Em.Controller.extend({
 
     //force clear filters  for hosts page to load all data
     App.db.setFilterConditions('mainHostController', null);
-
-    // hosts loading doesn't affect overall progress
-    updater.updateHost(function () {
-      self.set('isHostsLoaded', true);
-    });
 
     // alerts loading doesn't affect overall progress
     console.time('Overall alerts loading time');
@@ -289,16 +304,7 @@ App.ClusterController = Em.Controller.extend({
       }
 
       if (lastUpgradeData) {
-        upgradeController.setDBProperties({
-          upgradeId: lastUpgradeData.Upgrade.request_id,
-          isDowngrade: lastUpgradeData.Upgrade.direction === 'DOWNGRADE',
-          upgradeState: lastUpgradeData.Upgrade.request_status
-        });
-        upgradeController.loadRepoVersionsToModel().done(function () {
-          upgradeController.setDBProperty('upgradeVersion', App.RepositoryVersion.find().findProperty('repositoryVersion', lastUpgradeData.Upgrade.to_version).get('displayName'));
-          upgradeController.initDBProperties();
-          upgradeController.loadUpgradeData(true);
-        });
+        upgradeController.restoreLastUpgrade(lastUpgradeData);
       } else {
         upgradeController.initDBProperties();
         upgradeController.loadUpgradeData(true);
@@ -352,15 +358,31 @@ App.ClusterController = Em.Controller.extend({
     });
   },
 
+  loadAuthorizations: function() {
+    return App.ajax.send({
+      name: 'router.user.authorizations',
+      sender: this,
+      data: {userName: App.db.getLoginName()},
+      success: 'loadAuthorizationsSuccessCallback'
+    });
+  },
+
+  loadAuthorizationsSuccessCallback: function(response) {
+    if (response && response.items) {
+      App.set('auth', response.items.mapProperty('AuthorizationInfo.authorization_id').uniq());
+      App.db.setAuth(App.get('auth'));
+    }
+  },
+
   loadAmbariPropertiesSuccess: function (data) {
-    console.log('loading ambari properties');
     this.set('ambariProperties', data.RootServiceComponents.properties);
     // Absence of 'jdk.name' and 'jce.name' properties says that ambari configured with custom jdk.
     this.set('isCustomJDK', App.isEmptyObject(App.permit(data.RootServiceComponents.properties, ['jdk.name', 'jce.name'])));
+    App.router.get('mainController').monitorInactivity();
   },
 
   loadAmbariPropertiesError: function () {
-    console.warn('can\'t get ambari properties');
+
   },
 
   updateClusterData: function () {
@@ -390,19 +412,26 @@ App.ClusterController = Em.Controller.extend({
   },
 
   getHostNamesError: function () {
-    console.error('failed to load hostNames');
+
   },
 
 
   /**
    * puts kerberos admin credentials in the live cluster session
    * and resend ajax request
-   * @param adminPrincipalValue
-   * @param adminPasswordValue
-   * @param ajaxOpt
+   * @param {credentialResourceObject} credentialResource
+   * @param {object} ajaxOpt
    * @returns {$.ajax}
    */
-  createKerberosAdminSession: function (adminPrincipalValue, adminPasswordValue, ajaxOpt) {
+  createKerberosAdminSession: function (credentialResource, ajaxOpt) {
+    if (App.get('supports.storeKDCCredentials')) {
+      return credentialUtils.createOrUpdateCredentials(App.get('clusterName'), credentialUtils.ALIAS.KDC_CREDENTIALS, credentialResource).then(function() {
+        if (ajaxOpt) {
+          $.ajax(ajaxOpt);
+        }
+      });
+    }
+
     return App.ajax.send({
       name: 'common.cluster.update',
       sender: this,
@@ -410,7 +439,7 @@ App.ClusterController = Em.Controller.extend({
         clusterName: App.get('clusterName'),
         data: [{
           session_attributes: {
-            kerberos_admin: {principal: adminPrincipalValue, password: adminPasswordValue}
+            kerberos_admin: {principal: credentialResource.principal, password: credentialResource.key}
           }
         }]
       }

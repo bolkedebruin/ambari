@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
 
   <!-- oozie-env.sh -->
   <property>
@@ -95,11 +95,17 @@ export JAVA_LIBRARY_PATH={{hadoop_lib_home}}/native/Linux-amd64-64
 # upgrade/downgrade
 export OOZIE_CLIENT_OPTS="${OOZIE_CLIENT_OPTS} -Doozie.connection.retry.count=5 "
 
-{% if sqla_db_used %}
+{% if sqla_db_used or lib_dir_available %}
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:{{jdbc_libs_dir}}"
 export JAVA_LIBRARY_PATH="$JAVA_LIBRARY_PATH:{{jdbc_libs_dir}}"
 {% endif %}
+
+# Set Hadoop-related properties
+export HADOOP_OPTS="-Dhdp.version=${HDP_VERSION} ${HADOOP_OPTS}"
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
 </configuration>

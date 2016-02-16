@@ -34,12 +34,12 @@ def ams(name=None):
 
     Directory(params.ams_collector_conf_dir,
               owner=params.ams_user,
-              recursive=True
+              create_parents = True
     )
 
     Directory(params.ams_checkpoint_dir,
               owner=params.ams_user,
-              recursive=True
+              create_parents = True
     )
 
     XmlConfig("ams-site.xml",
@@ -77,7 +77,7 @@ def ams(name=None):
                   username = params.ams_user,
                   password = Script.get_password(params.ams_user))
 
-    if params.is_hbase_distributed:
+    if not params.is_local_fs_rootdir:
       # Configuration needed to support NN HA
       XmlConfig("hdfs-site.xml",
             conf_dir=params.ams_collector_conf_dir,
@@ -155,7 +155,7 @@ def ams(name=None):
 
     Directory(params.ams_monitor_conf_dir,
               owner=params.ams_user,
-              recursive=True
+              create_parents = True
     )
 
     TemplateConfig(
@@ -184,14 +184,16 @@ def ams(name=None):
     Directory(params.ams_collector_conf_dir,
               owner=params.ams_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True,
+              recursive_ownership = True,
     )
-
+    
     Directory(params.ams_checkpoint_dir,
               owner=params.ams_user,
               group=params.user_group,
               cd_access="a",
-              recursive=True
+              create_parents = True,
+              recursive_ownership = True
     )
 
     XmlConfig("ams-site.xml",
@@ -241,14 +243,16 @@ def ams(name=None):
               owner=params.ams_user,
               group=params.user_group,
               cd_access="a",
-              recursive=True
+              create_parents = True,
+              mode=0755,
     )
 
     Directory(params.ams_collector_pid_dir,
               owner=params.ams_user,
               group=params.user_group,
               cd_access="a",
-              recursive=True
+              create_parents = True,
+              mode=0755,
     )
 
     # Hack to allow native HBase libs to be included for embedded hbase
@@ -259,7 +263,7 @@ def ams(name=None):
 
     # On some OS this folder could be not exists, so we will create it before pushing there files
     Directory(params.limits_conf_dir,
-              recursive=True,
+              create_parents = True,
               owner='root',
               group='root'
     )
@@ -279,11 +283,11 @@ def ams(name=None):
                 mode = 0755,
                 group=params.user_group,
                 cd_access="a",
-                recursive=True
+                create_parents = True
       )
     pass
 
-    if params.is_hbase_distributed:
+    if not params.is_local_fs_rootdir and params.is_ams_distributed:
       # Configuration needed to support NN HA
       XmlConfig("hdfs-site.xml",
             conf_dir=params.ams_collector_conf_dir,
@@ -327,26 +331,31 @@ def ams(name=None):
     Directory(params.ams_monitor_conf_dir,
               owner=params.ams_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True
     )
 
     Directory(params.ams_monitor_log_dir,
               owner=params.ams_user,
               group=params.user_group,
-              recursive=True
+              mode=0755,
+              create_parents = True
     )
 
     Directory(params.ams_monitor_pid_dir,
               owner=params.ams_user,
               group=params.user_group,
-              recursive=True
+              mode=0755,
+              create_parents = True
     )
 
     Directory(format("{ams_monitor_dir}/psutil/build"),
               owner=params.ams_user,
               group=params.user_group,
               cd_access="a",
-              recursive=True)
+              create_parents = True)
+
+    Execute(format("{sudo} chown -R {ams_user}:{user_group} {ams_monitor_dir}")
+    )
 
     TemplateConfig(
       format("{ams_monitor_conf_dir}/metric_monitor.ini"),
@@ -368,6 +377,36 @@ def ams(name=None):
     )
 
     # TODO
+    pass
+  elif name == 'grafana':
+
+    ams_grafana_directories = [
+                              params.ams_grafana_conf_dir,
+                              params.ams_grafana_log_dir,
+                              params.ams_grafana_data_dir,
+                              params.ams_grafana_pid_dir
+                              ]
+
+    for ams_grafana_directory in ams_grafana_directories:
+      Directory(ams_grafana_directory,
+                owner=params.ams_user,
+                group=params.user_group,
+                mode=0755,
+                recursive_ownership = True
+                )
+
+    File(format("{ams_grafana_conf_dir}/ams-grafana-env.sh"),
+         owner=params.ams_user,
+         group=params.user_group,
+         content=InlineTemplate(params.ams_grafana_env_sh_template)
+         )
+
+    File(format("{ams_grafana_conf_dir}/ams-grafana.ini"),
+         owner=params.ams_user,
+         group=params.user_group,
+         content=InlineTemplate(params.ams_grafana_ini_template)
+         )
+
     pass
 
   pass

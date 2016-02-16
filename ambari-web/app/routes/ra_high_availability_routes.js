@@ -56,13 +56,16 @@ module.exports = App.WizardRoute.extend({
                 alwaysCallback: function () {
                   self.hide();
                   router.transitionTo('main.services.index');
-                  location.reload();
+                  Em.run.next(function() {
+                    location.reload();
+                  });
                 }
               });
             }, Em.I18n.t('admin.ra_highAvailability.closePopup'));
           } else {
             router.get('updateController').set('isWorking', true);
             rAHighAvailabilityWizardController.finish();
+            App.router.get('wizardWatcherController').resetUser();
             App.clusterStatus.setClusterStatus({
               clusterName: App.router.getClusterName(),
               clusterState: 'DEFAULT',
@@ -71,7 +74,9 @@ module.exports = App.WizardRoute.extend({
               alwaysCallback: function () {
                 self.hide();
                 router.transitionTo('main.services.index');
-                location.reload();
+                Em.run.next(function() {
+                  location.reload();
+                });
               }
             });
           }
@@ -93,6 +98,7 @@ module.exports = App.WizardRoute.extend({
             break;
         }
       }
+      App.router.get('wizardWatcherController').setUser(rAHighAvailabilityWizardController.get('name'));
       router.transitionTo('step' + rAHighAvailabilityWizardController.get('currentStep'));
     });
   },
@@ -189,7 +195,9 @@ module.exports = App.WizardRoute.extend({
         alwaysCallback: function () {
           rAHighAvailabilityWizardController.get('popup').hide();
           router.transitionTo('main.services.index');
-          location.reload();
+          Em.run.next(function() {
+            location.reload();
+          });
         }
       });
     }

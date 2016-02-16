@@ -24,6 +24,7 @@ from resource_management.core.resources.system import Execute, Directory
 from resource_management.libraries.script import Script
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions.constants import Direction
 from resource_management.libraries.functions.format import format
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.version import compare_versions
@@ -33,7 +34,6 @@ from resource_management.libraries.functions.security_commons import get_params_
 from resource_management.libraries.functions.security_commons import validate_security_config_properties
 from resource_management.libraries.functions.security_commons import FILE_TYPE_XML
 from resource_management.core.resources.system import File
-from resource_management.core.shell import as_sudo
 
 from hive import hive
 from hive import jdbc_connector
@@ -47,18 +47,24 @@ LEGACY_HIVE_SERVER_CONF = "/etc/hive/conf.server"
 class HiveMetastore(Script):
   def install(self, env):
     import params
-    self.install_packages(env, exclude_packages = params.hive_exclude_packages)
+    self.install_packages(env)
 
-  def start(self, env, rolling_restart=False):
+
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
-    self.configure(env)  # FOR SECURITY
-    hive_service('metastore', action='start', rolling_restart=rolling_restart)
 
-  def stop(self, env, rolling_restart=False):
+    # writing configurations on start required for securtity
+    self.configure(env)
+
+    hive_service('metastore', action='start', upgrade_type=upgrade_type)
+
+
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
-    hive_service('metastore', action='stop')
+    hive_service('metastore', action='stop', upgrade_type=upgrade_type)
+
 
   def configure(self, env):
     import params
@@ -79,6 +85,7 @@ class HiveMetastoreDefault(HiveMetastore):
   def get_stack_to_component(self):
     return {"HDP": "hive-metastore"}
 
+
   def status(self, env):
     import status_params
     from resource_management.libraries.functions import check_process_status
@@ -88,17 +95,23 @@ class HiveMetastoreDefault(HiveMetastore):
     # Recursively check all existing gmetad pid files
     check_process_status(pid_file)
 
-  def pre_rolling_restart(self, env):
-    Logger.info("Executing Metastore Rolling Upgrade pre-restart")
+
+  def pre_upgrade_restart(self, env, upgrade_type=None):
+    Logger.info("Executing Metastore Stack Upgrade pre-restart")
     import params
+
     env.set_params(params)
 
-    if Script.is_hdp_stack_greater_or_equal("2.3"):
+    is_stack_hdp_23 = Script.is_hdp_stack_greater_or_equal("2.3")
+    is_upgrade = params.upgrade_direction == Direction.UPGRADE
+
+    if is_stack_hdp_23 and is_upgrade:
       self.upgrade_schema(env)
 
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
       conf_select.select(params.stack_name, "hive", params.version)
       hdp_select.select("hive-metastore", params.version)
+
 
   def security_status(self, env):
     import status_params
@@ -155,15 +168,24 @@ class HiveMetastoreDefault(HiveMetastore):
     """
     Executes the schema upgrade binary.  This is its own function because it could
     be called as a standalone task from the upgrade pack, but is safe to run it for each
-    metastore instance.
+    metastore instance. The schema upgrade on an already upgraded metastore is a NOOP.
 
     The metastore schema upgrade requires a database driver library for most
     databases. During an upgrade, it's possible that the library is not present,
     so this will also attempt to copy/download the appropriate driver.
+
+    This function will also ensure that configurations are written out to disk before running
+    since the new configs will most likely not yet exist on an upgrade.
+
+    Should not be invoked for a DOWNGRADE; Metastore only supports schema upgrades.
     """
-    Logger.info("Upgrading Hive Metastore")
+    Logger.info("Upgrading Hive Metastore Schema")
     import params
     env.set_params(params)
+
+    # ensure that configurations are written out before trying to upgrade the schema
+    # since the schematool needs configs and doesn't know how to use the hive conf override
+    self.configure(env)
 
     if params.security_enabled:
       kinit_command=format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal}; ")
@@ -171,30 +193,33 @@ class HiveMetastoreDefault(HiveMetastore):
 
     # ensure that the JDBC drive is present for the schema tool; if it's not
     # present, then download it first
-    if params.hive_jdbc_driver in params.hive_jdbc_drivers_list and params.hive_use_existing_db:
+    if params.hive_jdbc_driver in params.hive_jdbc_drivers_list:
       target_directory = format("/usr/hdp/{version}/hive/lib")
-      if not os.path.exists(params.target):
-        # download it
+
+      # download it if it does not exist
+      if not os.path.exists(params.source_jdbc_file):
         jdbc_connector()
+
+      target_directory_and_filename = os.path.join(target_directory, os.path.basename(params.source_jdbc_file))
 
       if params.sqla_db_used:
         target_native_libs_directory = format("{target_directory}/native/lib64")
 
-        Execute(as_sudo(['yes', '|', 'cp', params.jars_in_hive_lib, target_directory], auto_escape=False),
-                path=["/bin", "/usr/bin/"])
+        Execute(format("yes | {sudo} cp {jars_in_hive_lib} {target_directory}"))
 
-        Directory(target_native_libs_directory,
-                  recursive=True)
+        Directory(target_native_libs_directory, create_parents = True)
 
-        Execute(as_sudo(['yes', '|', 'cp', params.libs_in_hive_lib, target_native_libs_directory], auto_escape=False),
-                path=["/bin", "/usr/bin/"])
+        Execute(format("yes | {sudo} cp {libs_in_hive_lib} {target_native_libs_directory}"))
+
+        Execute(format("{sudo} chown -R {hive_user}:{user_group} {hive_lib}/*"))
       else:
-        Execute(('cp', params.target, target_directory),
-                path=["/bin", "/usr/bin/"], sudo = True)
+        # copy the JDBC driver from the older metastore location to the new location only
+        # if it does not already exist
+        if not os.path.exists(target_directory_and_filename):
+          Execute(('cp', params.source_jdbc_file, target_directory),
+            path=["/bin", "/usr/bin/"], sudo = True)
 
-      File(os.path.join(target_directory, os.path.basename(params.target)),
-        mode = 0644,
-      )
+      File(target_directory_and_filename, mode = 0644)
 
     # build the schema tool command
     binary = format("/usr/hdp/{version}/hive/bin/schematool")
@@ -214,6 +239,7 @@ class HiveMetastoreDefault(HiveMetastore):
 
     command = format("{binary} -dbType {hive_metastore_db_type} -upgradeSchema")
     Execute(command, user=params.hive_user, tries=1, environment=env_dict, logoutput=True)
+
 
 if __name__ == "__main__":
   HiveMetastore().execute()

@@ -57,15 +57,17 @@ public class HostsRepositoryVersionCheckTest {
     request.setRepositoryVersion("not null");
     HostsRepositoryVersionCheck hrvc = new HostsRepositoryVersionCheck();
     Configuration config = Mockito.mock(Configuration.class);
-    Mockito.when(config.getRollingUpgradeMinStack()).thenReturn("HDP-2.2");
-    Mockito.when(config.getRollingUpgradeMaxStack()).thenReturn("");
     hrvc.config = config;
     Assert.assertTrue(hrvc.isApplicable(request));
-
-    request.setRepositoryVersion(null);
+    Assert.assertTrue(new HostsMasterMaintenanceCheck().isApplicable(request));
     HostsRepositoryVersionCheck hrvc2 = new HostsRepositoryVersionCheck();
     hrvc2.config = config;
-    Assert.assertFalse(hrvc2.isApplicable(request));
+    Assert.assertTrue(hrvc2.isApplicable(request));
+    request.setRepositoryVersion(null);
+
+    HostsMasterMaintenanceCheck hmmc2 = new HostsMasterMaintenanceCheck();
+    hmmc2.config = config;
+    Assert.assertFalse(hmmc2.isApplicable(request));
   }
 
   @Test

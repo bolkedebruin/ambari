@@ -31,11 +31,12 @@ import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
-import javax.xml.bind.annotation.XmlTransient;
 import javax.xml.bind.annotation.XmlType;
 
 import org.apache.ambari.server.stack.HostsType;
+import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Host;
+import org.apache.ambari.server.state.MaintenanceState;
 import org.apache.ambari.server.state.UpgradeContext;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 
@@ -52,17 +53,14 @@ import com.google.gson.JsonPrimitive;
 public class ClusterGrouping extends Grouping {
 
   /**
-   * Stages against a Service and Component, or the Server
+   * Stages against a Service and Component, or the Server, that doesn't need a Processing Component.
    */
   @XmlElement(name="execute-stage")
   public List<ExecuteStage> executionStages;
 
-  @XmlTransient
-  private ClusterBuilder m_builder = new ClusterBuilder();
-
   @Override
   public ClusterBuilder getBuilder() {
-    return m_builder;
+    return new ClusterBuilder(this);
   }
 
 
@@ -74,6 +72,10 @@ public class ClusterGrouping extends Grouping {
     @XmlAttribute(name="title")
     public String title;
 
+    /**
+     * An optional ID which can be used to uniquely identified any execution
+     * stage.
+     */
     @XmlAttribute(name="id")
     public String id;
 
@@ -98,24 +100,39 @@ public class ClusterGrouping extends Grouping {
 
   public class ClusterBuilder extends StageWrapperBuilder {
 
-    @Override
-    public void add(UpgradeContext ctx, HostsType hostsType, String service,
-        boolean clientOnly, ProcessingComponent pc) {
-      // !!! no-op in this case
+    /**
+     * Constructor.
+     *
+     * @param grouping
+     *          the upgrade/downgrade grouping (not {@code null}).
+     */
+    private ClusterBuilder(Grouping grouping) {
+      super(grouping);
     }
 
     @Override
-    public List<StageWrapper> build(UpgradeContext ctx) {
+    public void add(UpgradeContext ctx, HostsType hostsType, String service,
+        boolean clientOnly, ProcessingComponent pc, Map<String, String> params) {
+      // !!! no-op in this case
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public List<StageWrapper> build(UpgradeContext upgradeContext,
+        List<StageWrapper> stageWrappers) {
+
       if (null == executionStages) {
-        return Collections.emptyList();
+        return stageWrappers;
       }
 
-      List<StageWrapper> results = new ArrayList<StageWrapper>();
+      List<StageWrapper> results = new ArrayList<>(stageWrappers);
 
       if (executionStages != null) {
         for (ExecuteStage execution : executionStages) {
-          if (null != execution.intendedDirection &&
-              execution.intendedDirection != ctx.getDirection()) {
+          if (null != execution.intendedDirection
+              && execution.intendedDirection != upgradeContext.getDirection()) {
             continue;
           }
 
@@ -125,18 +142,13 @@ public class ClusterGrouping extends Grouping {
 
           switch (task.getType()) {
             case MANUAL:
-              wrapper = getManualStageWrapper(ctx, execution);
-              break;
-
             case SERVER_ACTION:
-              wrapper = new StageWrapper(
-                  StageWrapper.Type.SERVER_SIDE_ACTION,
-                  execution.title,
-                  new TaskWrapper(null, null, Collections.<String>emptySet(), task));
+            case CONFIGURE:
+              wrapper = getServerActionStageWrapper(upgradeContext, execution);
               break;
 
             case EXECUTE:
-              wrapper = getExecuteStageWrapper(ctx, execution);
+              wrapper = getExecuteStageWrapper(upgradeContext, execution);
               break;
 
             default:
@@ -153,23 +165,17 @@ public class ClusterGrouping extends Grouping {
     }
   }
 
-  private StageWrapper getManualStageWrapper(UpgradeContext ctx, ExecuteStage execution) {
+  /**
+   * Return a Stage Wrapper for a server side action that runs on the server.
+   * @param ctx Upgrade Context
+   * @param execution Execution Stage
+   * @return Returns a Stage Wrapper
+   */
+  private StageWrapper getServerActionStageWrapper(UpgradeContext ctx, ExecuteStage execution) {
 
     String service   = execution.service;
     String component = execution.component;
-    String id        = execution.id;
     Task task        = execution.task;
-
-    if (null != id && id.equals("unhealthy-hosts")) {
-
-      // !!! this specific task is used ONLY when there are unhealthy
-      if (ctx.getUnhealthy().isEmpty()) {
-        return null;
-      }
-      ManualTask mt = (ManualTask) task;
-
-      fillHostDetails(mt, ctx.getUnhealthy());
-    }
 
     Set<String> realHosts = Collections.emptySet();
 
@@ -178,19 +184,32 @@ public class ClusterGrouping extends Grouping {
 
       HostsType hosts = ctx.getResolver().getMasterAndHosts(service, component);
 
-      if (null == hosts) {
+      if (null == hosts || hosts.hosts.isEmpty()) {
         return null;
       } else {
         realHosts = new LinkedHashSet<String>(hosts.hosts);
       }
     }
 
-    return new StageWrapper(
-        StageWrapper.Type.SERVER_SIDE_ACTION,
-        execution.title,
-        new TaskWrapper(service, component, realHosts, task));
+    if (Task.Type.MANUAL == task.getType()) {
+      return new StageWrapper(
+          StageWrapper.Type.SERVER_SIDE_ACTION,
+          execution.title,
+          new TaskWrapper(service, component, realHosts, task));
+    } else {
+      return new StageWrapper(
+          StageWrapper.Type.SERVER_SIDE_ACTION,
+          execution.title,
+          new TaskWrapper(null, null, Collections.<String>emptySet(), task));
+    }
   }
 
+  /**
+   * Return a Stage Wrapper for a task meant to execute code, typically on Ambari Server.
+   * @param ctx Upgrade Context
+   * @param execution Execution Stage
+   * @return Returns a Stage Wrapper, or null if a valid one could not be created.
+   */
   private StageWrapper getExecuteStageWrapper(UpgradeContext ctx, ExecuteStage execution) {
     String service   = execution.service;
     String component = execution.component;
@@ -213,6 +232,13 @@ public class ClusterGrouping extends Grouping {
           realHosts = Collections.singleton(hosts.hosts.iterator().next());
         }
 
+        // Pick the first host sorted alphabetically (case insensitive)
+        if (ExecuteHostType.FIRST == et.hosts && !hosts.hosts.isEmpty()) {
+          List<String> sortedHosts = new ArrayList<>(hosts.hosts);
+          Collections.sort(sortedHosts, String.CASE_INSENSITIVE_ORDER);
+          realHosts = Collections.singleton(sortedHosts.get(0));
+        }
+
         // !!! cannot execute against empty hosts (safety net)
         if (realHosts.isEmpty()) {
           return null;
@@ -224,25 +250,33 @@ public class ClusterGrouping extends Grouping {
             new TaskWrapper(service, component, realHosts, et));
       }
     } else if (null == service && null == component) {
-      // no service, no component goes to all hosts
-
+      // no service and no component will distributed the task to all healthy
+      // hosts not in maintenance mode
+      Cluster cluster = ctx.getCluster();
       Set<String> hostNames = new HashSet<String>();
       for (Host host : ctx.getCluster().getHosts()) {
-        hostNames.add(host.getHostName());
+        MaintenanceState maintenanceState = host.getMaintenanceState(cluster.getClusterId());
+        if (maintenanceState == MaintenanceState.OFF) {
+          hostNames.add(host.getHostName());
+        }
       }
 
       return new StageWrapper(
-          StageWrapper.Type.RU_TASKS, execution.title,
+          StageWrapper.Type.RU_TASKS,
+          execution.title,
           new TaskWrapper(service, component, hostNames, et));
-
     }
     return null;
   }
 
-  private void fillHostDetails(ManualTask mt, Map<String, List<String>> unhealthy) {
-
+  /**
+   * Populates the manual task, mt, with information about the list of hosts.
+   * @param mt Manual Task
+   * @param hostToComponents Map from host name to list of components
+   */
+  private void fillHostDetails(ManualTask mt, Map<String, List<String>> hostToComponents) {
     JsonArray arr = new JsonArray();
-    for (Entry<String, List<String>> entry : unhealthy.entrySet()) {
+    for (Entry<String, List<String>> entry : hostToComponents.entrySet()) {
       JsonObject hostObj = new JsonObject();
       hostObj.addProperty("host", entry.getKey());
 
@@ -259,7 +293,5 @@ public class ClusterGrouping extends Grouping {
     obj.add("unhealthy", arr);
 
     mt.structuredOut = obj.toString();
-
   }
-
 }

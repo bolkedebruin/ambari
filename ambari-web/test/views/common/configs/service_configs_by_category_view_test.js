@@ -26,8 +26,6 @@ describe('App.ServiceConfigsByCategoryView', function () {
     serviceConfigs: []
   });
 
-  var result = [1, 2, 3, 4];
-
   var testData = [
     {
       title: 'four configs in correct order',
@@ -94,7 +92,10 @@ describe('App.ServiceConfigsByCategoryView', function () {
     }
   ];
 
+  App.TestAliases.testAsComputedIfThenElse(view, 'isCategoryBodyVisible', 'category.isCollapsed', 'display: none;', 'display: block;');
+
   describe('#sortByIndex', function () {
+    var result = [1, 2, 3, 4];
     testData.forEach(function(_test){
       it(_test.title, function () {
         expect(view.sortByIndex(_test.configs).mapProperty('resultId')).to.deep.equal(result);
@@ -178,17 +179,26 @@ describe('App.ServiceConfigsByCategoryView', function () {
       }
     ];
 
+    beforeEach(function () {
+      this._view = App.ServiceConfigsByCategoryView.create({
+        serviceConfigs: Em.A([])
+      });
+      sinon.stub(this._view, 'filteredCategoryConfigs', Em.K);
+    });
+
+    afterEach(function () {
+      this._view.filteredCategoryConfigs.restore();
+      this._view.destroy();
+    });
+
     tests.forEach(function(test) {
       it(test.m, function() {
-        var _view = App.ServiceConfigsByCategoryView.create({
-          serviceConfigs: Em.A([]),
+        this._view.reopen({
           category: test.category,
           categoryConfigs: test.categoryConfigs
         });
-        sinon.stub(_view, 'filteredCategoryConfigs', Em.K);
-        _view.filteredCategoryConfigs.restore();
-        expect(_view.get('isShowBlock')).to.be.eql(test.e);
-        _view.destroy();
+        expect(this._view.get('isShowBlock')).to.be.eql(test.e);
+
       });
     });
   });
@@ -260,10 +270,9 @@ describe('App.ServiceConfigsByCategoryView', function () {
           name: 'n0',
           displayName: 'd0',
           value: 'v0',
-          displayType: 'advanced',
+          displayType: 'string',
           isSecureConfig: true,
           category: 'c0',
-          id: 'site property',
           serviceName: 's0',
           savedValue: null,
           supportsFinal: true,
@@ -292,7 +301,6 @@ describe('App.ServiceConfigsByCategoryView', function () {
           displayType: 'multiLine',
           isSecureConfig: false,
           category: 'c1',
-          id: 'site property',
           serviceName: 's1',
           savedValue: null,
           supportsFinal: false,
@@ -334,7 +342,7 @@ describe('App.ServiceConfigsByCategoryView', function () {
         view.createProperty(item.propertyObj);
         expect(view.get('serviceConfigs').filterProperty('name', item.propertyObj.name)).to.have.length(1);
         expect(view.get('serviceConfigs').findProperty('name', item.propertyObj.name).getProperties([
-          'name', 'displayName', 'value', 'displayType', 'isSecureConfig', 'category', 'id', 'serviceName', 'savedValue',
+          'name', 'displayName', 'value', 'displayType', 'isSecureConfig', 'category', 'serviceName', 'savedValue',
           'supportsFinal', 'filename', 'isUserProperty', 'isNotSaved', 'isRequired', 'group', 'isOverridable'
         ])).to.eql(item.result);
       });
@@ -343,9 +351,8 @@ describe('App.ServiceConfigsByCategoryView', function () {
   });
 
   describe('#categoryConfigs', function () {
-    var view,
-      result = [1,2,3,4,5],
-      cases = [
+    var result = [1, 2, 3, 4, 5];
+    var cases = [
         {
           categoryNname: 'TestCategory',
           serviceConfigs: [
@@ -404,4 +411,5 @@ describe('App.ServiceConfigsByCategoryView', function () {
       });
     });
   });
+
 });

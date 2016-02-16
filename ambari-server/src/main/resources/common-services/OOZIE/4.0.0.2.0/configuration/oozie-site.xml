@@ -26,6 +26,7 @@
   <property>
     <name>oozie.base.url</name>
     <value>http://localhost:11000/oozie</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>Base Oozie URL.</description>
   </property>
 
@@ -104,10 +105,15 @@
 
   <property>
     <name>oozie.db.schema.name</name>
+    <display-name>Database Name</display-name>
     <value>oozie</value>
     <description>
       Oozie DataBase Name
     </description>
+    <value-attributes>
+      <type>database</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -141,13 +147,11 @@
   </property>
   <property>
     <name>oozie.authentication.kerberos.name.rules</name>
-    <value>
-    </value>
     <description>The mapping from kerberos principal names to local OS user names.</description>
   </property>
   <property>
     <name>oozie.service.HadoopAccessorService.hadoop.configurations</name>
-    <value>*=/etc/hadoop/conf</value>
+    <value>*={{hadoop_conf_dir}}</value>
     <description>
       Comma separated AUTHORITY=HADOOP_CONF_DIR, where AUTHORITY is the HOST:PORT of
       the Hadoop service (JobTracker, HDFS). The wildcard '*' configuration is
@@ -195,30 +199,44 @@
   <property>
     <name>oozie.service.JPAService.jdbc.driver</name>
     <value>org.apache.derby.jdbc.EmbeddedDriver</value>
+    <display-name>JDBC Driver Class</display-name>
     <description>
       JDBC driver class.
     </description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>oozie.service.JPAService.jdbc.url</name>
     <value>jdbc:derby:${oozie.data.dir}/${oozie.db.schema.name}-db;create=true</value>
+    <display-name>Database URL</display-name>
     <description>
       JDBC URL.
     </description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>oozie.service.JPAService.jdbc.username</name>
     <value>oozie</value>
+    <display-name>Database Username</display-name>
     <description>
       Database user name to use to connect to the database
     </description>
+    <value-attributes>
+      <type>db_user</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property require-input = "true">
     <name>oozie.service.JPAService.jdbc.password</name>
-    <value> </value>
+    <value></value>
+    <display-name>Database Password</display-name>
     <property-type>PASSWORD</property-type>
     <description>
       DB user password.
@@ -226,6 +244,10 @@
       IMPORTANT: if password is emtpy leave a 1 space string, the service trims the value,
       if empty Configuration assumes it is NULL.
     </description>
+    <value-attributes>
+      <type>password</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>

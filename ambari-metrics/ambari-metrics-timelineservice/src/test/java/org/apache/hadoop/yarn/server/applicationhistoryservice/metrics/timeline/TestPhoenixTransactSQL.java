@@ -17,6 +17,7 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.DefaultCondition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL;
@@ -172,7 +173,7 @@ public class TestPhoenixTransactSQL {
     Assert.assertEquals(Precision.SECONDS, condition.getPrecision());
     verify(connection, preparedStatement);
 
-    // SECONDS precision
+    // MINUTES precision
     startTime = endTime-PhoenixTransactSQL.DAY/1000;
     condition = new DefaultCondition(
       Arrays.asList("cpu_user", "mem_free"), Collections.singletonList("h1"),
@@ -187,11 +188,11 @@ public class TestPhoenixTransactSQL {
     PhoenixTransactSQL.prepareGetAggregateSqlStmt(connection, condition);
     stmt = stmtCapture.getValue();
     Assert.assertTrue(stmt.contains("FROM METRIC_AGGREGATE"));
-    Assert.assertEquals(Precision.SECONDS, condition.getPrecision());
+    Assert.assertEquals(Precision.MINUTES, condition.getPrecision());
     verify(connection, preparedStatement);
 
     // HOURS precision
-    startTime = endTime-PhoenixTransactSQL.DAY*7/1000;
+    startTime = endTime-PhoenixTransactSQL.DAY*30/1000;
     condition = new DefaultCondition(
       Arrays.asList("cpu_user", "mem_free"), Collections.singletonList("h1"),
       "a1", "i1", startTime, endTime, null, null, false);
@@ -209,7 +210,7 @@ public class TestPhoenixTransactSQL {
     verify(connection, preparedStatement);
 
     // DAYS precision
-    startTime = endTime-PhoenixTransactSQL.DAY*7*2/1000;
+    startTime = endTime-PhoenixTransactSQL.DAY*30*2/1000;
     condition = new DefaultCondition(
       Arrays.asList("cpu_user", "mem_free"), Collections.singletonList("h1"),
       "a1", "i1", startTime, endTime, null, null, false);
@@ -286,7 +287,7 @@ public class TestPhoenixTransactSQL {
     reset(connection, preparedStatement);
 
     // SECONDS precision
-    startTime = endTime-PhoenixTransactSQL.HOUR*10/1000;
+    startTime = endTime-PhoenixTransactSQL.HOUR*2/1000;
     condition = new DefaultCondition(
       Arrays.asList("cpu_user", "mem_free"), Collections.singletonList("h1"),
       "a1", "i1", startTime, endTime, null, null, false);
@@ -320,7 +321,7 @@ public class TestPhoenixTransactSQL {
     verify(connection, preparedStatement);
 
     // HOURS precision
-    startTime = endTime-PhoenixTransactSQL.DAY*7/1000;
+    startTime = endTime-PhoenixTransactSQL.DAY*30/1000;
     condition = new DefaultCondition(
       Arrays.asList("cpu_user", "mem_free"), Collections.singletonList("h1"),
       "a1", "i1", startTime, endTime, null, null, false);
@@ -337,7 +338,7 @@ public class TestPhoenixTransactSQL {
     verify(connection, preparedStatement);
 
     // DAYS precision
-    startTime = endTime-PhoenixTransactSQL.DAY*7*2/1000;
+    startTime = endTime-PhoenixTransactSQL.DAY*30*2/1000;
     condition = new DefaultCondition(
       Arrays.asList("cpu_user", "mem_free"), Collections.singletonList("h1"),
       "a1", "i1", startTime, endTime, null, null, false);
@@ -353,32 +354,6 @@ public class TestPhoenixTransactSQL {
     Assert.assertEquals(Precision.DAYS, condition.getPrecision());
     verify(connection, preparedStatement);
 
-  }
-
-  @Test
-  public void testPrepareGetLatestMetricSqlStmtSingleHostName() throws SQLException {
-    Condition condition = new DefaultCondition(
-      Arrays.asList("cpu_user"), Collections.singletonList("h1"),
-      "a1", "i1", null, null, null, null, false);
-    Connection connection = createNiceMock(Connection.class);
-    PreparedStatement preparedStatement = createNiceMock(PreparedStatement.class);
-    ParameterMetaData parameterMetaData = createNiceMock(ParameterMetaData.class);
-    Capture<String> stmtCapture = new Capture<String>();
-    expect(connection.prepareStatement(EasyMock.and(EasyMock.anyString(), EasyMock.capture(stmtCapture))))
-        .andReturn(preparedStatement);
-    expect(preparedStatement.getParameterMetaData())
-      .andReturn(parameterMetaData).times(2);
-    // 8 = (1 instance_id + 1 appd_id + 1 hostname + 1 metric name) * 2,
-    // For GET_LATEST_METRIC_SQL_SINGLE_HOST parameters should be set 2 times
-    expect(parameterMetaData.getParameterCount())
-      .andReturn(8).times(2);
-
-    replay(connection, preparedStatement, parameterMetaData);
-    PhoenixTransactSQL.prepareGetLatestMetricSqlStmt(connection, condition);
-    String stmt = stmtCapture.getValue();
-    Assert.assertTrue(stmt.contains("FROM METRIC_RECORD"));
-    Assert.assertTrue(stmt.contains("ANY"));
-    verify(connection, preparedStatement, parameterMetaData);
   }
 
   @Test
@@ -404,6 +379,30 @@ public class TestPhoenixTransactSQL {
     Assert.assertTrue(stmt.contains("FROM METRIC_RECORD"));
     Assert.assertTrue(stmt.contains("JOIN"));
     verify(connection, preparedStatement, parameterMetaData);
+  }
+
+  @Test
+  public void testPrepareGetLatestMetricSqlStmtSortMergeJoinAlgorithm()
+    throws SQLException {
+    Condition condition = new DefaultCondition(
+      Arrays.asList("cpu_user", "mem_free"), Arrays.asList("h1"),
+      "a1", "i1", null, null, null, null, false);
+    Connection connection = createNiceMock(Connection.class);
+    PreparedStatement preparedStatement = createNiceMock(PreparedStatement.class);
+    ParameterMetaData parameterMetaData = createNiceMock(ParameterMetaData.class);
+    Capture<String> stmtCapture = new Capture<String>();
+    expect(connection.prepareStatement(EasyMock.and(EasyMock.anyString(), EasyMock.capture(stmtCapture))))
+        .andReturn(preparedStatement);
+    expect(preparedStatement.getParameterMetaData())
+      .andReturn(parameterMetaData).anyTimes();
+    expect(parameterMetaData.getParameterCount())
+      .andReturn(6).anyTimes();
+
+    replay(connection, preparedStatement, parameterMetaData);
+    PhoenixTransactSQL.setSortMergeJoinEnabled(true);
+    PhoenixTransactSQL.prepareGetLatestMetricSqlStmt(connection, condition);
+    String stmt = stmtCapture.getValue();
+    Assert.assertTrue(stmt.contains("/*+ USE_SORT_MERGE_JOIN NO_CACHE */"));
   }
 
   @Test

@@ -20,30 +20,61 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>hive.client.heapsize</name>
     <value>512</value>
     <description>Hive Client Java heap size</description>
+    <display-name>Client Heap Size</display-name>
+    <value-attributes>
+      <type>int</type>
+      <minimum>512</minimum>
+      <maximum>2048</maximum>
+      <unit>MB</unit>
+      <increment-step>512</increment-step>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>hive.metastore.heapsize</name>
     <value>1024</value>
     <description>Hive Metastore Java heap size</description>
+    <display-name>Metastore Heap Size</display-name>
+    <value-attributes>
+      <type>int</type>
+      <minimum>512</minimum>
+      <maximum>2048</maximum>
+      <unit>MB</unit>
+      <increment-step>512</increment-step>
+    </value-attributes>
   </property>
 
   <property>
     <name>hive_database_type</name>
     <value>mysql</value>
+    <display-name>Hive Database Type</display-name>
     <description>Default HIVE DB type.</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <type>hive-env</type>
+        <name>hive_database</name>
+      </property>
+    </depends-on>
   </property>
   <property>
     <name>hive_database</name>
     <value>New MySQL Database</value>
+    <display-name>Hive Database</display-name>
     <description>
       Property that determines whether the HIVE DB is managed by Ambari.
     </description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
   <property>
     <name>hive_ambari_database</name>
@@ -54,22 +85,44 @@
     <name>hive_database_name</name>
     <value>hive</value>
     <description>Database name.</description>
+    <value-attributes>
+      <type>database</type>
+      <visible>false</visible>
+      <editable-only-at-install>true</editable-only-at-install>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
   <property>
     <name>hive_log_dir</name>
     <value>/var/log/hive</value>
+    <display-name>Hive Log Dir</display-name>
     <description>Directory for Hive Log files.</description>
+    <value-attributes>
+      <type>directory</type>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>hive_pid_dir</name>
     <value>/var/run/hive</value>
+    <display-name>Hive PID Dir</display-name>
     <description>Hive PID Dir.</description>
+    <value-attributes>
+      <type>directory</type>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>hive_user</name>
+    <display-name>Hive User</display-name>
     <value>hive</value>
     <property-type>USER</property-type>
     <description>Hive User.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
 
   <!--HCAT-->
@@ -77,24 +130,44 @@
   <property>
     <name>hcat_log_dir</name>
     <value>/var/log/webhcat</value>
+    <display-name>WebHCat Log Dir</display-name>
     <description>WebHCat Log Dir.</description>
+    <value-attributes>
+      <type>directory</type>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>hcat_pid_dir</name>
     <value>/var/run/webhcat</value>
+    <display-name>WebHCat Pid Dir</display-name>
     <description>WebHCat Pid Dir.</description>
+    <value-attributes>
+      <type>directory</type>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>hcat_user</name>
+    <display-name>HCat User</display-name>
     <value>hcat</value>
     <property-type>USER</property-type>
     <description>HCat User.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>webhcat_user</name>
+    <display-name>WebHCat User</display-name>
     <value>hcat</value>
     <property-type>USER</property-type>
     <description>WebHCat User.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -125,12 +198,12 @@
 # The heap size of the jvm stared by hive shell script can be controlled via:
 
 if [ "$SERVICE" = "metastore" ]; then
-  export HADOOP_HEAPSIZE="{{hive_metastore_heapsize}}"
+  export HADOOP_HEAPSIZE={{hive_metastore_heapsize}} # Setting for HiveMetastore
 else
-  export HADOOP_HEAPSIZE="{{hive_heapsize}}"
+  export HADOOP_HEAPSIZE={{hive_heapsize}} # Setting for HiveServer2 and Client
 fi
 
-export HADOOP_CLIENT_OPTS="-Xmx${HADOOP_HEAPSIZE}m $HADOOP_CLIENT_OPTS"
+export HADOOP_CLIENT_OPTS="$HADOOP_CLIENT_OPTS  -Xmx${HADOOP_HEAPSIZE}m"
 
 # Larger heap size may be required when running queries over large number of files or partitions.
 # By default hive shell scripts use a heap size of 256 (MB).  Larger heap size would also be
@@ -153,7 +226,12 @@ else
 fi
 export METASTORE_PORT={{hive_metastore_port}}
 
+export HADOOP_CLASSPATH={{atlas_conf_dir}}:{{atlas_home_dir}}/hook/hive:${HADOOP_CLASSPATH}
+
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
-  
+
 </configuration>

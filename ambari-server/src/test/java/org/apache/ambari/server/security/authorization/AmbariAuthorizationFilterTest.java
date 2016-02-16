@@ -26,11 +26,9 @@ import static org.easymock.EasyMock.getCurrentArguments;
 import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.verify;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
-
+import javax.persistence.EntityManager;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
 import javax.servlet.ServletRequest;
@@ -38,14 +36,22 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
 import junit.framework.Assert;
 
+import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.orm.DBAccessor;
+import org.apache.ambari.server.orm.dao.UserDAO;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
-import org.apache.ambari.server.orm.entities.ViewInstanceEntity.ViewInstanceVersionDTO;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
+import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
+import org.junit.After;
 import org.junit.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -56,8 +62,13 @@ import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Table;
 import com.google.common.collect.Table.Cell;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 public class AmbariAuthorizationFilterTest {
+  @After
+  public void clearAuthentication() {
+    SecurityContextHolder.getContext().setAuthentication(null);
+  }
 
   @Test
   public void testDoFilter_postPersist_hasOperatePermission() throws Exception {
@@ -96,7 +107,7 @@ public class AmbariAuthorizationFilterTest {
       }
     });
 
-    expect(permission.getId()).andReturn(PermissionEntity.CLUSTER_OPERATE_PERMISSION);
+    expect(permission.getId()).andReturn(PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION);
 
     // expect continue filtering
     chain.doFilter(request, response);
@@ -108,7 +119,7 @@ public class AmbariAuthorizationFilterTest {
     filter.doFilter(request, response, chain);
 
     verify(request, response, chain, filter, securityContext, authentication, authority,
-               privilegeEntity, permission, filterConfig);
+        privilegeEntity, permission, filterConfig);
   }
 
   @Test
@@ -136,8 +147,8 @@ public class AmbariAuthorizationFilterTest {
     expect(securityContext.getAuthentication()).andReturn(authentication);
 
 
-    expect(request.getMethod()).andReturn("POST");
-    expect(permission.getId()).andReturn(PermissionEntity.VIEW_USE_PERMISSION);
+    expect(request.getMethod()).andReturn("POST").anyTimes();
+    expect(permission.getId()).andReturn(PermissionEntity.VIEW_USER_PERMISSION);
 
     // expect permission denial
     response.setHeader("WWW-Authenticate", "Basic realm=\"AuthFilter\"");
@@ -163,6 +174,14 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/views", "POST", true);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", true);
     urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", true);
@@ -176,7 +195,7 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", true);
 
-    performGeneralDoFilterTest("admin", new int[] {PermissionEntity.AMBARI_ADMIN_PERMISSION}, urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createAdministrator(), urlTests, false);
   }
 
   @Test
@@ -185,23 +204,31 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/clusters/cluster", "GET",  true);
     urlTests.put("/api/v1/clusters/cluster", "POST",  true);
     urlTests.put("/api/v1/views", "GET", true);
-    urlTests.put("/api/v1/views", "POST", false);
+    urlTests.put("/api/v1/views", "POST", true);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", false);
-    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", false);
-    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
+    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", true);
+    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", true);
     urlTests.put("/api/v1/users/user1", "GET", true);
     urlTests.put("/api/v1/users/user1", "POST", true);
-    urlTests.put("/api/v1/users/user2", "GET", false);
-    urlTests.put("/api/v1/users/user2", "POST", false);
-    urlTests.put("/api/v1/groups", "GET", false);
+    urlTests.put("/api/v1/users/user2", "GET", true);
+    urlTests.put("/api/v1/users/user2", "POST", true);
+    urlTests.put("/api/v1/groups", "GET", true);
     urlTests.put("/api/v1/ldap_sync_events", "GET", false);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
 
-    performGeneralDoFilterTest("user1", new int[] {PermissionEntity.CLUSTER_READ_PERMISSION}, urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createClusterUser(), urlTests, false);
   }
 
   @Test
@@ -210,71 +237,95 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/api/v1/clusters/cluster", "GET",  true);
     urlTests.put("/api/v1/clusters/cluster", "POST",  true);
     urlTests.put("/api/v1/views", "GET", true);
-    urlTests.put("/api/v1/views", "POST", false);
+    urlTests.put("/api/v1/views", "POST", true);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", true);
-    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", false);
-    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
+    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", true);
+    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", true);
     urlTests.put("/api/v1/users/user1", "GET", true);
     urlTests.put("/api/v1/users/user1", "POST", true);
-    urlTests.put("/api/v1/users/user2", "GET", false);
-    urlTests.put("/api/v1/users/user2", "POST", false);
-    urlTests.put("/api/v1/groups", "GET", false);
+    urlTests.put("/api/v1/users/user2", "GET", true);
+    urlTests.put("/api/v1/users/user2", "POST", true);
+    urlTests.put("/api/v1/groups", "GET", true);
     urlTests.put("/api/v1/ldap_sync_events", "GET", false);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
 
-    performGeneralDoFilterTest("user1", new int[] {PermissionEntity.CLUSTER_OPERATE_PERMISSION}, urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createClusterAdministrator(), urlTests, false);
   }
 
   @Test
   public void testDoFilter_viewUserAccess() throws Exception {
     final Table<String, String, Boolean> urlTests = HashBasedTable.create();
     urlTests.put("/api/v1/clusters/cluster", "GET",  true);
-    urlTests.put("/api/v1/clusters/cluster", "POST",  false);
+    urlTests.put("/api/v1/clusters/cluster", "POST",  true);
     urlTests.put("/api/v1/views", "GET", true);
     urlTests.put("/api/v1/views", "POST", true);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", true);
     urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", true);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", false);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", true);
     urlTests.put("/api/v1/users/user1", "GET", true);
     urlTests.put("/api/v1/users/user1", "POST", true);
-    urlTests.put("/api/v1/users/user2", "GET", false);
-    urlTests.put("/api/v1/users/user2", "POST", false);
-    urlTests.put("/api/v1/groups", "GET", false);
+    urlTests.put("/api/v1/users/user2", "GET", true);
+    urlTests.put("/api/v1/users/user2", "POST", true);
+    urlTests.put("/api/v1/groups", "GET", true);
     urlTests.put("/api/v1/ldap_sync_events", "GET", false);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
 
-    performGeneralDoFilterTest("user1", new int[] {PermissionEntity.VIEW_USE_PERMISSION}, urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createViewUser(99L), urlTests, false);
   }
 
   @Test
   public void testDoFilter_userNoPermissionsAccess() throws Exception {
     final Table<String, String, Boolean> urlTests = HashBasedTable.create();
     urlTests.put("/api/v1/clusters/cluster", "GET",  true);
-    urlTests.put("/api/v1/clusters/cluster", "POST",  false);
+    urlTests.put("/api/v1/clusters/cluster", "POST",  true);
     urlTests.put("/api/v1/views", "GET", true);
-    urlTests.put("/api/v1/views", "POST", false);
+    urlTests.put("/api/v1/views", "POST", true);
     urlTests.put("/api/v1/persist/SomeValue", "GET", true);
     urlTests.put("/api/v1/persist/SomeValue", "POST", false);
-    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", false);
-    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", false);
-    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", false);
-    urlTests.put("/api/v1/users/user1", "GET", false);
-    urlTests.put("/api/v1/users/user1", "POST", false);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/ambari.credential", "DELETE", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "POST", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "PUT", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "GET", true);
+    urlTests.put("/api/v1/clusters/c1/credentials/cluster.credential", "DELETE", true);
+    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "GET", true);
+    urlTests.put("/views/AllowedView/SomeVersion/SomeInstance", "POST", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "GET", true);
+    urlTests.put("/views/DeniedView/AnotherVersion/AnotherInstance", "POST", true);
+    urlTests.put("/api/v1/users/user1", "GET", true);
+    urlTests.put("/api/v1/users/user1", "POST", true);
     urlTests.put("/api/v1/users/user2", "GET", true);
     urlTests.put("/api/v1/users/user2", "POST", true);
     urlTests.put("/any/other/URL", "GET", true);
     urlTests.put("/any/other/URL", "POST", false);
 
-    performGeneralDoFilterTest("user2", new int[0], urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createViewUser(null), urlTests, false);
   }
 
   @Test
@@ -283,7 +334,7 @@ public class AmbariAuthorizationFilterTest {
     urlTests.put("/views/SomeView/SomeVersion/SomeInstance", "GET", false);
     urlTests.put("/views/SomeView/SomeVersion/SomeInstance?foo=bar", "GET", false);
 
-    performGeneralDoFilterTest(null, new int[0], urlTests, true);
+    performGeneralDoFilterTest(null, urlTests, true);
   }
 
   @Test
@@ -291,67 +342,81 @@ public class AmbariAuthorizationFilterTest {
     final Table<String, String, Boolean> urlTests = HashBasedTable.create();
     urlTests.put("/api/v1/stacks/HDP/versions/2.3/validations", "POST", true);
     urlTests.put("/api/v1/stacks/HDP/versions/2.3/recommendations", "POST", true);
-    performGeneralDoFilterTest("user1", new int[] { PermissionEntity.CLUSTER_OPERATE_PERMISSION }, urlTests, false);
-    performGeneralDoFilterTest("user2", new int[] { PermissionEntity.CLUSTER_READ_PERMISSION }, urlTests, false);
-    performGeneralDoFilterTest("admin", new int[] { PermissionEntity.AMBARI_ADMIN_PERMISSION }, urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createClusterAdministrator(), urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createClusterUser(), urlTests, false);
+    performGeneralDoFilterTest(TestAuthenticationFactory.createAdministrator(), urlTests, false);
+  }
+
+  @Test
+  public void testDoFilter_NotLoggedIn_UseDefaultUser() throws Exception {
+    final FilterChain chain = EasyMock.createStrictMock(FilterChain.class);
+    final HttpServletResponse response = createNiceMock(HttpServletResponse.class);
+
+    final HttpServletRequest request = createNiceMock(HttpServletRequest.class);
+    expect(request.getRequestURI()).andReturn("/uri").anyTimes();
+    expect(request.getQueryString()).andReturn(null).anyTimes();
+    expect(request.getMethod()).andReturn("GET").anyTimes();
+
+    chain.doFilter(EasyMock.<ServletRequest>anyObject(), EasyMock.<ServletResponse>anyObject());
+    EasyMock.expectLastCall().once();
+
+    final Configuration configuration = EasyMock.createMock(Configuration.class);
+    expect(configuration.getDefaultApiAuthenticatedUser()).andReturn("user1").once();
+
+    User user = EasyMock.createMock(User.class);
+    expect(user.getUserName()).andReturn("user1").anyTimes();
+    expect(user.getUserType()).andReturn(UserType.LOCAL).anyTimes();
+
+    final Users users = EasyMock.createMock(Users.class);
+    expect(users.getUser("user1", UserType.LOCAL)).andReturn(user).once();
+    expect(users.getUserAuthorities("user1", UserType.LOCAL)).andReturn(Collections.<AmbariGrantedAuthority>emptyList()).once();
+
+    replay(request, response, chain, configuration, users, user);
+
+    Injector injector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(Configuration.class).toInstance(configuration);
+        bind(Users.class).toInstance(users);
+        bind(EntityManager.class).toInstance(EasyMock.createMock(EntityManager.class));
+        bind(UserDAO.class).toInstance(EasyMock.createMock(UserDAO.class));
+        bind(DBAccessor.class).toInstance(EasyMock.createMock(DBAccessor.class));
+        bind(PasswordEncoder.class).toInstance(EasyMock.createMock(PasswordEncoder.class));
+        bind(OsFamily.class).toInstance(EasyMock.createMock(OsFamily.class));
+      }
+    });
+
+    AmbariAuthorizationFilter filter = new AmbariAuthorizationFilter();
+    injector.injectMembers(filter);
+
+    filter.doFilter(request, response, chain);
+
+    Assert.assertEquals("user1", SecurityContextHolder.getContext().getAuthentication().getName());
   }
 
   /**
    * Creates mocks with given permissions and performs all given url tests.
    *
-   * @param username user name
-   * @param permissionsGranted array of user permissions
+   * @param authentication the authentication to use
    * @param urlTests map of triples: url - http method - is allowed
    * @param expectRedirect true if the requests should redirect to login
    * @throws Exception
    */
-  private void performGeneralDoFilterTest(String username, final int[] permissionsGranted, Table<String, String, Boolean> urlTests, boolean expectRedirect) throws Exception {
+  private void performGeneralDoFilterTest(Authentication authentication, Table<String, String, Boolean> urlTests, boolean expectRedirect) throws Exception {
     final SecurityContext securityContext = createNiceMock(SecurityContext.class);
-    final Authentication authentication = createNiceMock(Authentication.class);
     final FilterConfig filterConfig = createNiceMock(FilterConfig.class);
     final AmbariAuthorizationFilter filter = createMockBuilder(AmbariAuthorizationFilter.class)
         .addMockedMethod("getSecurityContext").addMockedMethod("getViewRegistry").withConstructor().createMock();
-    final List<AmbariGrantedAuthority> authorities = new ArrayList<AmbariGrantedAuthority>();
     final ViewRegistry viewRegistry = createNiceMock(ViewRegistry.class);
 
-    for (int permissionGranted: permissionsGranted) {
-      final AmbariGrantedAuthority authority = createNiceMock(AmbariGrantedAuthority.class);
-      final PrivilegeEntity privilegeEntity = createNiceMock(PrivilegeEntity.class);
-      final PermissionEntity permission = createNiceMock(PermissionEntity.class);
-
-      expect(authority.getPrivilegeEntity()).andReturn(privilegeEntity).anyTimes();
-      expect(privilegeEntity.getPermission()).andReturn(permission).anyTimes();
-      expect(permission.getId()).andReturn(permissionGranted).anyTimes();
-
-      replay(authority, privilegeEntity, permission);
-      authorities.add(authority);
-    }
-
-    EasyMock.<Collection<? extends GrantedAuthority>>expect(authentication.getAuthorities()).andReturn(authorities).anyTimes();
     expect(filterConfig.getInitParameter("realm")).andReturn("AuthFilter").anyTimes();
-    if (username == null) {
-      expect(authentication.isAuthenticated()).andReturn(false).anyTimes();
-    } else {
-      expect(authentication.isAuthenticated()).andReturn(true).anyTimes();
-      expect(authentication.getName()).andReturn(username).anyTimes();
-    }
+
     expect(filter.getSecurityContext()).andReturn(securityContext).anyTimes();
     expect(filter.getViewRegistry()).andReturn(viewRegistry).anyTimes();
     expect(securityContext.getAuthentication()).andReturn(authentication).anyTimes();
-    expect(viewRegistry.checkPermission(EasyMock.eq("AllowedView"), EasyMock.<String>anyObject(), EasyMock.<String>anyObject(), EasyMock.anyBoolean())).andAnswer(new IAnswer<Boolean>() {
-      @Override
-      public Boolean answer() throws Throwable {
-        for (int permissionGranted: permissionsGranted) {
-          if (permissionGranted == PermissionEntity.VIEW_USE_PERMISSION) {
-            return true;
-          }
-        }
-        return false;
-      }
-    }).anyTimes();
     expect(viewRegistry.checkPermission(EasyMock.eq("DeniedView"), EasyMock.<String>anyObject(), EasyMock.<String>anyObject(), EasyMock.anyBoolean())).andReturn(false).anyTimes();
 
-    replay(authentication, filterConfig, filter, securityContext, viewRegistry);
+    replay(filterConfig, filter, securityContext, viewRegistry);
 
     for (final Cell<String, String, Boolean> urlTest: urlTests.cellSet()) {
       final FilterChain chain = EasyMock.createStrictMock(FilterChain.class);
@@ -393,69 +458,6 @@ public class AmbariAuthorizationFilterTest {
       } catch (AssertionError error) {
         throw new Exception("verify( failed on " + urlTest.getColumnKey() + " " + urlTest.getRowKey(), error);
       }
-    }
-  }
-
-  @Test
-  public void testParseUserName() throws Exception {
-    final String[] pathesToTest = {
-        "/api/v1/users/user",
-        "/api/v1/users/user?fields=*",
-        "/api/v22/users/user?fields=*"
-    };
-    for (String contextPath: pathesToTest) {
-      final String username = AmbariAuthorizationFilter.parseUserName(contextPath);
-      Assert.assertEquals("user", username);
-    }
-  }
-
-  @Test
-  public void testParseUserNameSpecial() throws Exception {
-    String contextPath = "/api/v1/users/user%3F";
-    String username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("user?", username);
-
-    contextPath = "/api/v1/users/a%20b";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("a b", username);
-
-    contextPath = "/api/v1/users/a%2Bb";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("a+b", username);
-
-    contextPath = "/api/v1/users/a%21";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("a!", username);
-
-    contextPath = "/api/v1/users/a%3D";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("a=", username);
-
-    contextPath = "/api/v1/users/a%2Fb";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("a/b", username);
-
-    contextPath = "/api/v1/users/a%23";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("a#", username);
-
-    contextPath = "/api/v1/users/%3F%3F";
-    username = AmbariAuthorizationFilter.parseUserName(contextPath);
-    Assert.assertEquals("??", username);
-  }
-
-  @Test
-  public void testParseViewContextPath() throws Exception {
-    final String[] pathesToTest = {
-        AmbariAuthorizationFilter.VIEWS_CONTEXT_PATH_PREFIX + "MY_VIEW/1.0.0/INSTANCE1",
-        AmbariAuthorizationFilter.VIEWS_CONTEXT_PATH_PREFIX + "MY_VIEW/1.0.0/INSTANCE1/index.html",
-        AmbariAuthorizationFilter.VIEWS_CONTEXT_PATH_PREFIX + "MY_VIEW/1.0.0/INSTANCE1/api/test"
-    };
-    for (String contextPath: pathesToTest) {
-      final ViewInstanceVersionDTO dto = AmbariAuthorizationFilter.parseViewInstanceInfo(contextPath);
-      Assert.assertEquals("INSTANCE1", dto.getInstanceName());
-      Assert.assertEquals("MY_VIEW", dto.getViewName());
-      Assert.assertEquals("1.0.0", dto.getVersion());
     }
   }
 }

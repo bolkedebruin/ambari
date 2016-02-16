@@ -20,26 +20,48 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>hdfs_log_dir_prefix</name>
     <value>/var/log/hadoop</value>
     <description>Hadoop Log Dir Prefix</description>
+    <display-name>Hadoop Log Dir Prefix</display-name>
+    <value-attributes>
+      <type>directory</type>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>hadoop_pid_dir_prefix</name>
     <value>/var/run/hadoop</value>
+    <display-name>Hadoop PID Dir Prefix</display-name>
     <description>Hadoop PID Dir Prefix</description>
+    <value-attributes>
+      <type>directory</type>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>hadoop_root_logger</name>
     <value>INFO,RFA</value>
+    <display-name>Hadoop Root Logger</display-name>
     <description>Hadoop Root Logger</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
   <property>
     <name>hadoop_heapsize</name>
     <value>1024</value>
     <description>Hadoop maximum Java heap size</description>
+    <display-name>Hadoop maximum Java heap size</display-name>
+    <value-attributes>
+      <type>int</type>
+      <unit>MB</unit>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
   <property>
     <name>namenode_heapsize</name>
@@ -52,6 +74,7 @@
       <maximum>268435456</maximum>
       <unit>MB</unit>
       <increment-step>256</increment-step>
+      <overridable>false</overridable>
     </value-attributes>
     <depends-on>
       <property>
@@ -77,6 +100,7 @@
       <maximum>16384</maximum>
       <unit>MB</unit>
       <increment-step>256</increment-step>
+      <overridable>false</overridable>
     </value-attributes>
   </property>
   <property>
@@ -96,6 +120,7 @@
       <maximum>16384</maximum>
       <unit>MB</unit>
       <increment-step>256</increment-step>
+      <overridable>false</overridable>
     </value-attributes>
   </property>
   <property>
@@ -109,6 +134,7 @@
       <maximum>2096</maximum>
       <unit>MB</unit>
       <increment-step>128</increment-step>
+      <overridable>false</overridable>
     </value-attributes>
   </property>
   <property>
@@ -122,6 +148,7 @@
       <maximum>2096</maximum>
       <unit>MB</unit>
       <increment-step>128</increment-step>
+      <overridable>false</overridable>
     </value-attributes>
   </property>
   <property>
@@ -139,22 +166,24 @@
   </property>
   <property>
     <name>proxyuser_group</name>
+    <display-name>Proxy User Group</display-name>
     <value>users</value>
     <property-type>GROUP</property-type>
     <description>Proxy user group.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>hdfs_user</name>
+    <display-name>HDFS User</display-name>
     <value>hdfs</value>
     <property-type>USER</property-type>
     <description>User to run HDFS as</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
-  <property>
-    <name>dfs.datanode.data.dir.mount.file</name>
-    <value>/etc/hadoop/conf/dfs_data_dir_mount.hist</value>
-    <description>File path that contains the last known mount point for each data dir. This file is used to avoid creating a DFS data dir on the root drive (and filling it up) if a path was previously mounted on a drive.</description>
-  </property>
-
   <property>
     <name>hdfs_user_nofile_limit</name>
     <value>128000</value>
@@ -165,6 +194,16 @@
     <name>hdfs_user_nproc_limit</name>
     <value>65536</value>
     <description>Max number of processes limit setting for HDFS user.</description>
+  </property>
+
+  <property>
+    <name>hdfs_user_keytab</name>
+    <description>HDFS keytab path</description>
+  </property>
+
+  <property>
+    <name>hdfs_principal_name</name>
+    <description>HDFS principal name</description>
   </property>
 
   <!-- hadoop-env.sh -->
@@ -273,20 +312,19 @@ export HADOOP_IDENT_STRING=$USER
 
 # export HADOOP_NICENESS=10
 
-# Use libraries from standard classpath
+# Add database libraries
 JAVA_JDBC_LIBS=""
-#Add libraries required by mysql connector
-for jarFile in `ls /usr/share/java/*mysql* 2>/dev/null`
-do
-  JAVA_JDBC_LIBS=${JAVA_JDBC_LIBS}:$jarFile
-done
-#Add libraries required by oracle connector
-for jarFile in `ls /usr/share/java/*ojdbc* 2>/dev/null`
-do
-  JAVA_JDBC_LIBS=${JAVA_JDBC_LIBS}:$jarFile
-done
-#Add libraries required by nodemanager
+if [ -d "/usr/share/java" ]; then
+  for jarFile in `ls /usr/share/java | grep -E "(mysql|ojdbc|postgresql|sqljdbc)" 2>/dev/null`
+  do
+    JAVA_JDBC_LIBS=${JAVA_JDBC_LIBS}:$jarFile
+  done
+fi
+
+# Add libraries required by nodemanager
 MAPREDUCE_LIBS={{mapreduce_libs_path}}
+
+# Add libraries to the hadoop classpath - some may not need a colon as they already include it
 export HADOOP_CLASSPATH=${HADOOP_CLASSPATH}${JAVA_JDBC_LIBS}:${MAPREDUCE_LIBS}
 
 if [ -d "/usr/lib/tez" ]; then
@@ -298,7 +336,18 @@ export HADOOP_LIBEXEC_DIR={{hadoop_libexec_dir}}
 
 #Mostly required for hadoop 2.0
 export JAVA_LIBRARY_PATH=${JAVA_LIBRARY_PATH}:/usr/lib/hadoop/lib/native/Linux-amd64-64
+
+{% if is_datanode_max_locked_memory_set %}
+# Fix temporary bug, when ulimit from conf files is not picked up, without full relogin. 
+# Makes sense to fix only when runing DN as root 
+if [ "$command" == "datanode" ] &#038;&#038; [ "$EUID" -eq 0 ] &#038;&#038; [ -n "$HADOOP_SECURE_DN_USER" ]; then
+  ulimit -l {{datanode_max_locked_memory}}
+fi
+{% endif %}
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
   
 </configuration>

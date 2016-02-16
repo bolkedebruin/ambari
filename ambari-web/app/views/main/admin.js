@@ -23,22 +23,35 @@ App.MainAdminView = Em.View.extend({
   selectedBinding: 'controller.category',
   categories: function() {
     var items = [];
-    items.push({
-      name: 'stackAndUpgrade',
-      url: 'stackAndUpgrade.index',
-      label: Em.I18n.t('admin.stackUpgrade.title')
-    });
-    items.push({
-      name: 'adminServiceAccounts',
-      url: 'adminServiceAccounts',
-      label: Em.I18n.t('common.serviceAccounts')
-    });
-    if (!App.get('isHadoopWindowsStack')) {
+    if(App.isAuthorized('CLUSTER.VIEW_STACK_DETAILS, CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
+      items.push({
+        name: 'stackAndUpgrade',
+        url: 'stackAndUpgrade.index',
+        label: Em.I18n.t('admin.stackUpgrade.title')
+      });
+    }
+    if(App.isAuthorized('AMBARI.SET_SERVICE_USERS_GROUPS')) {
+      items.push({
+        name: 'adminServiceAccounts',
+        url: 'adminServiceAccounts',
+        label: Em.I18n.t('common.serviceAccounts')
+      });
+    }
+    if (!App.get('isHadoopWindowsStack') && App.isAuthorized('CLUSTER.TOGGLE_KERBEROS')) {
       items.push({
         name: 'kerberos',
         url: 'adminKerberos.index',
         label: Em.I18n.t('common.kerberos')
       });
+    }
+    if (App.isAuthorized('SERVICE.START_STOP')) {
+      if (App.supports.serviceAutoStart) {
+        items.push({
+          name: 'serviceAutoStart',
+          url: 'adminServiceAutoStart',
+          label: Em.I18n.t('admin.serviceAutoStart.title')
+        });
+      }
     }
     return items;
   }.property(''),
@@ -46,9 +59,7 @@ App.MainAdminView = Em.View.extend({
   NavItemView: Ember.View.extend({
     tagName: 'li',
     classNameBindings: 'isActive:active'.w(),
-    isActive: function () {
-      return this.get('item') === this.get('parentView.selected');
-    }.property('item', 'parentView.selected')
+    isActive: Em.computed.equalProperties('item', 'parentView.selected')
   }),
 
   willDestroyElement: function () {

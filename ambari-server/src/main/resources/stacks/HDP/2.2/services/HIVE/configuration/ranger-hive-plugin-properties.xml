@@ -23,6 +23,7 @@
   <property>
     <name>policy_user</name>
     <value>ambari-qa</value>
+    <display-name>Policy user for HIVE</display-name>
     <description>This user must be system user and also present at Ranger admin portal</description>
   </property> 
 
@@ -35,38 +36,73 @@
   <property>
     <name>common.name.for.certificate</name>
     <value></value>
-    <description>Used for repository creation on ranger admin</description>
+    <description>Common name for certificate, this value should match what is specified in repo within ranger admin</description>
+    <value-attributes>
+      <empty-value-valid>true</empty-value-valid>
+    </value-attributes>
   </property>
 
   <property>
     <name>REPOSITORY_CONFIG_USERNAME</name>
     <value>hive</value>
+    <display-name>Ranger repository config user</display-name>
     <description>Used for repository creation on ranger admin</description>
   </property>
 
   <property>
     <name>REPOSITORY_CONFIG_PASSWORD</name>
     <value>hive</value>
+    <display-name>Ranger repository config password</display-name>
     <property-type>PASSWORD</property-type>
     <description>Used for repository creation on ranger admin</description>
+    <value-attributes>
+      <type>password</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>XAAUDIT.DB.IS_ENABLED</name>
     <value>true</value>
+    <display-name>Audit to DB</display-name>
     <description></description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <type>ranger-env</type>
+        <name>xasecure.audit.destination.db</name>
+      </property>
+    </depends-on>
   </property> 
 
   <property>
     <name>XAAUDIT.HDFS.IS_ENABLED</name>
     <value>false</value>
+    <display-name>Audit to HDFS</display-name>
     <description></description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <type>ranger-env</type>
+        <name>xasecure.audit.destination.hdfs</name>
+      </property>
+    </depends-on>
   </property>
 
   <property>
     <name>XAAUDIT.HDFS.DESTINATION_DIRECTORY</name>
-    <value>hdfs://__REPLACE__NAME_NODE_HOST:8020/ranger/audit/%app-type%/%time:yyyyMMdd%</value>
+    <value>hdfs://localhost:8020/ranger/audit/%app-type%/%time:yyyyMMdd%</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description></description>
+    <depends-on>
+      <property>
+        <type>ranger-env</type>
+        <name>xasecure.audit.destination.hdfs.dir</name>
+      </property>
+    </depends-on>
   </property>
 
   <property>
@@ -127,6 +163,9 @@
     <name>XAAUDIT.HDFS.LOCAL_ARCHIVE_MAX_FILE_COUNT</name>
     <value>10</value>
     <description></description>
+    <value-attributes>
+      <type>password</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -140,6 +179,9 @@
     <value>myKeyFilePassword</value>
     <property-type>PASSWORD</property-type>
     <description></description>
+    <value-attributes>
+      <type>password</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -158,7 +200,11 @@
   <property>
     <name>UPDATE_XAPOLICIES_ON_GRANT_REVOKE</name>
     <value>true</value>
+    <display-name>Should Hive GRANT/REVOKE update XA policies</display-name>
     <description></description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -195,7 +241,10 @@
     <name>XAAUDIT.DB.PASSWORD</name>
     <value>{{xa_audit_db_password}}</value>
     <property-type>PASSWORD</property-type>
-    <description>Audit database password</description>    
+    <description>Audit database password</description>
+    <value-attributes>
+      <type>password</type>
+    </value-attributes>
   </property>
   
   <property>

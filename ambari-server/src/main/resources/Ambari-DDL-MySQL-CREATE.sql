@@ -29,8 +29,8 @@ delimiter ;
 
 CREATE TABLE stack(
   stack_id BIGINT NOT NULL,
-  stack_name VARCHAR(255) NOT NULL,
-  stack_version VARCHAR(255) NOT NULL,
+  stack_name VARCHAR(100) NOT NULL,
+  stack_version VARCHAR(100) NOT NULL,
   PRIMARY KEY (stack_id)
 );
 
@@ -48,9 +48,9 @@ CREATE TABLE clusters (
 
 CREATE TABLE clusterconfig (
   config_id BIGINT NOT NULL,
-  version_tag VARCHAR(255) NOT NULL,
+  version_tag VARCHAR(100) NOT NULL,
   version BIGINT NOT NULL,
-  type_name VARCHAR(255) NOT NULL,
+  type_name VARCHAR(100) NOT NULL,
   cluster_id BIGINT NOT NULL,
   stack_id BIGINT NOT NULL,
   config_data LONGTEXT NOT NULL,
@@ -107,11 +107,11 @@ CREATE TABLE cluster_version (
 
 CREATE TABLE hostcomponentdesiredstate (
   cluster_id BIGINT NOT NULL,
-  component_name VARCHAR(255) NOT NULL,
+  component_name VARCHAR(100) NOT NULL,
   desired_stack_id BIGINT NOT NULL,
   desired_state VARCHAR(255) NOT NULL,
   host_id BIGINT NOT NULL,
-  service_name VARCHAR(255) NOT NULL,
+  service_name VARCHAR(100) NOT NULL,
   admin_state VARCHAR(32),
   maintenance_state VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
@@ -122,12 +122,12 @@ CREATE TABLE hostcomponentdesiredstate (
 CREATE TABLE hostcomponentstate (
   id BIGINT NOT NULL,
   cluster_id BIGINT NOT NULL,
-  component_name VARCHAR(255) NOT NULL,
+  component_name VARCHAR(100) NOT NULL,
   version VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
   current_stack_id BIGINT NOT NULL,
   current_state VARCHAR(255) NOT NULL,
   host_id BIGINT NOT NULL,
-  service_name VARCHAR(255) NOT NULL,
+  service_name VARCHAR(100) NOT NULL,
   upgrade_state VARCHAR(32) NOT NULL DEFAULT 'NONE',
   security_state VARCHAR(32) NOT NULL DEFAULT 'UNSECURED',
   CONSTRAINT pk_hostcomponentstate PRIMARY KEY (id)
@@ -172,11 +172,11 @@ CREATE TABLE host_version (
   PRIMARY KEY (id));
 
 CREATE TABLE servicecomponentdesiredstate (
-  component_name VARCHAR(255) NOT NULL,
+  component_name VARCHAR(100) NOT NULL,
   cluster_id BIGINT NOT NULL,
   desired_stack_id BIGINT NOT NULL,
   desired_state VARCHAR(255) NOT NULL,
-  service_name VARCHAR(255) NOT NULL,
+  service_name VARCHAR(100) NOT NULL,
   PRIMARY KEY (component_name, cluster_id, service_name)
 );
 
@@ -196,6 +196,7 @@ CREATE TABLE users (
   principal_id BIGINT NOT NULL,
   create_time TIMESTAMP DEFAULT NOW(),
   ldap_user INTEGER NOT NULL DEFAULT 0,
+  user_type VARCHAR(255) NOT NULL DEFAULT 'LOCAL',
   user_name VARCHAR(255) NOT NULL,
   user_password VARCHAR(255),
   active INTEGER NOT NULL DEFAULT 1,
@@ -235,6 +236,7 @@ CREATE TABLE host_role_command (
   start_time BIGINT NOT NULL,
   end_time BIGINT,
   status VARCHAR(255),
+  auto_skip_on_failure SMALLINT DEFAULT 0 NOT NULL,
   std_error LONGBLOB,
   std_out LONGBLOB,
   output_log VARCHAR(255) NULL,
@@ -256,6 +258,7 @@ CREATE TABLE stage (
   request_id BIGINT NOT NULL,
   cluster_id BIGINT,
   skippable SMALLINT DEFAULT 0 NOT NULL,
+  supports_auto_skip_failure SMALLINT DEFAULT 0 NOT NULL,
   log_info VARCHAR(255) NOT NULL,
   request_context VARCHAR(255),
   cluster_host_info LONGBLOB,
@@ -338,9 +341,9 @@ CREATE TABLE ambari_sequences (
 CREATE TABLE confgroupclusterconfigmapping (
   config_group_id BIGINT NOT NULL,
   cluster_id BIGINT NOT NULL,
-  config_type VARCHAR(255) NOT NULL,
-  version_tag VARCHAR(255) NOT NULL,
-  user_name VARCHAR(255) DEFAULT '_db',
+  config_type VARCHAR(100) NOT NULL,
+  version_tag VARCHAR(100) NOT NULL,
+  user_name VARCHAR(100) DEFAULT '_db',
   create_timestamp BIGINT NOT NULL,
   PRIMARY KEY(config_group_id, cluster_id, config_type));
 
@@ -396,32 +399,35 @@ CREATE TABLE requestschedulebatchrequest (
 CREATE TABLE blueprint (
   blueprint_name VARCHAR(255) NOT NULL,
   stack_id BIGINT NOT NULL,
+  security_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
+  security_descriptor_reference VARCHAR(255),
   PRIMARY KEY(blueprint_name)
 );
 
 CREATE TABLE hostgroup (
-  blueprint_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  blueprint_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
   cardinality VARCHAR(255) NOT NULL,
   PRIMARY KEY(blueprint_name, name));
 
 CREATE TABLE hostgroup_component (
-  blueprint_name VARCHAR(255) NOT NULL,
-  hostgroup_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  blueprint_name VARCHAR(100) NOT NULL,
+  hostgroup_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  provision_action VARCHAR(100),
   PRIMARY KEY(blueprint_name, hostgroup_name, name));
 
 CREATE TABLE blueprint_configuration (
-  blueprint_name VARCHAR(255) NOT NULL,
-  type_name VARCHAR(255) NOT NULL,
+  blueprint_name VARCHAR(100) NOT NULL,
+  type_name VARCHAR(100) NOT NULL,
   config_data LONGTEXT NOT NULL,
   config_attributes LONGTEXT,
   PRIMARY KEY(blueprint_name, type_name));
 
 CREATE TABLE hostgroup_configuration (
-  blueprint_name VARCHAR(255) NOT NULL,
-  hostgroup_name VARCHAR(255) NOT NULL,
-  type_name VARCHAR(255) NOT NULL,
+  blueprint_name VARCHAR(100) NOT NULL,
+  hostgroup_name VARCHAR(100) NOT NULL,
+  type_name VARCHAR(100) NOT NULL,
   config_data LONGTEXT NOT NULL,
   config_attributes LONGTEXT,
   PRIMARY KEY(blueprint_name, hostgroup_name, type_name));
@@ -442,18 +448,18 @@ CREATE TABLE viewmain (
 
 CREATE TABLE viewinstancedata (
   view_instance_id BIGINT,
-  view_name VARCHAR(255) NOT NULL,
-  view_instance_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  user_name VARCHAR(255) NOT NULL,
+  view_name VARCHAR(100) NOT NULL,
+  view_instance_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  user_name VARCHAR(100) NOT NULL,
   value VARCHAR(2000),
   PRIMARY KEY(VIEW_INSTANCE_ID, NAME, USER_NAME));
 
 CREATE TABLE viewinstance (
   view_instance_id BIGINT,
   resource_id BIGINT NOT NULL,
-  view_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  view_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
   label VARCHAR(255),
   description VARCHAR(2048),
   visible CHAR(1),
@@ -465,15 +471,15 @@ CREATE TABLE viewinstance (
   PRIMARY KEY(view_instance_id));
 
 CREATE TABLE viewinstanceproperty (
-  view_name VARCHAR(255) NOT NULL,
-  view_instance_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  view_name VARCHAR(100) NOT NULL,
+  view_instance_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
   value VARCHAR(2000),
   PRIMARY KEY(view_name, view_instance_name, name));
 
 CREATE TABLE viewparameter (
-  view_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  view_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
   description VARCHAR(2048),
   label VARCHAR(255),
   placeholder VARCHAR(255),
@@ -484,8 +490,8 @@ CREATE TABLE viewparameter (
   PRIMARY KEY(view_name, name));
 
 CREATE TABLE viewresource (
-  view_name VARCHAR(255) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  view_name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
   plural_name VARCHAR(255),
   id_property VARCHAR(255),
   subResource_names VARCHAR(255),
@@ -496,8 +502,8 @@ CREATE TABLE viewresource (
 
 CREATE TABLE viewentity (
   id BIGINT NOT NULL,
-  view_name VARCHAR(255) NOT NULL,
-  view_instance_name VARCHAR(255) NOT NULL,
+  view_name VARCHAR(100) NOT NULL,
+  view_instance_name VARCHAR(100) NOT NULL,
   class_name VARCHAR(255) NOT NULL,
   id_property VARCHAR(255),
   PRIMARY KEY(id));
@@ -526,7 +532,19 @@ CREATE TABLE adminpermission (
   permission_id BIGINT NOT NULL,
   permission_name VARCHAR(255) NOT NULL,
   resource_type_id INTEGER NOT NULL,
+  permission_label VARCHAR(255),
+  sort_order SMALLINT NOT NULL DEFAULT 1,
   PRIMARY KEY(permission_id));
+
+CREATE TABLE roleauthorization (
+  authorization_id VARCHAR(100) NOT NULL,
+  authorization_name VARCHAR(255) NOT NULL,
+  PRIMARY KEY(authorization_id));
+
+CREATE TABLE permission_roleauthorization (
+  permission_id BIGINT NOT NULL,
+  authorization_id VARCHAR(100) NOT NULL,
+  PRIMARY KEY(permission_id, authorization_id));
 
 CREATE TABLE adminprivilege (
   privilege_id BIGINT,
@@ -540,7 +558,6 @@ CREATE TABLE repo_version (
   stack_id BIGINT NOT NULL,
   version VARCHAR(255) NOT NULL,
   display_name VARCHAR(128) NOT NULL,
-  upgrade_package VARCHAR(255) NOT NULL,
   repositories LONGTEXT NOT NULL,
   PRIMARY KEY(repo_version_id)
 );
@@ -580,15 +597,15 @@ CREATE TABLE widget_layout_user_widget (
 );
 
 CREATE TABLE artifact (
-  artifact_name VARCHAR(255) NOT NULL,
-  foreign_keys VARCHAR(255) NOT NULL,
+  artifact_name VARCHAR(100) NOT NULL,
+  foreign_keys VARCHAR(100) NOT NULL,
   artifact_data LONGTEXT NOT NULL,
   PRIMARY KEY(artifact_name, foreign_keys));
 
 CREATE TABLE topology_request (
   id BIGINT NOT NULL,
   action VARCHAR(255) NOT NULL,
-  cluster_name VARCHAR(100) NOT NULL,
+  cluster_id BIGINT NOT NULL,
   bp_name VARCHAR(100) NOT NULL,
   cluster_properties LONGTEXT,
   cluster_attributes LONGTEXT,
@@ -611,6 +628,7 @@ CREATE TABLE topology_host_info (
   fqdn VARCHAR(255),
   host_count INTEGER,
   predicate VARCHAR(2048),
+  rack_info VARCHAR(255),
   PRIMARY KEY (id)
 );
 
@@ -645,8 +663,23 @@ CREATE TABLE topology_logical_task (
   PRIMARY KEY (id)
 );
 
+CREATE TABLE setting (
+  id BIGINT NOT NULL,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  setting_type VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  updated_by VARCHAR(255) NOT NULL DEFAULT '_db',
+  update_timestamp BIGINT NOT NULL,
+  PRIMARY KEY (id)
+);
+
+-- tasks indices --
+CREATE INDEX idx_stage_request_id ON stage (request_id);
+CREATE INDEX idx_hrc_request_id ON host_role_command (request_id);
+CREATE INDEX idx_rsc_request_id ON role_success_criteria (request_id);
+
 -- altering tables by creating unique constraints----------
-ALTER TABLE users ADD CONSTRAINT UNQ_users_0 UNIQUE (user_name, ldap_user);
+ALTER TABLE users ADD CONSTRAINT UNQ_users_0 UNIQUE (user_name, user_type);
 ALTER TABLE groups ADD CONSTRAINT UNQ_groups_0 UNIQUE (group_name, ldap_group);
 ALTER TABLE members ADD CONSTRAINT UNQ_members_0 UNIQUE (group_id, user_id);
 ALTER TABLE clusterconfig ADD CONSTRAINT UQ_config_type_tag UNIQUE (cluster_id, type_name, version_tag);
@@ -714,6 +747,8 @@ ALTER TABLE viewentity ADD CONSTRAINT FK_viewentity_view_name FOREIGN KEY (view_
 ALTER TABLE adminresource ADD CONSTRAINT FK_resource_resource_type_id FOREIGN KEY (resource_type_id) REFERENCES adminresourcetype(resource_type_id);
 ALTER TABLE adminprincipal ADD CONSTRAINT FK_principal_principal_type_id FOREIGN KEY (principal_type_id) REFERENCES adminprincipaltype(principal_type_id);
 ALTER TABLE adminpermission ADD CONSTRAINT FK_permission_resource_type_id FOREIGN KEY (resource_type_id) REFERENCES adminresourcetype(resource_type_id);
+ALTER TABLE permission_roleauthorization ADD CONSTRAINT FK_permission_roleauth_pid FOREIGN KEY (permission_id) REFERENCES adminpermission(permission_id);
+ALTER TABLE permission_roleauthorization ADD CONSTRAINT FK_permission_roleauth_aid FOREIGN KEY (authorization_id) REFERENCES roleauthorization(authorization_id);
 ALTER TABLE adminprivilege ADD CONSTRAINT FK_privilege_permission_id FOREIGN KEY (permission_id) REFERENCES adminpermission(permission_id);
 ALTER TABLE adminprivilege ADD CONSTRAINT FK_privilege_resource_id FOREIGN KEY (resource_id) REFERENCES adminresource(resource_id);
 ALTER TABLE viewmain ADD CONSTRAINT FK_view_resource_type_id FOREIGN KEY (resource_type_id) REFERENCES adminresourcetype(resource_type_id);
@@ -724,6 +759,7 @@ ALTER TABLE groups ADD CONSTRAINT FK_groups_principal_id FOREIGN KEY (principal_
 ALTER TABLE clusters ADD CONSTRAINT FK_clusters_resource_id FOREIGN KEY (resource_id) REFERENCES adminresource(resource_id);
 ALTER TABLE widget_layout_user_widget ADD CONSTRAINT FK_widget_layout_id FOREIGN KEY (widget_layout_id) REFERENCES widget_layout(id);
 ALTER TABLE widget_layout_user_widget ADD CONSTRAINT FK_widget_id FOREIGN KEY (widget_id) REFERENCES widget(id);
+ALTER TABLE topology_request ADD CONSTRAINT FK_topology_request_cluster_id FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id);
 ALTER TABLE topology_hostgroup ADD CONSTRAINT FK_hostgroup_req_id FOREIGN KEY (request_id) REFERENCES topology_request(id);
 ALTER TABLE topology_host_info ADD CONSTRAINT FK_hostinfo_group_id FOREIGN KEY (group_id) REFERENCES topology_hostgroup(id);
 ALTER TABLE topology_logical_request ADD CONSTRAINT FK_logicalreq_req_id FOREIGN KEY (request_id) REFERENCES topology_request(id);
@@ -755,6 +791,13 @@ CREATE TABLE kerberos_principal_host (
   principal_name VARCHAR(255) NOT NULL,
   host_id BIGINT NOT NULL,
   PRIMARY KEY(principal_name, host_id)
+);
+
+CREATE TABLE kerberos_descriptor
+(
+   kerberos_descriptor_name   VARCHAR(255) NOT NULL,
+   kerberos_descriptor        TEXT NOT NULL,
+   PRIMARY KEY (kerberos_descriptor_name)
 );
 
 ALTER TABLE kerberos_principal_host ADD CONSTRAINT FK_krb_pr_host_id FOREIGN KEY (host_id) REFERENCES hosts (host_id);
@@ -881,6 +924,11 @@ CREATE TABLE upgrade (
   from_version VARCHAR(255) DEFAULT '' NOT NULL,
   to_version VARCHAR(255) DEFAULT '' NOT NULL,
   direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
+  upgrade_package VARCHAR(255) NOT NULL,
+  upgrade_type VARCHAR(32) NOT NULL,
+  skip_failures TINYINT(1) NOT NULL DEFAULT 0,
+  skip_sc_failures TINYINT(1) NOT NULL DEFAULT 0,
+  downgrade_allowed TINYINT(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (upgrade_id),
   FOREIGN KEY (cluster_id) REFERENCES clusters(cluster_id),
   FOREIGN KEY (request_id) REFERENCES request(request_id)
@@ -950,6 +998,7 @@ INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('topology_lo
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('topology_logical_task_id_seq', 0);
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('topology_request_id_seq', 0);
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('topology_host_group_id_seq', 0);
+INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('setting_id_seq', 0);
 INSERT INTO ambari_sequences(sequence_name, sequence_value) values ('hostcomponentstate_id_seq', 0);
 
 insert into adminresourcetype (resource_type_id, resource_type_name)
@@ -973,14 +1022,255 @@ insert into adminprincipal (principal_id, principal_type_id)
 insert into users(user_id, principal_id, user_name, user_password)
   select 1, 1, 'admin','538916f8943ec225d97a9a86a2c6ec0818c1cd400e09e03b660fdaaec4af29ddbb6f2b1033b81b00';
 
-insert into adminpermission(permission_id, permission_name, resource_type_id)
-  select 1, 'AMBARI.ADMIN', 1
+insert into adminpermission(permission_id, permission_name, resource_type_id, permission_label, sort_order)
+  select 1, 'AMBARI.ADMINISTRATOR', 1, 'Administrator', 1
   union all
-  select 2, 'CLUSTER.READ', 2
+  select 2, 'CLUSTER.USER', 2, 'Cluster User', 6
   union all
-  select 3, 'CLUSTER.OPERATE', 2
+  select 3, 'CLUSTER.ADMINISTRATOR', 2, 'Cluster Administrator', 2
   union all
-  select 4, 'VIEW.USE', 3;
+  select 4, 'VIEW.USER', 3, 'View User', 7
+  union all
+select 5, 'CLUSTER.OPERATOR', 2, 'Cluster Operator', 3
+  union all
+  select 6, 'SERVICE.ADMINISTRATOR', 2, 'Service Administrator', 4
+  union all
+  select 7, 'SERVICE.OPERATOR', 2, 'Service Operator', 5;
+
+INSERT INTO roleauthorization(authorization_id, authorization_name)
+  SELECT 'VIEW.USE', 'Use View' UNION ALL
+  SELECT 'SERVICE.VIEW_METRICS', 'View metrics' UNION ALL
+  SELECT 'SERVICE.VIEW_STATUS_INFO', 'View status information' UNION ALL
+  SELECT 'SERVICE.VIEW_CONFIGS', 'View configurations' UNION ALL
+  SELECT 'SERVICE.COMPARE_CONFIGS', 'Compare configurations' UNION ALL
+  SELECT 'SERVICE.VIEW_ALERTS', 'View service-level alerts' UNION ALL
+  SELECT 'SERVICE.START_STOP', 'Start/Stop/Restart Service' UNION ALL
+  SELECT 'SERVICE.DECOMMISSION_RECOMMISSION', 'Decommission/recommission' UNION ALL
+  SELECT 'SERVICE.RUN_SERVICE_CHECK', 'Run service checks' UNION ALL
+  SELECT 'SERVICE.TOGGLE_MAINTENANCE', 'Turn on/off maintenance mode' UNION ALL
+  SELECT 'SERVICE.RUN_CUSTOM_COMMAND', 'Perform service-specific tasks' UNION ALL
+  SELECT 'SERVICE.MODIFY_CONFIGS', 'Modify configurations' UNION ALL
+  SELECT 'SERVICE.MANAGE_CONFIG_GROUPS', 'Manage configuration groups' UNION ALL
+  SELECT 'SERVICE.MANAGE_ALERTS', 'Manage service-level alerts' UNION ALL
+  SELECT 'SERVICE.MOVE', 'Move to another host' UNION ALL
+  SELECT 'SERVICE.ENABLE_HA', 'Enable HA' UNION ALL
+  SELECT 'SERVICE.TOGGLE_ALERTS', 'Enable/disable service-level alerts' UNION ALL
+  SELECT 'SERVICE.ADD_DELETE_SERVICES', 'Add Service to cluster' UNION ALL
+  SELECT 'HOST.VIEW_METRICS', 'View metrics' UNION ALL
+  SELECT 'HOST.VIEW_STATUS_INFO', 'View status information' UNION ALL
+  SELECT 'HOST.VIEW_CONFIGS', 'View configuration' UNION ALL
+  SELECT 'HOST.TOGGLE_MAINTENANCE', 'Turn on/off maintenance mode' UNION ALL
+  SELECT 'HOST.ADD_DELETE_COMPONENTS', 'Install components' UNION ALL
+  SELECT 'HOST.ADD_DELETE_HOSTS', 'Add/Delete hosts' UNION ALL
+  SELECT 'CLUSTER.VIEW_METRICS', 'View metrics' UNION ALL
+  SELECT 'CLUSTER.VIEW_STATUS_INFO', 'View status information' UNION ALL
+  SELECT 'CLUSTER.VIEW_CONFIGS', 'View configuration' UNION ALL
+  SELECT 'CLUSTER.VIEW_STACK_DETAILS', 'View stack version details' UNION ALL
+  SELECT 'CLUSTER.VIEW_ALERTS', 'View cluster-level alerts' UNION ALL
+  SELECT 'CLUSTER.MANAGE_CREDENTIALS', 'Manage external credentials' UNION ALL
+  SELECT 'CLUSTER.MODIFY_CONFIGS', 'Modify cluster configurations' UNION ALL
+  SELECT 'CLUSTER.MANAGE_CONFIG_GROUPS', 'Manage cluster config groups' UNION ALL
+  SELECT 'CLUSTER.MANAGE_ALERTS', 'Manage cluster-level alerts' UNION ALL
+  SELECT 'CLUSTER.TOGGLE_ALERTS', 'Enable/disable cluster-level alerts' UNION ALL
+  SELECT 'CLUSTER.TOGGLE_KERBEROS', 'Enable/disable Kerberos' UNION ALL
+  SELECT 'CLUSTER.UPGRADE_DOWNGRADE_STACK', 'Upgrade/downgrade stack' UNION ALL
+  SELECT 'AMBARI.ADD_DELETE_CLUSTERS', 'Create new clusters' UNION ALL
+  SELECT 'AMBARI.SET_SERVICE_USERS_GROUPS', 'Set service users and groups' UNION ALL
+  SELECT 'AMBARI.RENAME_CLUSTER', 'Rename clusters' UNION ALL
+  SELECT 'AMBARI.MANAGE_SETTINGS', 'Manage administrative settings' UNION ALL
+  SELECT 'AMBARI.MANAGE_USERS', 'Manage users' UNION ALL
+  SELECT 'AMBARI.MANAGE_GROUPS', 'Manage groups' UNION ALL
+  SELECT 'AMBARI.MANAGE_VIEWS', 'Manage Ambari Views' UNION ALL
+  SELECT 'AMBARI.ASSIGN_ROLES', 'Assign roles' UNION ALL
+  SELECT 'AMBARI.MANAGE_STACK_VERSIONS', 'Manage stack versions' UNION ALL
+  SELECT 'AMBARI.EDIT_STACK_REPOS', 'Edit stack repository URLs';
+
+-- Set authorizations for View User role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'VIEW.USE' FROM adminpermission WHERE permission_name='VIEW.USER';
+
+-- Set authorizations for Cluster User role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'SERVICE.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'SERVICE.COMPARE_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STACK_DETAILS' FROM adminpermission WHERE permission_name='CLUSTER.USER' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.USER';
+
+-- Set authorizations for Service Operator role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'SERVICE.VIEW_METRICS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.COMPARE_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_ALERTS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.START_STOP' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.DECOMMISSION_RECOMMISSION' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_SERVICE_CHECK' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_CUSTOM_COMMAND' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_METRICS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_METRICS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STACK_DETAILS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_ALERTS' FROM adminpermission WHERE permission_name='SERVICE.OPERATOR';
+
+-- Set authorizations for Service Administrator role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'SERVICE.VIEW_METRICS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.COMPARE_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_ALERTS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.START_STOP' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.DECOMMISSION_RECOMMISSION' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_SERVICE_CHECK' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_CUSTOM_COMMAND' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MODIFY_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_ALERTS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MOVE' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.ENABLE_HA' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_ALERTS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_METRICS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_METRICS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STACK_DETAILS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_ALERTS' FROM adminpermission WHERE permission_name='SERVICE.ADMINISTRATOR';
+
+-- Set authorizations for Cluster Operator role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'SERVICE.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.COMPARE_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.START_STOP' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.DECOMMISSION_RECOMMISSION' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_SERVICE_CHECK' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_CUSTOM_COMMAND' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MODIFY_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MOVE' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.ENABLE_HA' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.ADD_DELETE_COMPONENTS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'HOST.ADD_DELETE_HOSTS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STACK_DETAILS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.OPERATOR';
+
+-- Set authorizations for Cluster Administrator role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'SERVICE.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.COMPARE_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.START_STOP' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.DECOMMISSION_RECOMMISSION' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_SERVICE_CHECK' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_CUSTOM_COMMAND' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MODIFY_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MOVE' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.ENABLE_HA' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.ADD_DELETE_SERVICES' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.ADD_DELETE_COMPONENTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.ADD_DELETE_HOSTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_METRICS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STACK_DETAILS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_CREDENTIALS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MODIFY_CONFIGS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.TOGGLE_ALERTS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.TOGGLE_KERBEROS' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.UPGRADE_DOWNGRADE_STACK' FROM adminpermission WHERE permission_name='CLUSTER.ADMINISTRATOR';
+
+-- Set authorizations for Administrator role
+INSERT INTO permission_roleauthorization(permission_id, authorization_id)
+  SELECT permission_id, 'VIEW.USE' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_METRICS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.COMPARE_CONFIGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.VIEW_ALERTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.START_STOP' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.DECOMMISSION_RECOMMISSION' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_SERVICE_CHECK' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.RUN_CUSTOM_COMMAND' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MODIFY_CONFIGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MANAGE_ALERTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.MOVE' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.ENABLE_HA' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.TOGGLE_ALERTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'SERVICE.ADD_DELETE_SERVICES' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_METRICS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.TOGGLE_MAINTENANCE' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.ADD_DELETE_COMPONENTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'HOST.ADD_DELETE_HOSTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_METRICS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STATUS_INFO' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_CONFIGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_STACK_DETAILS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.VIEW_ALERTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_CREDENTIALS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MODIFY_CONFIGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_CONFIG_GROUPS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.MANAGE_ALERTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.TOGGLE_ALERTS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.TOGGLE_KERBEROS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'CLUSTER.UPGRADE_DOWNGRADE_STACK' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.ADD_DELETE_CLUSTERS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.SET_SERVICE_USERS_GROUPS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.RENAME_CLUSTER' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.MANAGE_SETTINGS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.MANAGE_USERS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.MANAGE_GROUPS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.MANAGE_VIEWS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.ASSIGN_ROLES' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.MANAGE_STACK_VERSIONS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR' UNION ALL
+  SELECT permission_id, 'AMBARI.EDIT_STACK_REPOS' FROM adminpermission WHERE permission_name='AMBARI.ADMINISTRATOR';
 
 insert into adminprivilege (privilege_id, permission_id, resource_id, principal_id)
   select 1, 1, 1, 1;
@@ -992,9 +1282,9 @@ insert into metainfo(`metainfo_key`, `metainfo_value`)
 
 CREATE TABLE QRTZ_JOB_DETAILS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
-  JOB_NAME  VARCHAR(200) NOT NULL,
-  JOB_GROUP VARCHAR(200) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
+  JOB_NAME  VARCHAR(100) NOT NULL,
+  JOB_GROUP VARCHAR(100) NOT NULL,
   DESCRIPTION VARCHAR(250) NULL,
   JOB_CLASS_NAME   VARCHAR(250) NOT NULL,
   IS_DURABLE VARCHAR(1) NOT NULL,
@@ -1007,11 +1297,11 @@ CREATE TABLE QRTZ_JOB_DETAILS
 
 CREATE TABLE QRTZ_TRIGGERS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
-  TRIGGER_NAME VARCHAR(200) NOT NULL,
-  TRIGGER_GROUP VARCHAR(200) NOT NULL,
-  JOB_NAME  VARCHAR(200) NOT NULL,
-  JOB_GROUP VARCHAR(200) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_GROUP VARCHAR(100) NOT NULL,
+  JOB_NAME  VARCHAR(100) NOT NULL,
+  JOB_GROUP VARCHAR(100) NOT NULL,
   DESCRIPTION VARCHAR(250) NULL,
   NEXT_FIRE_TIME BIGINT(13) NULL,
   PREV_FIRE_TIME BIGINT(13) NULL,
@@ -1030,9 +1320,9 @@ CREATE TABLE QRTZ_TRIGGERS
 
 CREATE TABLE QRTZ_SIMPLE_TRIGGERS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
-  TRIGGER_NAME VARCHAR(200) NOT NULL,
-  TRIGGER_GROUP VARCHAR(200) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_GROUP VARCHAR(100) NOT NULL,
   REPEAT_COUNT BIGINT(7) NOT NULL,
   REPEAT_INTERVAL BIGINT(12) NOT NULL,
   TIMES_TRIGGERED BIGINT(10) NOT NULL,
@@ -1043,9 +1333,9 @@ CREATE TABLE QRTZ_SIMPLE_TRIGGERS
 
 CREATE TABLE QRTZ_CRON_TRIGGERS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
-  TRIGGER_NAME VARCHAR(200) NOT NULL,
-  TRIGGER_GROUP VARCHAR(200) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_GROUP VARCHAR(100) NOT NULL,
   CRON_EXPRESSION VARCHAR(200) NOT NULL,
   TIME_ZONE_ID VARCHAR(80),
   PRIMARY KEY (SCHED_NAME,TRIGGER_NAME,TRIGGER_GROUP),
@@ -1055,9 +1345,9 @@ CREATE TABLE QRTZ_CRON_TRIGGERS
 
 CREATE TABLE QRTZ_SIMPROP_TRIGGERS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
-  TRIGGER_NAME VARCHAR(200) NOT NULL,
-  TRIGGER_GROUP VARCHAR(200) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_GROUP VARCHAR(100) NOT NULL,
   STR_PROP_1 VARCHAR(512) NULL,
   STR_PROP_2 VARCHAR(512) NULL,
   STR_PROP_3 VARCHAR(512) NULL,
@@ -1076,9 +1366,9 @@ CREATE TABLE QRTZ_SIMPROP_TRIGGERS
 
 CREATE TABLE QRTZ_BLOB_TRIGGERS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
-  TRIGGER_NAME VARCHAR(200) NOT NULL,
-  TRIGGER_GROUP VARCHAR(200) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_GROUP VARCHAR(100) NOT NULL,
   BLOB_DATA BLOB NULL,
   PRIMARY KEY (SCHED_NAME,TRIGGER_NAME,TRIGGER_GROUP),
   FOREIGN KEY (SCHED_NAME,TRIGGER_NAME,TRIGGER_GROUP)
@@ -1102,17 +1392,17 @@ CREATE TABLE QRTZ_PAUSED_TRIGGER_GRPS
 
 CREATE TABLE QRTZ_FIRED_TRIGGERS
 (
-  SCHED_NAME VARCHAR(120) NOT NULL,
+  SCHED_NAME VARCHAR(100) NOT NULL,
   ENTRY_ID VARCHAR(95) NOT NULL,
-  TRIGGER_NAME VARCHAR(200) NOT NULL,
-  TRIGGER_GROUP VARCHAR(200) NOT NULL,
+  TRIGGER_NAME VARCHAR(100) NOT NULL,
+  TRIGGER_GROUP VARCHAR(100) NOT NULL,
   INSTANCE_NAME VARCHAR(200) NOT NULL,
   FIRED_TIME BIGINT(13) NOT NULL,
   SCHED_TIME BIGINT(13) NOT NULL,
   PRIORITY INTEGER NOT NULL,
   STATE VARCHAR(16) NOT NULL,
-  JOB_NAME VARCHAR(200) NULL,
-  JOB_GROUP VARCHAR(200) NULL,
+  JOB_NAME VARCHAR(100) NULL,
+  JOB_GROUP VARCHAR(100) NULL,
   IS_NONCONCURRENT VARCHAR(1) NULL,
   REQUESTS_RECOVERY VARCHAR(1) NULL,
   PRIMARY KEY (SCHED_NAME,ENTRY_ID)

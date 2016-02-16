@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 GEN_AGENT_KEY = 'openssl req -new -newkey rsa:1024 -nodes -keyout "%(keysdir)s' \
                 + os.sep + '%(hostname)s.key" -subj /OU=%(hostname)s/ ' \
                 '-out "%(keysdir)s' + os.sep + '%(hostname)s.csr"'
+KEY_FILENAME = '%(hostname)s.key'
 
 
 class VerifiedHTTPSConnection(httplib.HTTPSConnection):
@@ -42,10 +43,11 @@ class VerifiedHTTPSConnection(httplib.HTTPSConnection):
   def __init__(self, host, port=None, config=None):
     httplib.HTTPSConnection.__init__(self, host, port=port)
     self.two_way_ssl_required = False
+    self.host = host
     self.config = config
 
   def connect(self):
-    self.two_way_ssl_required = self.config.isTwoWaySSLConnection()
+    self.two_way_ssl_required = self.config.isTwoWaySSLConnection(self.host)
     logger.debug("Server two-way SSL authentication required: %s" % str(
       self.two_way_ssl_required))
     if self.two_way_ssl_required is True:
@@ -65,7 +67,7 @@ class VerifiedHTTPSConnection(httplib.HTTPSConnection):
           '/ failed. Reconnecting using two-way SSL authentication..')
 
     if self.two_way_ssl_required:
-      self.certMan = CertificateManager(self.config)
+      self.certMan = CertificateManager(self.config, self.host)
       self.certMan.initSecurity()
       agent_key = self.certMan.getAgentKeyName()
       agent_crt = self.certMan.getAgentCrtName()
@@ -108,10 +110,10 @@ class VerifiedHTTPSConnection(httplib.HTTPSConnection):
 class CachedHTTPSConnection:
   """ Caches a ssl socket and uses a single https connection to the server. """
 
-  def __init__(self, config):
+  def __init__(self, config, server_hostname):
     self.connected = False
     self.config = config
-    self.server = hostname.server_hostname(config)
+    self.server = server_hostname
     self.port = config.get('server', 'secured_url_port')
     self.connect()
 
@@ -150,11 +152,11 @@ class CachedHTTPSConnection:
 
 
 class CertificateManager():
-  def __init__(self, config):
+  def __init__(self, config, server_hostname):
     self.config = config
     self.keysdir = os.path.abspath(self.config.get('security', 'keysdir'))
     self.server_crt = self.config.get('security', 'server_crt')
-    self.server_url = 'https://' + hostname.server_hostname(config) + ':' \
+    self.server_url = 'https://' + server_hostname + ':' \
                       + self.config.get('server', 'url_port')
 
   def getAgentKeyName(self):
@@ -190,7 +192,7 @@ class CertificateManager():
 
     if not agent_key_exists:
       logger.info("Agent key not exists, generating request")
-      self.genAgentCrtReq()
+      self.genAgentCrtReq(self.getAgentKeyName())
     else:
       logger.info("Agent key exists, ok")
 
@@ -252,10 +254,12 @@ class CertificateManager():
                    '\nExiting..')
       raise ssl.SSLError
 
-  def genAgentCrtReq(self):
+  def genAgentCrtReq(self, keyname):
+    keysdir = os.path.abspath(self.config.get('security', 'keysdir'))
     generate_script = GEN_AGENT_KEY % {
       'hostname': hostname.hostname(self.config),
-      'keysdir': os.path.abspath(self.config.get('security', 'keysdir'))}
+      'keysdir': keysdir}
+    
     logger.info(generate_script)
     if platform.system() == 'Windows':
       p = subprocess.Popen(generate_script, stdout=subprocess.PIPE)
@@ -264,6 +268,8 @@ class CertificateManager():
       p = subprocess.Popen([generate_script], shell=True,
                            stdout=subprocess.PIPE)
       p.communicate()
+    # this is required to be 600 for security concerns.
+    os.chmod(keyname, 0600)
 
   def initSecurity(self):
     self.checkCertExists()

@@ -278,7 +278,7 @@ public class TestActionScheduler {
       "{\"host_param\":\"param_value\"}", "{\"stage_param\":\"param_value\"}");
     s.addHostRoleExecutionCommand(hostname, Role.SECONDARY_NAMENODE, RoleCommand.INSTALL,
             new ServiceComponentHostInstallEvent("SECONDARY_NAMENODE", hostname, System.currentTimeMillis(), "HDP-1.2.0"),
-            "cluster1", "HDFS", false);
+            "cluster1", "HDFS", false, false);
     s.setHostRoleStatus(hostname, "SECONDARY_NAMENODE", HostRoleStatus.IN_PROGRESS);
     stages.add(s);
 
@@ -636,6 +636,79 @@ public class TestActionScheduler {
   }
 
   /**
+   * Test server actions in multiple requests.
+   *
+   * This is used to make sure the server-side actions do not get filtered out from
+   * {@link org.apache.ambari.server.actionmanager.ActionScheduler#filterParallelPerHostStages(java.util.List)}
+   */
+  @Test
+  public void testServerActionInMultipleRequests() throws Exception {
+    ActionQueue aq = new ActionQueue();
+    Clusters fsm = mock(Clusters.class);
+    Cluster oneClusterMock = mock(Cluster.class);
+    Service serviceObj = mock(Service.class);
+    ServiceComponent scomp = mock(ServiceComponent.class);
+    ServiceComponentHost sch = mock(ServiceComponentHost.class);
+    UnitOfWork unitOfWork = mock(UnitOfWork.class);
+    when(fsm.getCluster(anyString())).thenReturn(oneClusterMock);
+    when(oneClusterMock.getService(anyString())).thenReturn(serviceObj);
+    when(serviceObj.getServiceComponent(anyString())).thenReturn(scomp);
+    when(scomp.getServiceComponentHost(anyString())).thenReturn(sch);
+    when(serviceObj.getCluster()).thenReturn(oneClusterMock);
+
+    String clusterName = "cluster1";
+    String hostname1 = "ahost.ambari.apache.org";
+    String hostname2 = "bhost.ambari.apache.org";
+    HashMap<String, ServiceComponentHost> hosts =
+        new HashMap<String, ServiceComponentHost>();
+    hosts.put(hostname1, sch);
+    hosts.put(hostname2, sch);
+    hosts.put(Stage.INTERNAL_HOSTNAME, sch);
+    when(scomp.getServiceComponentHosts()).thenReturn(hosts);
+
+    List<Stage> stages = new ArrayList<Stage>();
+    Stage stage01 = createStage(clusterName, 0, 1);
+    addTask(stage01, Stage.INTERNAL_HOSTNAME, clusterName, Role.AMBARI_SERVER_ACTION, RoleCommand.ACTIONEXECUTE, "AMBARI", 1);
+
+    Stage stage11 = createStage("cluster1", 1, 1);
+    addTask(stage11, hostname1, clusterName, Role.KERBEROS_CLIENT, RoleCommand.CUSTOM_COMMAND, "KERBEROS", 2);
+
+    Stage stage02 = createStage("cluster1", 0, 2);
+    addTask(stage02, Stage.INTERNAL_HOSTNAME, clusterName, Role.AMBARI_SERVER_ACTION, RoleCommand.ACTIONEXECUTE, "AMBARI", 3);
+
+    Stage stage12 = createStage("cluster1", 1, 2);
+    addTask(stage12, hostname2, clusterName, Role.KERBEROS_CLIENT, RoleCommand.CUSTOM_COMMAND, "KERBEROS", 4);
+
+    stages.add(stage01);
+    stages.add(stage11);
+    stages.add(stage02);
+    stages.add(stage12);
+
+    ActionDBAccessor db = mock(ActionDBAccessor.class);
+
+    RequestEntity request = mock(RequestEntity.class);
+    when(request.isExclusive()).thenReturn(false);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
+    when(db.getCommandsInProgressCount()).thenReturn(stages.size());
+    when(db.getStagesInProgress()).thenReturn(stages);
+
+    Properties properties = new Properties();
+    properties.put(Configuration.PARALLEL_STAGE_EXECUTION_KEY, "true");
+    Configuration conf = new Configuration(properties);
+    ActionScheduler scheduler = new ActionScheduler(100, 50, db, aq, fsm, 3,
+        new HostsMap((String) null),
+        unitOfWork, EasyMock.createNiceMock(AmbariEventPublisher.class), conf);
+
+    scheduler.doWork();
+
+    Assert.assertEquals(HostRoleStatus.QUEUED, stages.get(0).getHostRoleStatus(Stage.INTERNAL_HOSTNAME, Role.AMBARI_SERVER_ACTION.name()));
+    Assert.assertEquals(HostRoleStatus.PENDING, stages.get(1).getHostRoleStatus(hostname1, Role.KERBEROS_CLIENT.name()));
+    Assert.assertEquals(HostRoleStatus.QUEUED, stages.get(2).getHostRoleStatus(Stage.INTERNAL_HOSTNAME, Role.AMBARI_SERVER_ACTION.name()));
+    Assert.assertEquals(HostRoleStatus.PENDING, stages.get(3).getHostRoleStatus(hostname2, Role.KERBEROS_CLIENT.name()));
+  }
+
+  /**
    * Test server action
    */
   @Test
@@ -810,7 +883,7 @@ public class TestActionScheduler {
         RoleCommand.EXECUTE, "cluster1",
         new ServiceComponentHostServerActionEvent(null, System.currentTimeMillis()),
         payload,
-        null, null, timeout, false);
+        null, null, timeout, false, false);
 
     return stage;
   }
@@ -1398,7 +1471,7 @@ public class TestActionScheduler {
                                            RoleCommand command, String host, String cluster) {
     stage.addHostRoleExecutionCommand(host, role, command,
         new ServiceComponentHostInstallEvent(role.toString(), host, now, "HDP-0.2"),
-        cluster, service.toString(), false);
+        cluster, service.toString(), false, false);
     stage.getExecutionCommandWrapper(host,
         role.toString()).getExecutionCommand();
   }
@@ -1427,19 +1500,19 @@ public class TestActionScheduler {
     stage.setStageId(1);
     stage.addHostRoleExecutionCommand("host1", Role.DATANODE, RoleCommand.UPGRADE,
         new ServiceComponentHostUpgradeEvent(Role.DATANODE.toString(), "host1", now, "HDP-0.2"),
-        "cluster1", Service.Type.HDFS.toString(), false);
+        "cluster1", Service.Type.HDFS.toString(), false, false);
     stage.getExecutionCommandWrapper("host1",
         Role.DATANODE.toString()).getExecutionCommand();
 
     stage.addHostRoleExecutionCommand("host2", Role.DATANODE, RoleCommand.UPGRADE,
         new ServiceComponentHostUpgradeEvent(Role.DATANODE.toString(), "host2", now, "HDP-0.2"),
-        "cluster1", Service.Type.HDFS.toString(), false);
+        "cluster1", Service.Type.HDFS.toString(), false, false);
     stage.getExecutionCommandWrapper("host2",
         Role.DATANODE.toString()).getExecutionCommand();
 
     stage.addHostRoleExecutionCommand("host3", Role.DATANODE, RoleCommand.UPGRADE,
         new ServiceComponentHostUpgradeEvent(Role.DATANODE.toString(), "host3", now, "HDP-0.2"),
-        "cluster1", Service.Type.HDFS.toString(), false);
+        "cluster1", Service.Type.HDFS.toString(), false, false);
     stage.getExecutionCommandWrapper("host3",
         Role.DATANODE.toString()).getExecutionCommand();
     stages.add(stage);
@@ -1560,20 +1633,31 @@ public class TestActionScheduler {
     return report;
   }
 
-  private Stage getStageWithSingleTask(String hostname, String clusterName, Role role,
-                                       RoleCommand roleCommand, Service.Type service, int taskId,
-                                       int stageId, int requestId) {
+  private Stage createStage(String clusterName, int stageId, int requestId) {
     Stage stage = stageFactory.createNew(requestId, "/tmp", clusterName, 1L, "getStageWithSingleTask",
       CLUSTER_HOST_INFO, "{\"host_param\":\"param_value\"}", "{\"stage_param\":\"param_value\"}");
     stage.setStageId(stageId);
+    return stage;
+  }
+
+  private Stage addTask(Stage stage, String hostname, String clusterName, Role role,
+                        RoleCommand roleCommand, String serviceName, int taskId) {
     stage.addHostRoleExecutionCommand(hostname, role, roleCommand,
         new ServiceComponentHostUpgradeEvent(role.toString(), hostname, System.currentTimeMillis(), "HDP-0.2"),
-        clusterName, service.toString(), false);
+        clusterName, serviceName, false, false);
     stage.getExecutionCommandWrapper(hostname,
         role.toString()).getExecutionCommand();
     stage.getOrderedHostRoleCommands().get(0).setTaskId(taskId);
     return stage;
   }
+
+  private Stage getStageWithSingleTask(String hostname, String clusterName, Role role,
+                                       RoleCommand roleCommand, Service.Type service, int taskId,
+                                       int stageId, int requestId) {
+    Stage stage = createStage(clusterName, stageId, requestId);
+    return addTask(stage, hostname, clusterName, role, roleCommand, service.name(), taskId);
+  }
+
 
   private Stage getStageWithSingleTask(String hostname, String clusterName, Role role, RoleCommand roleCommand,
       String customCommandName, Service.Type service, int taskId, int stageId, int requestId) {
@@ -1595,7 +1679,7 @@ public class TestActionScheduler {
 
     stage.addHostRoleExecutionCommand(hostname, role, roleCommand,
       new ServiceComponentHostInstallEvent(role.toString(), hostname,
-        System.currentTimeMillis(), "HDP-0.2"), clusterName, service.toString(), false);
+        System.currentTimeMillis(), "HDP-0.2"), clusterName, service.toString(), false, false);
     ExecutionCommand command = stage.getExecutionCommandWrapper
       (hostname, role.toString()).getExecutionCommand();
     command.setTaskId(taskId);
@@ -2258,6 +2342,146 @@ public class TestActionScheduler {
 
   }
 
+  /**
+   * Tests that command failures in skippable stages do not cause the request to
+   * be aborted.
+   */
+  @Test
+  public void testSkippableCommandFailureDoesNotAbortRequest() throws Exception {
+    Properties properties = new Properties();
+    Configuration conf = new Configuration(properties);
+    ActionQueue aq = new ActionQueue();
+    Clusters fsm = mock(Clusters.class);
+    Cluster oneClusterMock = mock(Cluster.class);
+    Service serviceObj = mock(Service.class);
+    ServiceComponent scomp = mock(ServiceComponent.class);
+    ServiceComponentHost sch = mock(ServiceComponentHost.class);
+    UnitOfWork unitOfWork = mock(UnitOfWork.class);
+    when(fsm.getCluster(anyString())).thenReturn(oneClusterMock);
+    when(oneClusterMock.getService(anyString())).thenReturn(serviceObj);
+    when(serviceObj.getServiceComponent(anyString())).thenReturn(scomp);
+    when(scomp.getServiceComponentHost(anyString())).thenReturn(sch);
+    when(serviceObj.getCluster()).thenReturn(oneClusterMock);
+
+    String hostname1 = "ahost.ambari.apache.org";
+
+    HashMap<String, ServiceComponentHost> hosts = new HashMap<String, ServiceComponentHost>();
+
+    hosts.put(hostname1, sch);
+
+    when(scomp.getServiceComponentHosts()).thenReturn(hosts);
+
+    // create 1 stage with 2 commands and then another stage with 1 command
+    Stage stage = null;
+    Stage stage2 = null;
+    final List<Stage> stages = new ArrayList<Stage>();
+    stages.add(stage = getStageWithSingleTask(hostname1, "cluster1", Role.NAMENODE,
+        RoleCommand.STOP, Service.Type.HDFS, 1, 1, 1));
+
+    addInstallTaskToStage(stage, hostname1, "cluster1", Role.HBASE_MASTER, RoleCommand.INSTALL,
+        Service.Type.HBASE, 1);
+
+    stages.add(stage2 = getStageWithSingleTask(hostname1, "cluster1", Role.DATANODE,
+        RoleCommand.STOP, Service.Type.HDFS, 1, 1, 1));
+
+    // !!! this is the test; make the stages skippable so that when their
+    // commands fail, the entire request is not aborted
+    for (Stage stageToMakeSkippable : stages) {
+      stageToMakeSkippable.setSkippable(true);
+    }
+
+    // fail the first task - normally this would cause an abort, exception that our stages
+    // are skippable now so it should not
+    HostRoleCommand command = stage.getOrderedHostRoleCommands().iterator().next();
+    command.setStatus(HostRoleStatus.FAILED);
+
+    ActionDBAccessor db = mock(ActionDBAccessor.class);
+
+    RequestEntity request = mock(RequestEntity.class);
+    when(request.isExclusive()).thenReturn(false);
+    when(db.getRequestEntity(anyLong())).thenReturn(request);
+
+    when(db.getCommandsInProgressCount()).thenReturn(stages.size());
+    when(db.getStagesInProgress()).thenReturn(stages);
+
+    doAnswer(new Answer<Void>() {
+      @Override
+      public Void answer(InvocationOnMock invocation) throws Throwable {
+        List<CommandReport> reports = (List<CommandReport>) invocation.getArguments()[0];
+        for (CommandReport report : reports) {
+          String actionId = report.getActionId();
+          long[] requestStageIds = StageUtils.getRequestStage(actionId);
+          Long requestId = requestStageIds[0];
+          Long stageId = requestStageIds[1];
+          Long id = report.getTaskId();
+          for (Stage stage : stages) {
+            if (requestId.equals(stage.getRequestId()) && stageId.equals(stage.getStageId())) {
+              for (HostRoleCommand hostRoleCommand : stage.getOrderedHostRoleCommands()) {
+                if (hostRoleCommand.getTaskId() == id) {
+                  hostRoleCommand.setStatus(HostRoleStatus.valueOf(report.getStatus()));
+                }
+              }
+            }
+          }
+
+        }
+
+        return null;
+      }
+    }).when(db).updateHostRoleStates(anyCollectionOf(CommandReport.class));
+
+    when(db.getTask(anyLong())).thenAnswer(new Answer<Object>() {
+      @Override
+      public Object answer(InvocationOnMock invocation) throws Throwable {
+        Long taskId = (Long) invocation.getArguments()[0];
+        for (Stage stage : stages) {
+          for (HostRoleCommand command : stage.getOrderedHostRoleCommands()) {
+            if (taskId.equals(command.getTaskId())) {
+              return command;
+            }
+          }
+        }
+        return null;
+      }
+    });
+    doAnswer(new Answer<Void>() {
+      @Override
+      public Void answer(InvocationOnMock invocation) throws Throwable {
+        Long requestId = (Long) invocation.getArguments()[0];
+        for (Stage stage : stages) {
+          if (requestId.equals(stage.getRequestId())) {
+            for (HostRoleCommand command : stage.getOrderedHostRoleCommands()) {
+              if (command.getStatus() == HostRoleStatus.QUEUED
+                  || command.getStatus() == HostRoleStatus.IN_PROGRESS
+                  || command.getStatus() == HostRoleStatus.PENDING) {
+                command.setStatus(HostRoleStatus.ABORTED);
+              }
+            }
+          }
+        }
+
+        return null;
+      }
+    }).when(db).abortOperation(anyLong());
+
+    ActionScheduler scheduler = new ActionScheduler(100, 50, db, aq, fsm, 3,
+        new HostsMap((String) null), unitOfWork, null, conf);
+
+    scheduler.doWork();
+
+    Assert.assertEquals(HostRoleStatus.FAILED,
+        stages.get(0).getHostRoleStatus(hostname1, "NAMENODE"));
+
+    // the remaining tasks should NOT have been aborted since the stage is
+    // skippable - these tasks would normally be ABORTED if the stage was not
+    // skippable
+    Assert.assertEquals(HostRoleStatus.QUEUED,
+        stages.get(0).getHostRoleStatus(hostname1, "HBASE_MASTER"));
+
+    Assert.assertEquals(HostRoleStatus.PENDING,
+        stages.get(1).getHostRoleStatus(hostname1, "DATANODE"));
+
+  }
 
   public static class MockModule extends AbstractModule {
     @Override

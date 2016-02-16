@@ -24,6 +24,25 @@ angular.module('ambariAdminConsole')
     templateUrl: 'views/main.html',
     controller: 'MainCtrl'
   },
+  authentication: {
+    main: {
+      url: '/authentication',
+      templateUrl: 'views/authentication/main.html',
+      controller: 'AuthenticationMainCtrl'
+    }
+  },
+  loginActivities: {
+    loginMessage:{
+      url: '/loginMessage',
+      templateUrl: 'views/loginActivities/main.html',
+      controller: 'LoginActivitiesMainCtrl'
+    },
+    homeDirectory: {
+      url: '/homeDirectory',
+      templateUrl: 'views/loginActivities/main.html',
+      controller: 'LoginActivitiesMainCtrl'
+    }
+  },
   users: {
     list: {
       url: '/users',
@@ -102,6 +121,11 @@ angular.module('ambariAdminConsole')
       url: '/clusters/:id/manageAccess',
       templateUrl: 'views/clusters/manageAccess.html',
       controller: 'ClustersManageAccessCtrl'
+    },
+    manageAccess2: {
+      url: '/clusters/:id/userAccessList',
+      templateUrl: 'views/clusters/userAccessList.html',
+      controller: 'UserAccessListCtrl'
     }
   },
   dashboard:{

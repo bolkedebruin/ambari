@@ -17,7 +17,7 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.Precision;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -197,6 +197,11 @@ public class DefaultCondition implements Condition {
 
   public void setNoLimit() {
     this.noLimit = true;
+  }
+
+  @Override
+  public boolean doUpdate() {
+    return false;
   }
 
   public Integer getLimit() {

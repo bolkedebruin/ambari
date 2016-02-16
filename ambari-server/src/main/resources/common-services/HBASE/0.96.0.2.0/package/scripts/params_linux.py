@@ -20,9 +20,10 @@ limitations under the License.
 import status_params
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 
-from functions import calc_xmn_from_xms
+from functions import calc_xmn_from_xms, ensure_unit_for_memory
 
 from ambari_commons.constants import AMBARI_SUDO_BINARY
+from ambari_commons.os_check import OSCheck
 
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions import conf_select
@@ -34,9 +35,6 @@ from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.functions import is_empty
 from resource_management.libraries.functions import get_unique_id_and_date
 from resource_management.libraries.script.script import Script
-
-
-from resource_management.libraries.functions.substitute_vars import substitute_vars
 
 # server configurations
 config = Script.get_config()
@@ -76,6 +74,10 @@ if Script.is_hdp_stack_greater_or_equal("2.2"):
 
 
 hbase_conf_dir = status_params.hbase_conf_dir
+limits_conf_dir = status_params.limits_conf_dir
+
+hbase_user_nofile_limit = default("/configurations/hbase-env/hbase_user_nofile_limit", "32000")
+hbase_user_nproc_limit = default("/configurations/hbase-env/hbase_user_nproc_limit", "16000")
 
 # no symlink for phoenix-server at this point
 phx_daemon_script = '/usr/hdp/current/phoenix-server/bin/queryserver.py'
@@ -98,13 +100,25 @@ java64_home = config['hostLevelParams']['java_home']
 java_version = int(config['hostLevelParams']['java_version'])
 
 log_dir = config['configurations']['hbase-env']['hbase_log_dir']
-master_heapsize = config['configurations']['hbase-env']['hbase_master_heapsize']
+java_io_tmpdir = config['configurations']['hbase-env']['hbase_java_io_tmpdir']
+master_heapsize = ensure_unit_for_memory(config['configurations']['hbase-env']['hbase_master_heapsize'])
 
-regionserver_heapsize = config['configurations']['hbase-env']['hbase_regionserver_heapsize']
+regionserver_heapsize = ensure_unit_for_memory(config['configurations']['hbase-env']['hbase_regionserver_heapsize'])
 regionserver_xmn_max = config['configurations']['hbase-env']['hbase_regionserver_xmn_max']
 regionserver_xmn_percent = config['configurations']['hbase-env']['hbase_regionserver_xmn_ratio']
 regionserver_xmn_size = calc_xmn_from_xms(regionserver_heapsize, regionserver_xmn_percent, regionserver_xmn_max)
 
+
+phoenix_hosts = default('/clusterHostInfo/phoenix_query_server_hosts', [])
+phoenix_enabled = default('/configurations/hbase-env/phoenix_sql_enabled', False)
+has_phoenix = len(phoenix_hosts) > 0
+
+underscored_version = stack_version_unformatted.replace('.', '_')
+dashed_version = stack_version_unformatted.replace('.', '-')
+if OSCheck.is_redhat_family() or OSCheck.is_suse_family():
+  phoenix_package = format("phoenix_{underscored_version}_*")
+elif OSCheck.is_ubuntu_family():
+  phoenix_package = format("phoenix-{dashed_version}-.*")
 
 pid_dir = status_params.pid_dir
 tmp_dir = config['configurations']['hbase-site']['hbase.tmp.dir']
@@ -121,11 +135,23 @@ ganglia_server_host = '' if len(ganglia_server_hosts) == 0 else ganglia_server_h
 ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
 has_metric_collector = not len(ams_collector_hosts) == 0
 if has_metric_collector:
-  metric_collector_host = ams_collector_hosts[0]
-  metric_collector_port = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
-  if metric_collector_port and metric_collector_port.find(':') != -1:
-    metric_collector_port = metric_collector_port.split(':')[1]
+  if 'cluster-env' in config['configurations'] and \
+      'metrics_collector_vip_host' in config['configurations']['cluster-env']:
+    metric_collector_host = config['configurations']['cluster-env']['metrics_collector_vip_host']
+  else:
+    metric_collector_host = ams_collector_hosts[0]
+  if 'cluster-env' in config['configurations'] and \
+      'metrics_collector_vip_port' in config['configurations']['cluster-env']:
+    metric_collector_port = config['configurations']['cluster-env']['metrics_collector_vip_port']
+  else:
+    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
+    if metric_collector_web_address.find(':') != -1:
+      metric_collector_port = metric_collector_web_address.split(':')[1]
+    else:
+      metric_collector_port = '6188'
   pass
+metrics_report_interval = default("/configurations/ams-site/timeline.metrics.sink.report.interval", 60)
+metrics_collection_period = default("/configurations/ams-site/timeline.metrics.sink.collection.period", 10)
 
 # if hbase is selected the hbase_rs_hosts, should not be empty, but still default just in case
 if 'slave_hosts' in config['clusterHostInfo']:
@@ -155,8 +181,10 @@ hbase_user_keytab = config['configurations']['hbase-env']['hbase_user_keytab']
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 if security_enabled:
   kinit_cmd = format("{kinit_path_local} -kt {hbase_user_keytab} {hbase_principal_name};")
+  kinit_cmd_master = format("{kinit_path_local} -kt {master_keytab_path} {master_jaas_princ};")
 else:
   kinit_cmd = ""
+  kinit_cmd_master = ""
 
 #log4j.properties
 if (('hbase-log4j' in config['configurations']) and ('content' in config['configurations']['hbase-log4j'])):
@@ -178,6 +206,9 @@ hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_nam
 
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
+
+dfs_type = default("/commandParams/dfs_type", "")
+
 import functools
 #create partial functions with common arguments for every HdfsResource call
 #to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
@@ -191,7 +222,8 @@ HdfsResource = functools.partial(
   hadoop_conf_dir = hadoop_conf_dir,
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
-  default_fs = default_fs
+  default_fs = default_fs,
+  dfs_type = dfs_type
 )
 
 # ranger host
@@ -240,7 +272,11 @@ if has_ranger_admin:
   elif xa_audit_db_flavor == 'oracle':
     jdbc_jar_name = "ojdbc6.jar"
     jdbc_symlink_name = "oracle-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
+    colon_count = xa_db_host.count(':')
+    if colon_count == 2 or colon_count == 0:
+      audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
+    else:
+      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor == 'postgres':
     jdbc_jar_name = "postgresql.jar"
@@ -285,6 +321,7 @@ if has_ranger_admin:
 
   ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
   xa_audit_db_is_enabled = config['configurations']['ranger-hbase-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+  xa_audit_hdfs_is_enabled = config['configurations']['ranger-hbase-audit']['xasecure.audit.destination.hdfs'] if xml_configurations_supported else None
   ssl_keystore_password = unicode(config['configurations']['ranger-hbase-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
   ssl_truststore_password = unicode(config['configurations']['ranger-hbase-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
@@ -293,15 +330,18 @@ if has_ranger_admin:
   if xa_audit_db_flavor == 'sqla':
     xa_audit_db_is_enabled = False
 
-# Used to dynamically set the hbase-site props that are referenced during Kerbenization
+# Used to dynamically set the hbase-site props that are referenced during Kerberization
 if security_enabled:
   if not enable_ranger_hbase: # Default props, no ranger plugin
     hbase_coprocessor_master_classes = "org.apache.hadoop.hbase.security.access.AccessController"
+    hbase_coprocessor_regionserver_classes = "org.apache.hadoop.hbase.security.access.AccessController"
     hbase_coprocessor_region_classes = "org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint,org.apache.hadoop.hbase.security.access.AccessController"
   elif xml_configurations_supported: # HDP stack 2.3+ ranger plugin enabled
     hbase_coprocessor_master_classes = "org.apache.ranger.authorization.hbase.RangerAuthorizationCoprocessor "
+    hbase_coprocessor_regionserver_classes = "org.apache.ranger.authorization.hbase.RangerAuthorizationCoprocessor"
     hbase_coprocessor_region_classes = "org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint,org.apache.ranger.authorization.hbase.RangerAuthorizationCoprocessor"
   else: # HDP Stack 2.2 and less / ranger plugin enabled
     hbase_coprocessor_master_classes = "com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor"
+    hbase_coprocessor_regionserver_classes = "com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor"
     hbase_coprocessor_region_classes = "org.apache.hadoop.hbase.security.token.TokenProvider,org.apache.hadoop.hbase.security.access.SecureBulkLoadEndpoint,com.xasecure.authorization.hbase.XaSecureAuthorizationCoprocessor"
 

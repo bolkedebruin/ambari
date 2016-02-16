@@ -44,21 +44,5 @@ module.exports = {
       'Flume_IncommingSum',
       'Flume_OutgoingMMA',
       'Flume_OutgoingSum'
-    ],
-
-    'storm': [
-      'STORM_SlotsNumber',
-      'STORM_Executors',
-      'STORM_Topologies',
-      'STORM_Tasks'
-    ],
-
-    'kafka': [
-      'Kafka_BrokerTopicMetrics',
-      'Kafka_Controller',
-      'Kafka_ControllerStatus',
-      'Kafka_ReplicaManager',
-      'Kafka_LogFlush',
-      'Kafka_ReplicaFetcher'
     ]
 };

@@ -53,16 +53,20 @@ def hbase(name=None):
   Directory( params.hbase_conf_dir,
       owner = params.hbase_user,
       group = params.user_group,
-      recursive = True
+      create_parents = True
   )
-  
+   
+  Directory(params.java_io_tmpdir,
+      create_parents = True,
+      mode=0777
+  )
   parent_dir = os.path.dirname(params.tmp_dir)
   # In case if we have several placeholders in path
   while ("${" in parent_dir):
     parent_dir = os.path.dirname(parent_dir)
   if parent_dir != os.path.abspath(os.sep) :
     Directory (parent_dir,
-          recursive = True,
+          create_parents = True,
           cd_access="a",
     )
     Execute(("chmod", "1777", parent_dir), sudo=True)
@@ -117,9 +121,24 @@ def hbase(name=None):
 
   File(format("{hbase_conf_dir}/hbase-env.sh"),
        owner = params.hbase_user,
-       content=InlineTemplate(params.hbase_env_sh_template)
-  )     
-       
+       content=InlineTemplate(params.hbase_env_sh_template),
+       group = params.user_group,
+  )
+  
+  # On some OS this folder could be not exists, so we will create it before pushing there files
+  Directory(params.limits_conf_dir,
+            create_parents = True,
+            owner='root',
+            group='root'
+            )
+  
+  File(os.path.join(params.limits_conf_dir, 'hbase.conf'),
+       owner='root',
+       group='root',
+       mode=0644,
+       content=Template("hbase.conf.j2")
+       )
+    
   hbase_TemplateConfig( params.metric_prop_file_name,
     tag = 'GANGLIA-MASTER' if name == 'master' else 'GANGLIA-RS'
   )
@@ -132,12 +151,16 @@ def hbase(name=None):
   if name != "client":
     Directory( params.pid_dir,
       owner = params.hbase_user,
-      recursive = True
+      create_parents = True,
+      cd_access = "a",
+      mode = 0755,
     )
   
     Directory (params.log_dir,
       owner = params.hbase_user,
-      recursive = True
+      create_parents = True,
+      cd_access = "a",
+      mode = 0755,
     )
 
   if (params.log4j_props != None):
@@ -166,6 +189,9 @@ def hbase(name=None):
                          mode=0711
     )
     params.HdfsResource(None, action="execute")
+
+  if params.phoenix_enabled:
+    Package(params.phoenix_package)
 
 def hbase_TemplateConfig(name, tag=None):
   import params

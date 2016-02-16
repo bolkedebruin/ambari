@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -73,6 +73,10 @@ log4j.logger.org.apache.zookeeper = WARN
 log4j.logger.org.eclipse.jetty = INFO
 
     </value>
+    <value-attributes>
+      <type>content</type>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 
 </configuration>

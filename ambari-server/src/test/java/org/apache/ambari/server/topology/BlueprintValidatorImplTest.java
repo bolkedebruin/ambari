@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.easymock.EasyMock.createNiceMock;
@@ -47,7 +48,7 @@ public class BlueprintValidatorImplTest{
   private final Stack stack = createNiceMock(Stack.class);
   private final HostGroup group1 = createNiceMock(HostGroup.class);
   private final HostGroup group2 = createNiceMock(HostGroup.class);
-  private final Map<String, HostGroup> hostGroups = new HashMap<String, HostGroup>();
+  private final Map<String, HostGroup> hostGroups = new LinkedHashMap<>();
 
   private final Collection<String> group1Components = new ArrayList<String>();
   private final Collection<String> group2Components = new ArrayList<String>();
@@ -74,8 +75,8 @@ public class BlueprintValidatorImplTest{
     expect(blueprint.getHostGroups()).andReturn(hostGroups).anyTimes();
     expect(blueprint.getServices()).andReturn(services).anyTimes();
 
-    expect(group1.getComponents()).andReturn(group1Components).anyTimes();
-    expect(group2.getComponents()).andReturn(group2Components).anyTimes();
+    expect(group1.getComponentNames()).andReturn(group1Components).anyTimes();
+    expect(group2.getComponentNames()).andReturn(group2Components).anyTimes();
 
     expect(stack.getDependenciesForComponent("component1")).andReturn(dependencies1).anyTimes();
     expect(stack.getDependenciesForComponent("component2")).andReturn(dependencies1).anyTimes();
@@ -97,7 +98,7 @@ public class BlueprintValidatorImplTest{
   @Test
   public void testValidateTopology_basic() throws Exception {
     group1Components.add("component1");
-    group1Components.add("component2");
+    group1Components.add("component1");
 
     services.addAll(Arrays.asList("service1", "service2"));
 
@@ -177,5 +178,51 @@ public class BlueprintValidatorImplTest{
     validator.validateTopology();
 
     verify(group1);
+  }
+
+  @Test(expected=InvalidTopologyException.class)
+  public void testValidateRequiredProperties_SqlaInHiveStackHdp22() throws Exception {
+    Map<String, String> hiveEnvConfig = new HashMap<String, String>();
+    hiveEnvConfig.put("hive_database","Existing SQL Anywhere Database");
+    configProperties.put("hive-env", hiveEnvConfig);
+
+    group1Components.add("HIVE_METASTORE");
+
+    services.addAll(Arrays.asList("HIVE"));
+
+    expect(group1.getConfiguration()).andReturn(new Configuration(new HashMap(), new HashMap())).anyTimes();
+
+    expect(stack.getComponents("HIVE")).andReturn(Collections.singleton("HIVE_METASTORE")).anyTimes();
+    expect(stack.getVersion()).andReturn("2.2").once();
+    expect(stack.getName()).andReturn("HDP").once();
+
+    expect(blueprint.getHostGroupsForComponent("HIVE_METASTORE")).andReturn(Collections.singleton(group1)).anyTimes();
+
+    replay(blueprint, stack, group1, group2, dependency1);
+    BlueprintValidator validator = new BlueprintValidatorImpl(blueprint);
+    validator.validateRequiredProperties();
+  }
+
+  @Test(expected=InvalidTopologyException.class)
+  public void testValidateRequiredProperties_SqlaInOozieStackHdp22() throws Exception {
+    Map<String, String> hiveEnvConfig = new HashMap<String, String>();
+    hiveEnvConfig.put("oozie_database","Existing SQL Anywhere Database");
+    configProperties.put("oozie-env", hiveEnvConfig);
+
+    group1Components.add("OOZIE_SERVER");
+
+    services.addAll(Arrays.asList("OOZIE"));
+
+    expect(group1.getConfiguration()).andReturn(new Configuration(new HashMap(), new HashMap())).anyTimes();
+
+    expect(stack.getComponents("OOZIE")).andReturn(Collections.singleton("OOZIE_SERVER")).anyTimes();
+    expect(stack.getVersion()).andReturn("2.2").once();
+    expect(stack.getName()).andReturn("HDP").once();
+
+    expect(blueprint.getHostGroupsForComponent("OOZIE_SERVER")).andReturn(Collections.singleton(group1)).anyTimes();
+
+    replay(blueprint, stack, group1, group2, dependency1);
+    BlueprintValidator validator = new BlueprintValidatorImpl(blueprint);
+    validator.validateRequiredProperties();
   }
 }

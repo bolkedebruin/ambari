@@ -20,16 +20,26 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>mapred_log_dir_prefix</name>
     <value>c:\hadoop\logs\hadoop-mapreduce</value>
+    <display-name>Mapreduce Log Dir Prefix</display-name>
     <description>Mapreduce Log Dir Prefix</description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>mapred_pid_dir_prefix</name>
     <value>c:\hadoop\run\hadoop-mapreduce</value>
+    <display-name>Mapreduce PID Dir Prefix</display-name>
     <description>Mapreduce PID Dir Prefix</description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <editable-only-at-install>true</editable-only-at-install>
+    </value-attributes>
   </property>
   <property>
     <name>mapred_user</name>
@@ -42,5 +52,8 @@
     <description>This is the jinja template for mapred-env.cmd file</description>
     <value>
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 </configuration>

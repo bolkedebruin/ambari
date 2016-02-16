@@ -15,7 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- var stringUtils = require('utils/string_utils');
+var stringUtils = require('utils/string_utils');
+var fileUtils = require('utils/file_utils');
 
 App.KerberosWizardStep5Controller = App.KerberosProgressPageController.extend({
   name: 'kerberosWizardStep5Controller',
@@ -46,7 +47,7 @@ App.KerberosWizardStep5Controller = App.KerberosProgressPageController.extend({
   getCSVDataSuccessCallback: function (data, opt, params) {
     this.set('csvData', this.prepareCSVData(data.split('\n')));
     if(!Em.get(params, 'skipDownload')){
-      this.downloadCSV();
+      fileUtils.downloadTextFile(stringUtils.arrayToCSV(this.get('csvData')), 'csv', 'kerberos.csv');
     }
   },
 
@@ -56,32 +57,6 @@ App.KerberosWizardStep5Controller = App.KerberosProgressPageController.extend({
     }
 
     return array;
-  },
-
-  /**
-   * download CSV file
-   */
-  downloadCSV: function () {
-    if ($.browser.msie && $.browser.version < 10) {
-      this.openInfoInNewTab();
-    } else {
-      try {
-        var blob = new Blob([stringUtils.arrayToCSV(this.get('csvData'))], {type: "text/csv;charset=utf-8;"});
-        saveAs(blob, "kerberos.csv");
-      } catch (e) {
-        this.openInfoInNewTab();
-      }
-    }
-  },
-
-  /**
-   * open content of CSV file in new window
-   */
-  openInfoInNewTab: function () {
-    var newWindow = window.open('');
-    var newDocument = newWindow.document;
-    newDocument.write(stringUtils.arrayToCSV(this.get('hostComponents')));
-    newWindow.focus();
   },
 
   /**
@@ -141,9 +116,7 @@ App.KerberosWizardStep5Controller = App.KerberosProgressPageController.extend({
     App.router.transitionTo('step5');
   },
 
-  isSubmitDisabled: function () {
-    return !["COMPLETED", "FAILED"].contains(this.get('status'));
-  }.property('status'),
+  isSubmitDisabled: Em.computed.notExistsIn('status', ['COMPLETED', 'FAILED']),
 
   confirmProperties: function () {
     var kdc_type = App.router.kerberosWizardController.content.serviceConfigProperties.findProperty('name','kdc_type').value,

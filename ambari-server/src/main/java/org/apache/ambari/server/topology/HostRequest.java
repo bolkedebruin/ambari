@@ -18,13 +18,6 @@
 
 package org.apache.ambari.server.topology;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
 import org.apache.ambari.server.api.predicate.InvalidQueryException;
 import org.apache.ambari.server.api.predicate.PredicateCompiler;
@@ -43,6 +36,15 @@ import org.apache.ambari.server.state.host.HostImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+
+import static org.apache.ambari.server.controller.internal.ProvisionAction.INSTALL_ONLY;
+
 /**
  * Represents a set of requests to a single host such as install, start, etc.
  */
@@ -56,7 +58,7 @@ public class HostRequest implements Comparable<HostRequest> {
   private String hostgroupName;
   private Predicate predicate;
   private String hostname = null;
-  private String cluster;
+  private long clusterId;
   private boolean containsMaster;
   private final long id;
   private boolean isOutstanding = true;
@@ -74,11 +76,11 @@ public class HostRequest implements Comparable<HostRequest> {
 
   private static PredicateCompiler predicateCompiler = new PredicateCompiler();
 
-  public HostRequest(long requestId, long id, String cluster, String hostname, String blueprintName,
+  public HostRequest(long requestId, long id, long clusterId, String hostname, String blueprintName,
                      HostGroup hostGroup, Predicate predicate, ClusterTopology topology) {
     this.requestId = requestId;
     this.id = id;
-    this.cluster = cluster;
+    this.clusterId = clusterId;
     blueprint = blueprintName;
     this.hostGroup = hostGroup;
     hostgroupName = hostGroup.getName();
@@ -105,7 +107,7 @@ public class HostRequest implements Comparable<HostRequest> {
 
     this.requestId = requestId;
     this.id = id;
-    cluster = topology.getClusterName();
+    clusterId = topology.getClusterId();
     blueprint = topology.getBlueprint().getName();
     hostgroupName = entity.getTopologyHostGroupEntity().getName();
     hostGroup = topology.getBlueprint().getHostGroup(hostgroupName);
@@ -118,7 +120,7 @@ public class HostRequest implements Comparable<HostRequest> {
 
     //todo: we may be able to simplify by just checking hostname
     isOutstanding = hostname == null || !topology.getAmbariContext().
-        isHostRegisteredWithCluster(cluster, hostname);
+        isHostRegisteredWithCluster(clusterId, hostname);
 
     LOG.info("HostRequest: Successfully recovered host request for host: " +
         (hostname == null ? "Host Assignment Pending" : hostname));
@@ -147,8 +149,8 @@ public class HostRequest implements Comparable<HostRequest> {
     return requestId;
   }
 
-  public String getClusterName() {
-    return cluster;
+  public long getClusterId() {
+    return clusterId;
   }
   public String getBlueprint() {
     return blueprint;
@@ -177,15 +179,22 @@ public class HostRequest implements Comparable<HostRequest> {
 
     InstallHostTask installTask = new InstallHostTask();
     topologyTasks.add(installTask);
-    StartHostTask startTask = new StartHostTask();
-    topologyTasks.add(startTask);
-
     logicalTaskMap.put(installTask, new HashMap<String, Long>());
-    logicalTaskMap.put(startTask, new HashMap<String, Long>());
+
+    boolean skipStartTaskCreate = topology.getProvisionAction().equals(INSTALL_ONLY);
+
+    StartHostTask startTask = null;
+    if (!skipStartTaskCreate) {
+      startTask = new StartHostTask();
+      topologyTasks.add(startTask);
+      logicalTaskMap.put(startTask, new HashMap<String, Long>());
+    } else {
+      LOG.info("Skipping Start task creation since provision action = " + topology.getProvisionAction());
+    }
 
     // lower level logical component level tasks which get mapped to physical tasks
     HostGroup hostGroup = getHostGroup();
-    for (String component : hostGroup.getComponents()) {
+    for (String component : hostGroup.getComponentNames()) {
       if (component == null || component.equals("AMBARI_SERVER")) {
         LOG.info("Skipping component {} when creating request\n", component);
         continue;
@@ -203,7 +212,7 @@ public class HostRequest implements Comparable<HostRequest> {
 
       Stack stack = hostGroup.getStack();
       // if component isn't a client, add a start task
-      if (stack!=null && !stack.getComponentInfo(component).isClient()) {
+      if (!skipStartTaskCreate && stack != null && !stack.getComponentInfo(component).isClient()) {
         HostRoleCommand logicalStartTask = context.createAmbariTask(
             getRequestId(), id, component, hostName, AmbariContext.TaskType.START);
         logicalTasks.put(logicalStartTask.getTaskId(), logicalStartTask);
@@ -217,11 +226,15 @@ public class HostRequest implements Comparable<HostRequest> {
     topologyTasks.add(new RegisterWithConfigGroupTask());
     InstallHostTask installTask = new InstallHostTask();
     topologyTasks.add(installTask);
-    StartHostTask startTask = new StartHostTask();
-    topologyTasks.add(startTask);
-
     logicalTaskMap.put(installTask, new HashMap<String, Long>());
-    logicalTaskMap.put(startTask, new HashMap<String, Long>());
+
+    boolean skipStartTaskCreate = topology.getProvisionAction().equals(INSTALL_ONLY);
+
+    if (!skipStartTaskCreate) {
+      StartHostTask startTask = new StartHostTask();
+      topologyTasks.add(startTask);
+      logicalTaskMap.put(startTask, new HashMap<String, Long>());
+    }
 
     AmbariContext ambariContext = topology.getAmbariContext();
     // lower level logical component level tasks which get mapped to physical tasks
@@ -374,6 +387,10 @@ public class HostRequest implements Comparable<HostRequest> {
     return physicalTasks.get(logicalTaskId);
   }
 
+  public Map<Long, Long> getPhysicalTaskMapping() {
+    return new HashMap<>(physicalTasks);
+  }
+
   //todo: since this is used to determine equality, using hashCode() isn't safe as it can return the same
   //todo: value for 2 unequal requests
   @Override
@@ -428,7 +445,7 @@ public class HostRequest implements Comparable<HostRequest> {
       for (String service : group.getServices()) {
         serviceComponents.put(service, new HashSet<String> (group.getComponents(service)));
       }
-      ambariContext.createAmbariHostResources(getClusterName(), getHostName(), serviceComponents);
+      ambariContext.createAmbariHostResources(getClusterId(), getHostName(), serviceComponents);
     }
   }
 

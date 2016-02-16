@@ -21,14 +21,28 @@ import os
 import sys
 from resource_management import format_hdp_stack_version, Script
 from resource_management.libraries.functions import format
+from resource_management.libraries.functions.default import default
 
 import status_params
 
 # server configurations
 config = Script.get_config()
 
+cluster_name = config['clusterName']
+
 # security enabled
 security_enabled = status_params.security_enabled
+
+if security_enabled:
+  _hostname_lowercase = config['hostname'].lower()
+  _atlas_principal_name = config['configurations']['application-properties']['atlas.authentication.principal']
+  atlas_jaas_principal = _atlas_principal_name.replace('_HOST',_hostname_lowercase)
+  atlas_keytab_path = config['configurations']['application-properties']['atlas.authentication.keytab']
+
+stack_name = default("/hostLevelParams/stack_name", None)
+
+# New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade
+version = default("/commandParams/version", None)
 
 # hdp version
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
@@ -48,6 +62,9 @@ conf_dir = status_params.conf_dir # "/etc/metadata/conf"
 # service locations
 hadoop_conf_dir = os.path.join(os.environ["HADOOP_HOME"], "conf") if 'HADOOP_HOME' in os.environ else '/etc/hadoop/conf'
 
+# some commands may need to supply the JAAS location when running as atlas
+atlas_jaas_file = format("{conf_dir}/atlas_jaas.conf")
+
 # user and status
 metadata_user = status_params.metadata_user
 user_group = config['configurations']['cluster-env']['user_group']
@@ -62,7 +79,14 @@ env_sh_template = config['configurations']['atlas-env']['content']
 credential_provider = format( "jceks://file@{conf_dir}/atlas-site.jceks")
 
 # command line args
-metadata_port = config['configurations']['atlas-env']['metadata_port']
+ssl_enabled = default("/configurations/application-properties/atlas.enableTLS", False)
+http_port = default("/configurations/application-properties/atlas.server.http.port", 21000)
+https_port = default("/configurations/application-properties/atlas.server.https.port", 21443)
+if ssl_enabled:
+  metadata_port = https_port
+else:
+  metadata_port = http_port
+
 metadata_host = config['hostname']
 
 # application properties
@@ -90,3 +114,12 @@ if security_enabled:
     smoke_cmd = format('curl --negotiate -u : -b ~/cookiejar.txt -c ~/cookiejar.txt -s -o /dev/null -w "%{{http_code}}" http://{metadata_host}:{metadata_port}/')
 else:
     smoke_cmd = format('curl -s -o /dev/null -w "%{{http_code}}" http://{metadata_host}:{metadata_port}/')
+
+# kafka
+kafka_bootstrap_servers = ""
+kafka_broker_hosts = config['clusterHostInfo']['kafka_broker_hosts']
+if not len(kafka_broker_hosts) == 0:
+  kafka_broker_port = default("/configurations/kafka-broker/port", 6667)
+  kafka_bootstrap_servers = kafka_broker_hosts[0] + ":" + str(kafka_broker_port)
+
+kafka_zookeeper_connect = default("/configurations/kafka-broker/zookeeper.connect", None)

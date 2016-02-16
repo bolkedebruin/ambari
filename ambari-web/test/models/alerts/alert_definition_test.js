@@ -22,13 +22,17 @@ require('models/alerts/alert_definition');
 
 var model;
 
+function getModel() {
+  return App.AlertDefinition.createRecord();
+}
+
 describe('App.AlertDefinition', function () {
 
   beforeEach(function () {
-
-    model = App.AlertDefinition.createRecord();
-
+    model = getModel();
   });
+
+  App.TestAliases.testAsComputedAnd(getModel(), 'isHostAlertDefinition', ['isAmbariService', 'isAmbariAgentComponent']);
 
   describe('#status', function () {
 
@@ -125,15 +129,49 @@ describe('App.AlertDefinition', function () {
 
   });
 
+  describe('#isOK', function () {
+
+    Em.A([
+      {summary: {CRITICAL: {count: 1, maintenanceCount: 0}}, e: false},
+      {summary: {WARNING: {count: 1, maintenanceCount: 0}}, e: false},
+      {summary: {OK: {count: 1, maintenanceCount: 0}}, e: true},
+      {summary: {UNKNOWN: {count: 1, maintenanceCount: 0}}, e: false},
+      {summary: {}, e: false}
+    ]).forEach(function (test, i) {
+      it('test ' + (i + 1), function () {
+        model.set('summary', test.summary);
+        expect(model.get('isOK')).to.equal(test.e);
+      });
+    });
+
+  });
+
+  describe('#isUnknown', function () {
+
+    Em.A([
+      {summary: {CRITICAL: {count: 1, maintenanceCount: 0}}, e: false},
+      {summary: {WARNING: {count: 1, maintenanceCount: 0}}, e: false},
+      {summary: {OK: {count: 1, maintenanceCount: 0}}, e: false},
+      {summary: {UNKNOWN: {count: 1, maintenanceCount: 0}}, e: true},
+      {summary: {}, e: false}
+    ]).forEach(function (test, i) {
+      it('test ' + (i + 1), function () {
+        model.set('summary', test.summary);
+        expect(model.get('isUnknown')).to.equal(test.e);
+      });
+    });
+
+  });
+
   describe('#lastTriggeredAgoFormatted', function () {
 
     it('should be empty', function () {
-      model.set('lastTriggered', 0);
+      model.set('lastTriggeredRaw', 0);
       expect(model.get('lastTriggeredAgoFormatted')).to.equal('');
     });
 
     it('should not be empty', function () {
-      model.set('lastTriggered', new Date().getTime() - 61000);
+      model.set('lastTriggeredRaw', new Date().getTime() - 61000);
       expect(model.get('lastTriggeredAgoFormatted')).to.equal('about a minute ago');
     });
 

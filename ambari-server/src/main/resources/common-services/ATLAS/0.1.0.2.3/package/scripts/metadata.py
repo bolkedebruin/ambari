@@ -20,6 +20,7 @@ limitations under the License.
 from resource_management import Directory, Fail, Logger, File, \
     InlineTemplate, PropertiesFile, StaticFile
 from resource_management.libraries.functions import format
+from resource_management.libraries.resources.template_config import TemplateConfig
 
 
 def metadata():
@@ -30,7 +31,7 @@ def metadata():
               cd_access='a',
               owner=params.metadata_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True
     )
 
     Directory(params.conf_dir,
@@ -38,7 +39,7 @@ def metadata():
               cd_access='a',
               owner=params.metadata_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True
     )
 
     Directory(params.log_dir,
@@ -46,7 +47,7 @@ def metadata():
               cd_access='a',
               owner=params.metadata_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True
     )
 
     Directory(params.data_dir,
@@ -54,7 +55,7 @@ def metadata():
               cd_access='a',
               owner=params.metadata_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True
     )
 
     Directory(params.expanded_war_dir,
@@ -62,7 +63,7 @@ def metadata():
               cd_access='a',
               owner=params.metadata_user,
               group=params.user_group,
-              recursive=True
+              create_parents = True
     )
 
     File(format("{expanded_war_dir}/atlas.war"),
@@ -83,9 +84,13 @@ def metadata():
          content=InlineTemplate(params.metadata_env_content)
     )
 
-    File(format("{conf_dir}/log4j.xml"),
+    File(format("{conf_dir}/atlas-log4j.xml"),
          mode=0644,
          owner=params.metadata_user,
          group=params.user_group,
-         content=StaticFile('log4j.xml')
+         content=StaticFile('atlas-log4j.xml')
     )
+
+    if params.security_enabled:
+        TemplateConfig(format(params.atlas_jaas_file),
+                         owner=params.metadata_user)

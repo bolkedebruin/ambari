@@ -29,6 +29,7 @@ from stacks.utils.RMFTestCase import *
 from mock.mock import patch, MagicMock
 from resource_management.core.base import Resource
 from resource_management.core.exceptions import Fail
+from resource_management.libraries.script import Script
 
 OLD_VERSION_STUB = '2.1.0.0-400'
 VERSION_STUB_WITHOUT_BUILD_NUMBER = '2.2.0.1'
@@ -71,7 +72,10 @@ class TestInstallPackages(RMFTestCase):
                             read_actual_version_from_history_file_mock,
                             hdp_versions_mock,
                             put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock):
-    read_actual_version_from_history_file_mock.return_value = VERSION_STUB
+    hdp_versions_mock.side_effect = [
+      [],  # before installation attempt
+      [VERSION_STUB]
+    ]
     allInstalledPackages_mock.side_effect = TestInstallPackages._add_packages
     list_ambari_managed_repos_mock.return_value=[]
     self.executeScript("scripts/install_packages.py",
@@ -106,13 +110,14 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
     )
-    self.assertResourceCalled('Package', 'hadoop_2_2_*', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'snappy', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'snappy-devel', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'lzo', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_*', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'hadoop_2_2_*-libhdfs', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'ambari-log4j', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
     self.assertNoMoreResources()
 
   @patch("ambari_commons.os_check.OSCheck.is_suse_family")
@@ -126,7 +131,11 @@ class TestInstallPackages(RMFTestCase):
                             read_actual_version_from_history_file_mock,
                             hdp_versions_mock, put_structured_out_mock, allInstalledPackages_mock, list_ambari_managed_repos_mock, is_suse_family_mock):
     is_suse_family_mock = True
-    read_actual_version_from_history_file_mock.return_value = VERSION_STUB
+    Script.stack_version_from_distro_select = VERSION_STUB
+    hdp_versions_mock.side_effect = [
+      [],  # before installation attempt
+      [VERSION_STUB]
+    ]
     allInstalledPackages_mock.side_effect = TestInstallPackages._add_packages
     list_ambari_managed_repos_mock.return_value=[]
     self.executeScript("scripts/install_packages.py",
@@ -161,13 +170,14 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
                               )
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885*', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'snappy', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'snappy-devel', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'lzo', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885*', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885*-libhdfs', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'ambari-log4j', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
     self.assertNoMoreResources()
 
 
@@ -183,7 +193,11 @@ class TestInstallPackages(RMFTestCase):
                                  hdp_versions_mock,
                                  allInstalledPackages_mock, put_structured_out_mock,
                                  is_redhat_family_mock, list_ambari_managed_repos_mock):
-    read_actual_version_from_history_file_mock.return_value = VERSION_STUB
+    hdp_versions_mock.side_effect = [
+      [],  # before installation attempt
+      [VERSION_STUB]
+    ]
+    Script.stack_version_from_distro_select = VERSION_STUB
     allInstalledPackages_mock.side_effect = TestInstallPackages._add_packages
     list_ambari_managed_repos_mock.return_value=["HDP-UTILS-2.2.0.1-885"]
     is_redhat_family_mock.return_value = True
@@ -219,13 +233,14 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
     )
-    self.assertResourceCalled('Package', 'hadoop_2_2_*', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'snappy', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'snappy-devel', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'lzo', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_*', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'hadoop_2_2_*-libhdfs', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
-    self.assertResourceCalled('Package', 'ambari-log4j', use_repos=['HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=['HDP-*'])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
     self.assertNoMoreResources()
 
 
@@ -274,7 +289,6 @@ class TestInstallPackages(RMFTestCase):
     self.assertTrue(put_structured_out_mock.called)
     self.assertEquals(put_structured_out_mock.call_args[0][0],
                       {'stack_id': 'HDP-2.2',
-                      'actual_version': VERSION_STUB,
                       'installed_repository_version': VERSION_STUB,
                       'ambari_repositories': [],
                       'package_installation_result': 'FAIL'})
@@ -313,6 +327,11 @@ class TestInstallPackages(RMFTestCase):
                                hdp_versions_mock,
                                allInstalledPackages_mock, put_structured_out_mock,
                                package_mock, is_suse_family_mock):
+    Script.stack_version_from_distro_select = VERSION_STUB
+    hdp_versions_mock.side_effect = [
+      [],  # before installation attempt
+      [VERSION_STUB]
+    ]
     read_actual_version_from_history_file_mock.return_value = VERSION_STUB
     allInstalledPackages_mock = MagicMock(side_effect = TestInstallPackages._add_packages)
     is_suse_family_mock.return_value = True
@@ -348,13 +367,14 @@ class TestInstallPackages(RMFTestCase):
                               mirror_list=None,
                               append_to_file=True,
                               )
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885*', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'snappy', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'snappy-devel', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'lzo', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885*', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885*-libhdfs', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
-    self.assertResourceCalled('Package', 'ambari-log4j', use_repos=['base', 'HDP-UTILS-2.2.0.1-885', 'HDP-2.2.0.1-885'], skip_repos=[])
+    self.assertResourceCalled('Package', 'hdp-select', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy', action=["upgrade"])
+    self.assertResourceCalled('Package', 'snappy-devel', action=["upgrade"])
+    self.assertResourceCalled('Package', 'lzo', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadooplzo_2_2_0_1_885', action=["upgrade"])
+    self.assertResourceCalled('Package', 'hadoop_2_2_0_1_885-libhdfs', action=["upgrade"])
+    self.assertResourceCalled('Package', 'ambari-log4j', action=["upgrade"])
     self.assertNoMoreResources()
 
 
@@ -562,17 +582,21 @@ class TestInstallPackages(RMFTestCase):
 
     allInstalledPackages_mock.side_effect = TestInstallPackages._add_packages
     list_ambari_managed_repos_mock.return_value = []
-    self.executeScript("scripts/install_packages.py",
+    try:
+      self.executeScript("scripts/install_packages.py",
                        classname="InstallPackages",
                        command="actionexecute",
                        config_dict=command_json,
                        target=RMFTestCase.TARGET_CUSTOM_ACTIONS,
                        os_type=('Redhat', '6.4', 'Final'),
                        )
+      self.fail("Should throw exception")
+    except Fail:
+      pass  # Expected
 
     self.assertTrue(put_structured_out_mock.called)
     self.assertEquals(put_structured_out_mock.call_args[0][0],
-                      {'package_installation_result': 'SUCCESS',
+                      {'package_installation_result': 'FAIL',
                        'stack_id': u'HDP-2.2',
                        'installed_repository_version': VERSION_STUB,
                        'actual_version': VERSION_STUB,
@@ -806,17 +830,21 @@ class TestInstallPackages(RMFTestCase):
 
     allInstalledPackages_mock.side_effect = TestInstallPackages._add_packages
     list_ambari_managed_repos_mock.return_value = []
-    self.executeScript("scripts/install_packages.py",
+    try:
+      self.executeScript("scripts/install_packages.py",
                        classname="InstallPackages",
                        command="actionexecute",
                        config_dict=command_json,
                        target=RMFTestCase.TARGET_CUSTOM_ACTIONS,
                        os_type=('Redhat', '6.4', 'Final'),
                        )
+      self.fail("Should throw exception")
+    except Fail:
+      pass  # Expected
 
     self.assertTrue(put_structured_out_mock.called)
     self.assertEquals(put_structured_out_mock.call_args[0][0],
-                      {'package_installation_result': 'SUCCESS',
+                      {'package_installation_result': 'FAIL',
                        'stack_id': u'HDP-2.2',
                        'installed_repository_version': VERSION_STUB,
                        'actual_version': VERSION_STUB,

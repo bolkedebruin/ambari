@@ -20,16 +20,22 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>hbase_log_dir</name>
     <value>/var/log/hbase</value>
     <description>Log Directories for HBase.</description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
   <property>
     <name>hbase_pid_dir</name>
     <value>/var/run/hbase</value>
     <description>Pid Directory for HBase.</description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
   <property>
     <name>hbase_regionserver_heapsize</name>
@@ -57,9 +63,13 @@ and the -Xmn ratio (hbase_regionserver_xmn_ratio) exceeds this value.
   </property>
    <property>
     <name>hbase_user</name>
+    <display-name>HBase User</display-name>
     <value>hbase</value>
     <property-type>USER</property-type>
     <description>HBase User Name.</description>
+    <value-attributes>
+       <type>user</type>
+    </value-attributes>
   </property>
 
   <!-- hbase-env.sh -->
@@ -133,6 +143,9 @@ export HBASE_MASTER_OPTS="$HBASE_MASTER_OPTS -Xmx{{master_heapsize}}"
 export HBASE_REGIONSERVER_OPTS="$HBASE_REGIONSERVER_OPTS -Xmn{{regionserver_xmn_size}} -XX:CMSInitiatingOccupancyFraction=70  -Xms{{regionserver_heapsize}} -Xmx{{regionserver_heapsize}}"
 {% endif %}
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
 </configuration>

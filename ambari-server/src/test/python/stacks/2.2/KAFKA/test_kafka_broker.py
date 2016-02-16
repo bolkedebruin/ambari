@@ -36,30 +36,41 @@ class TestKafkaBroker(RMFTestCase):
                          hdp_stack_version = self.STACK_VERSION,
                          target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-
     self.assertResourceCalled('Directory', '/var/log/kafka',
                               owner = 'kafka',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
-                              cd_access = 'a'
+                              cd_access = 'a',
+                              recursive_ownership = True,
     )
 
     self.assertResourceCalled('Directory', '/var/run/kafka',
                               owner = 'kafka',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
-                              cd_access = 'a'
+                              cd_access = 'a',
+                              recursive_ownership = True,
     )
 
     self.assertResourceCalled('Directory', '/usr/hdp/current/kafka-broker/config',
                               owner = 'kafka',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
-                              cd_access = 'a'
+                              cd_access = 'a',
+                              recursive_ownership = True,
     )
+    self.assertResourceCalled('Directory', '/tmp/log/dir',
+                              owner = 'kafka',
+                              create_parents = True,
+                              group = 'hadoop',
+                              mode = 0755,
+                              cd_access = 'a',
+                              recursive_ownership = True,
+    )
+
 
   @patch("os.path.islink")
   @patch("os.path.realpath")
@@ -76,31 +87,43 @@ class TestKafkaBroker(RMFTestCase):
     self.assertResourceCalled('Directory', '/customdisk/var/log/kafka',
                               owner = 'kafka',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
-                              cd_access = 'a'
+                              cd_access = 'a',
+                              recursive_ownership = True,
     )
 
     self.assertResourceCalled('Directory', '/customdisk/var/run/kafka',
                               owner = 'kafka',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
-                              cd_access = 'a'
+                              cd_access = 'a',
+                              recursive_ownership = True,
     )
 
     self.assertResourceCalled('Directory', '/usr/hdp/current/kafka-broker/config',
                               owner = 'kafka',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
-                              cd_access = 'a'
+                              cd_access = 'a',
+                              recursive_ownership = True,
+    )
+
+    self.assertResourceCalled('Directory', '/tmp/log/dir',
+                              owner = 'kafka',
+                              create_parents = True,
+                              group = 'hadoop',
+                              mode = 0755,
+                              cd_access = 'a',
+                              recursive_ownership = True,
     )
 
     self.assertTrue(islink_mock.called)
     self.assertTrue(realpath_mock.called)
 
-  def test_pre_rolling_restart(self):
+  def test_pre_upgrade_restart(self):
     config_file = self.get_src_folder()+"/test/python/stacks/2.2/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -108,16 +131,16 @@ class TestKafkaBroker(RMFTestCase):
     json_content['commandParams']['version'] = version
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/kafka_broker.py",
                        classname = "KafkaBroker",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
     self.assertResourceCalled('Execute',
-                              ('hdp-select', 'set', 'kafka-broker', version), sudo=True,)
+                              ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'kafka-broker', version), sudo=True,)
     self.assertNoMoreResources()
 
   @patch("resource_management.core.shell.call")
-  def test_pre_rolling_restart_23(self, call_mock):
+  def test_pre_upgrade_restart_23(self, call_mock):
     config_file = self.get_src_folder()+"/test/python/stacks/2.2/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -127,22 +150,24 @@ class TestKafkaBroker(RMFTestCase):
     mocks_dict = {}
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/kafka_broker.py",
                        classname = "KafkaBroker",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
-                       call_mocks = [(0, None), (0, None)],
+                       call_mocks = [(0, None, ''), (0, None)],
                        mocks_dict = mocks_dict)
 
-    self.assertResourceCalled('Execute',
-                              ('hdp-select', 'set', 'kafka-broker', version), sudo=True,)
+    self.assertResourceCalledIgnoreEarlier('Execute',
+                              ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'kafka-broker', version), sudo=True,)
+
+    self.assertResourceCalled("Link", "/etc/kafka/conf", to="/usr/hdp/current/kafka-broker/conf")
     self.assertNoMoreResources()
 
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'kafka', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'kafka', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'kafka', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'kafka', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])

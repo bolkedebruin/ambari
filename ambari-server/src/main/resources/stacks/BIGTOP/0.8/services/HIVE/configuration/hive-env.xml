@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>hive_database_type</name>
     <value>postgres</value>
@@ -42,6 +42,9 @@
     <name>hive_database_name</name>
     <value>hive</value>
     <description>Database name.</description>
+    <value-attributes>
+      <type>database</type>
+    </value-attributes>
   </property>
   <property>
     <name>hive_dbroot</name>
@@ -60,9 +63,13 @@
   </property>
   <property>
     <name>hive_user</name>
+    <display-name>Hive User</display-name>
     <value>hive</value>
     <property-type>USER</property-type>
     <description>Hive User.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
 
   <!--HCAT-->
@@ -79,15 +86,23 @@
   </property>
   <property>
     <name>hcat_user</name>
+    <display-name>HCat User</display-name>
     <value>hcat</value>
     <property-type>USER</property-type>
     <description>HCat User.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>webhcat_user</name>
+    <display-name>WebHCat User</display-name>
     <value>hcat</value>
     <property-type>USER</property-type>
     <description>WebHCat User.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   
   <!-- hive-env.sh -->
@@ -129,6 +144,9 @@ else
 fi
 export METASTORE_PORT={{hive_metastore_port}}
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
   
 </configuration>

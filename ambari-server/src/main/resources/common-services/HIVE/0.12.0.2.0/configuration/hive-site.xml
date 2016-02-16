@@ -22,38 +22,85 @@ limitations under the License.
   <property>
     <name>hive.heapsize</name>
     <value>1024</value>
+    <display-name>HiveServer2 heap size</display-name>
     <description>Hive Java heap size</description>
+    <value-attributes>
+      <unit>MB</unit>
+      <overridable>false</overridable>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>ambari.hive.db.schema.name</name>
     <value>hive</value>
+    <display-name>Database Name</display-name>
     <description>Database name used as the Hive Metastore</description>
+    <value-attributes>
+      <type>database</type>
+      <type>host</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
     <value>jdbc:mysql://localhost/hive?createDatabaseIfNotExist=true</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
+    <display-name>Database URL</display-name>
     <description>JDBC connect string for a JDBC metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <name>hive_database</name>
+        <type>hive-env</type>
+      </property>
+      <property>
+        <name>ambari.hive.db.schema.name</name>
+        <type>hive-site</type>
+      </property>
+    </depends-on>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionDriverName</name>
     <value>com.mysql.jdbc.Driver</value>
+    <display-name>JDBC Driver Class</display-name>
     <description>Driver class name for a JDBC metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <name>hive_database</name>
+        <type>hive-env</type>
+      </property>
+    </depends-on>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionUserName</name>
     <value>hive</value>
+    <display-name>Database Username</display-name>
     <description>username to use against metastore database</description>
+    <value-attributes>
+      <type>db_user</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property require-input="true">
     <name>javax.jdo.option.ConnectionPassword</name>
     <value> </value>
     <property-type>PASSWORD</property-type>
+    <display-name>Database Password</display-name>
     <description>password to use against metastore database</description>
+    <value-attributes>
+      <type>password</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -78,6 +125,7 @@ limitations under the License.
   <property>
     <name>hive.metastore.uris</name>
     <value>thrift://localhost:9083</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>URI for client to contact metastore server</description>
   </property>
 
@@ -121,6 +169,9 @@ limitations under the License.
     <name>hive.security.authorization.enabled</name>
     <value>false</value>
     <description>enable or disable the hive client authorization</description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -320,9 +371,14 @@ limitations under the License.
   <property>
     <name>hive.server2.thrift.port</name>
     <value>10000</value>
+    <display-name>HiveServer2 Port</display-name>
     <description>
       TCP port number to listen on, default 10000.
     </description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -334,6 +390,9 @@ limitations under the License.
       should use the ZooKeeper ensemble: hive.zookeeper.quorum in their
       connection string.
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -372,4 +431,37 @@ limitations under the License.
       </entries>
     </value-attributes>
   </property>
+
+  <property>
+    <name>atlas.cluster.name</name>
+    <value>primary</value>
+    <depends-on>
+      <property>
+        <type>application-properties</type>
+        <name>atlas.enableTLS</name>
+      </property>
+    </depends-on>
+  </property>
+
+  <property>
+    <name>atlas.rest.address</name>
+    <value>http://localhost:21000</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
+    <depends-on>
+      <property>
+        <type>application-properties</type>
+        <name>atlas.enableTLS</name>
+      </property>
+      <property>
+        <type>application-properties</type>
+        <name>atlas.server.http.port</name>
+      </property>
+      <property>
+        <type>application-properties</type>
+        <name>atlas.server.https.port</name>
+      </property>
+    </depends-on>
+  </property>
+
+
 </configuration>

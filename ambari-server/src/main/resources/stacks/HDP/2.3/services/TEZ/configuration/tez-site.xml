@@ -24,6 +24,9 @@
     <description>AM view ACLs. This allows the specified users/groups to view the status of the AM and all DAGs that run within this AM.
       Value format: Comma separated list of users, followed by whitespace, followed by a comma separated list of groups.
     </description>
+    <value-attributes>
+      <empty-value-valid>true</empty-value-valid>
+    </value-attributes>
   </property>
 
   <property>
@@ -93,6 +96,23 @@
         <name>tez.runtime.sorter.class</name>
       </property>
     </depends-on>
+  </property>
+
+  <property>
+    <name>tez.history.logging.service.class</name>
+    <value>org.apache.tez.dag.history.logging.ats.ATSV15HistoryLoggingService</value>
+  </property>
+
+  <property>
+    <name>tez.counters.max</name>
+    <value>10000</value>
+    <description>The number of allowed counters for the executing DAG</description>
+  </property>
+
+  <property>
+    <name>tez.counters.max.groups</name>
+    <value>3000</value>
+    <description>The number of allowed counter groups for the executing DAG</description>
   </property>
 
 </configuration>

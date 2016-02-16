@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -62,5 +62,9 @@
     <description>
       content for log4j.properties file for the demo LDAP that comes with Knox.
     </description>
+    <value-attributes>
+      <type>content</type>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 </configuration>

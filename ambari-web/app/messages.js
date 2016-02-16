@@ -23,7 +23,12 @@ Em.I18n.translations = {
   'app.name.subtitle.experimental':'Ambari Experimental',
   'app.reloadPopup.link': 'Reload Page',
   'app.reloadPopup.text': 'Trying to connect to server...',
+  'app.reloadPopup.noClusterName.text': 'Failed to retrieve cluster name, trying to reload...',
   'app.reloadPopup.header': 'Reload Page',
+  'app.redirectIssuePopup.header': 'Login Redirect Issue',
+  'app.redirectIssuePopup.body': 'For single sign-on, make sure that Knox Gateway and Ambari Server are located on the same host or subdomain.' +
+    '<br/>Alternatively login as an Ambari local user using the local login page.<br />' +
+    '<a href="{0}" target="_blank">{0}</a>',
 
   'app.loadingPlaceholder': 'Loading...',
   'app.versionMismatchAlert.title': 'Ambari Server / Web Client Version Mismatch',
@@ -38,8 +43,15 @@ Em.I18n.translations = {
   'app.settings':'Settings',
   'app.manageAmbari': 'Manage Ambari',
   'app.aboutAmbari':'About',
+  'app.settings.selectTimezone': 'Timezone',
   'app.settings.notshowBgOperationsPopup': 'Do not show the Background Operations dialog when starting an operation',
   'app.settings.notShowBgOperations': 'Do not show this dialog again when starting a background operation',
+  'app.settings.categories.general': 'General',
+  'app.settings.categories.locale': 'Locale',
+  'app.settings.no.view.privileges': 'No view privileges',
+  'app.settings.no.cluster.privileges': 'No cluster privileges',
+  'app.settings.admin.all.privileges': 'This user is an Ambari Admin and has all privileges.',
+  'app.settings.no.privileges': 'This user does not have any privileges.',
 
   'app.aboutAmbari.getInvolved': 'Get involved!',
   'app.aboutAmbari.version': 'Version',
@@ -121,6 +133,8 @@ Em.I18n.translations = {
   'common.cores': 'Cores',
   'common.cores.cpu': 'Cores (CPU)',
   'common.ram':'RAM',
+  'common.disabled':'Disabled',
+  'common.enabled':'Enabled',
   'common.disk':'Disk',
   'common.diskUsage':'Disk Usage',
   'common.loadAvg':'Load Avg',
@@ -142,6 +156,7 @@ Em.I18n.translations = {
   'common.start':'Start',
   'common.stop':'Stop',
   'common.pause':'Pause',
+  'common.end':'End',
   'common.decommission':'Decommission',
   'common.recommission':'Recommission',
   'common.failure': 'Failure',
@@ -266,12 +281,39 @@ Em.I18n.translations = {
   'common.dataSet': 'Data Set',
   'common.label': 'Label',
   'common.preview': 'Preview',
+  'common.options': 'Options',
   'common.scope': 'Scope',
   'common.clone': 'Clone',
   'common.removed': 'Removed',
   'common.testing': 'Testing',
   'common.noData': 'No Data',
+  'common.export': 'Export',
+  'common.csv': 'CSV',
+  'common.json': 'JSON',
+  'common.timestamp': 'Timestamp',
+  'common.timezone': 'Timezone',
   'common.loading.eclipses': 'Loading...',
+  'common.optional': 'Optional',
+  'common.running': 'Running',
+  'common.stopped': 'Stopped',
+  'common.enter': 'Enter',
+  'common.timeout.warning.popup.header': 'Automatic Logout',
+  'common.timeout.warning.popup.body.before': 'You will be automatically logged out in ',
+  'common.timeout.warning.popup.body.after': ' seconds due to inactivity',
+  'common.timeout.warning.popup.primary': 'Remain Logged In',
+  'common.timeout.warning.popup.secondary': 'Log Out Now',
+  'common.openNewWindow': 'Open in New Window',
+  'common.fullLogPopup.clickToCopy': 'Click to Copy',
+  'common.nothingToDelete': 'Nothing to delete',
+  'common.exclude': 'Exclude',
+  'common.include': 'Include',
+  'common.exclude.short': 'Excl',
+  'common.include.short': 'Incl',
+  'common.filters': 'Filters',
+  'common.keywords': 'Keywods',
+  'common.levels': 'Levels',
+  'common.extension': 'Extension',
+  'common.logs': 'Logs',
 
   'models.alert_instance.tiggered.verbose': "Occurred on {0} <br> Checked on {1}",
   'models.alert_definition.triggered.verbose': "Occurred on {0}",
@@ -281,6 +323,8 @@ Em.I18n.translations = {
   'passiveState.turnOff':'Turn Off Maintenance Mode',
   'passiveState.turnOnFor':'Turn On Maintenance Mode for {0}',
   'passiveState.turnOffFor':'Turn Off Maintenance Mode for {0}',
+  'passiveState.disabled.impliedFromHighLevel':'{0} is already in Maintenance Mode because {1} is in Maintenance Mode.',
+  'passiveState.disabled.impliedFromServiceAndHost':'{0} is already in Maintenance Mode because {1} and {2} are in Maintenance Mode.',
 
   'requestInfo.installComponents':'Install Components',
   'requestInfo.installKerbeorosComponents':'Install Kerberos Components',
@@ -372,6 +416,8 @@ Em.I18n.translations = {
   'popup.dependent.configs.table.initValue': 'Initial value',
   'popup.dependent.configs.table.currentValue': 'Current Value',
   'popup.dependent.configs.table.recommendedValue': 'Recommended Value',
+  'popup.dependent.configs.table.not.defined': 'Not Defined',
+
 
   'popup.dependent.configs.select.config.group.header': 'Select Config Group',
   'popup.dependent.configs.select.config.group': 'Please select to which config group would you like to save dependent properties',
@@ -387,6 +433,7 @@ Em.I18n.translations = {
   'popup.jdkValidation.body': 'The {0} Stack requires JDK {1} but Ambari is configured for JDK {2}. This could result in error or problems with running your cluster.',
 
   'login.header':'Sign in',
+  'login.message.title':'Login Message',
   'login.username':'Username',
   'login.loginButton':'Sign in',
   'login.error.bad.credentials':'Unable to sign in. Invalid username/password combination.',
@@ -431,16 +478,6 @@ Em.I18n.translations = {
   'services.tez.description':'Tez is the next generation Hadoop Query Processing framework written on top of YARN',
   'services.falcon.description': 'Falcon mirroring engine',
   'services.storm.description': 'Apache Hadoop Stream processing framework',
-  'services.storm.slots.metrics.title': 'Number of slots',
-  'services.storm.slots.metrics.free': 'Free slots',
-  'services.storm.slots.metrics.total': 'Total slots',
-  'services.storm.slots.metrics.used': 'Used slots',
-  'services.storm.executors.metrics.title': 'Number of executors',
-  'services.storm.executors.metrics.total': 'Total executors',
-  'services.storm.topology.metrics.title': 'Number of topologies',
-  'services.storm.topology.metrics.total': 'Total topologies',
-  'services.storm.tasks.metrics.title': 'Number of tasks',
-  'services.storm.tasks.metrics.total': 'Total tasks',
   'services.storm.configs.range-plugin-enable.dialog.title': 'Enable Ranger for STORM',
   'services.storm.configs.range-plugin-enable.dialog.message': 'Enabling Ranger plugin for STORM is effective only on a secured cluster.',
 
@@ -480,8 +517,6 @@ Em.I18n.translations = {
   'installer.controls.serviceConfigMultipleHosts.other':'1 other',
   'installer.controls.serviceConfigMultipleHosts.others':'{0} others',
   'installer.controls.serviceConfigMasterHosts.header':'{0} Hosts',
-  'installer.controls.addSlaveComponentGroupButton.title':'Add a {0} Group',
-  'installer.controls.addSlaveComponentGroupButton.content':'If you need different settings on certain {0}s, you can add a {1} group.<br>All {2}s within the same group will have the same set of settings.  You can create multiple groups.',
   'installer.controls.slaveComponentChangeGroupName.error':'group with this name already exist',
 
   'installer.step0.header':'Get Started',
@@ -507,7 +542,9 @@ Em.I18n.translations = {
   'installer.step1.advancedRepo.localRepo.label.baseUrl':'Repository Base URL',
   'installer.step1.advancedRepo.localRepo.label.stack':'Stack',
   'installer.step1.advancedRepo.skipValidation.tooltip':'<b>Warning:</b> This is for advanced users only. Use this option if you want to skip validation for Repository Base URLs.',
+  'installer.step1.advancedRepo.useRedhatSatellite.tooltip':'Disable distributed repositories and use RedHat Satellite/Spacewalk channels instead',
   'installer.step1.advancedRepo.skipValidation.message':'Skip Repository Base URL validation (Advanced)',
+  'installer.step1.advancedRepo.useRedhatSatellite.message': 'Use RedHat Satellite/Spacewalk',
   'installer.step1.attentionNeeded':'<b>Attention:</b> Repository URLs are REQUIRED before you can proceed.',
   'installer.step1.invalidURLAttention': '<b>Attention:</b> Please make sure all repository URLs are valid before proceeding.',
   'installer.step1.checkAtLeastOneAttention': '<b>Attention:</b> Please check at least one repository.',
@@ -571,6 +608,9 @@ Em.I18n.translations = {
   'installer.step2.sshUser.toolTip':'The user account used to install the Ambari Agent on the target host(s) via SSH. This user must be set up with passwordless SSH and sudo access on all the target host(s)',
   'installer.step2.sshUser.placeholder':'Enter user name',
   'installer.step2.sshUser.required':'User name is required',
+  'installer.step2.sshPort':'SSH Port Number',
+  'installer.step2.sshPort.toolTip':'SSH Port Number',
+  'installer.step2.sshPort.required':'SSH Port Number is required.',
   'installer.step2.agentUser':'Ambari Agent User Account',
   'installer.step2.agentUser.toolTip':'The user account used to run the Ambari Agent daemon on the target host(s). This user must be set up with passwordless sudo access on all the target host(s)',
   'installer.step2.bootStrap.error':'Errors were encountered while setting up Ambari Agents on the hosts.',
@@ -725,7 +765,7 @@ Em.I18n.translations = {
   'installer.step4.ambariMetricsCheck.popup.header':'Limited Functionality Warning',
   'installer.step4.ambariMetricsCheck.popup.body':'Ambari Metrics collects metrics from the cluster and makes them available to Ambari.  If you do not install Ambari Metrics service, metrics will not be accessible from Ambari.  Are you sure you want to proceed without Ambari Metrics?',
   'installer.step4.rangerRequirements.popup.header': 'Ranger Requirements',
-  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQLA Server</strong> database instance running to be used by Ranger.</li>' +
+  'installer.step4.rangerRequirements.popup.body.requirements': '<ol><li>You must have an <strong>MySQL/Oracle/Postgres/MSSQL/SQL Anywhere Server</strong> database instance running to be used by Ranger.</li>' +
     '<li>In Assign Masters step of this wizard, you will be prompted to specify which host for the Ranger Admin. On that host, you <strong>must have DB Client installed</strong> for Ranger to access to the database. (Note: This is applicable for only Ranger 0.4.0)</li>' +
     '<li>Ensure that the access for the DB Admin user is enabled in DB server from any host.</li>' +
     '<li>Execute the following command on the Ambari Server host. Replace <code>database-type</code> with <strong>mysql|oracle|postgres|mssql|sqlanywhere</strong> and <code>/jdbc/driver/path</code> based on the location of corresponding JDBC driver:' +
@@ -782,9 +822,9 @@ Em.I18n.translations = {
   'installer.step7.popup.mySQLWarning.confirmation.body': 'You will be brought back to the \"Assign Masters\" step and will lose all your current customizations. Are you sure?',
   'installer.step7.popup.database.connection.header': 'Database Connectivity Warning',
   'installer.step7.popup.database.connection.body': 'You have not run or passed the database connection test for: {0}. It is highly recommended that you pass the connection test before proceeding to prevent failures during deployment.',
-  'installer.step7.popup.validation.failed.header': 'Validation failed.',
+  'installer.step7.popup.validation.failed.header': 'Consistency Check Failed',
   'installer.step7.popup.validation.failed.body': 'Some services are not properly configured. You have to change the highlighted configs according to the recommended values.',
-  'installer.step7.popup.validation.request.failed.body': 'Config validation failed.',
+  'installer.step7.popup.validation.request.failed.body': 'The configuration changes could not be validated for consistency due to an unknown error.  Your changes have not been saved yet.  Would you like to proceed and save the changes?',
   'installer.step7.popup.validation.warning.header': 'Configurations',
   'installer.step7.popup.validation.warning.body': 'Some service configurations are not configured properly. We recommend you review and change the highlighted configuration values. Are you sure you want to proceed without correcting configurations?',
   'installer.step7.popup.oozie.derby.warning': 'Derby is not recommended for production use. With Derby, Oozie Server HA and concurrent connection support will not be available.',
@@ -795,6 +835,13 @@ Em.I18n.translations = {
   'installer.step7.misc.notification.configure.later':'Configure email notifications later',
   'installer.step7.misc.notification.use_tls':'Use TLS',
   'installer.step7.misc.notification.use_ssl':'Use SSL',
+
+  'installer.step7.preInstallChecks':'Pre Install Checks',
+  'installer.step7.preInstallChecks.notRunChecksWarnPopup.header':'Skipping Pre Install Checks',
+  'installer.step7.preInstallChecks.notRunChecksWarnPopup.body':'Skipping Pre Install Checks is not recommended.',
+  'installer.step7.preInstallChecks.notRunChecksWarnPopup.primary':'Ignore and Proceed',
+  'installer.step7.preInstallChecks.notRunChecksWarnPopup.secondary':'Run Pre Install Checks',
+  'installer.step7.preInstallChecks.checksPopup.header':'Pre Install Checks',
 
 
   'installer.step8.header': 'Review',
@@ -812,6 +859,7 @@ Em.I18n.translations = {
   'installer.step9.header':'Install, Start and Test',
   'installer.step9.body':'Please wait while the selected services are installed and started.',
   'installer.step9.status.success':'Successfully installed and started the services.',
+  'installer.step9.status.skipStartSuccess':'Successfully installed the services.',
   'installer.step9.status.warning':'Installed and started the services with some warnings.',
   'installer.step9.status.failed':'Failed to install/start the services.',
   'installer.step9.status.start.services.failed':'Start all services API call failed.',
@@ -870,6 +918,8 @@ Em.I18n.translations = {
   'installer.step9.serviceStatus.abort.completed':' aborted successfully',
   'installer.step9.serviceStatus.abort.failed':' failed to abort',
   'installer.step9.components.install.failed': 'Installation Failure',
+  'installer.step9.service.start.failed': 'There were issues starting installed services. Please go to individual service pages to start them.',
+  'installer.step9.service.start.header': 'Start Services',
 
   'installer.step10.header':'Summary',
   'installer.step10.body':'Here is the summary of the install process.',
@@ -877,7 +927,8 @@ Em.I18n.translations = {
     'services to function properly (for example, HDFS and YARN/MapReduce need to be restarted after adding Oozie). After closing this ' +
     'wizard, please restart all services that have the restart indicator <i class="icon-refresh"></i> next to the service name.',
   'installer.step10.hostsSummary':'The cluster consists of {0} hosts',
-  'installer.step10.servicesSummary':'Installed and started services successfully on {0} new ',
+  'installer.step10.installedAndStarted':'Installed and started services successfully on {0} new ',
+  'installer.step10.installed':'Installed services successfully on {0} new ',
   'installer.step10.warnings':' warnings',
   'installer.step10.clusterState.installing':'Installing ',
   'installer.step10.clusterState.starting':'Starting ',
@@ -888,6 +939,7 @@ Em.I18n.translations = {
   'installer.step10.installStatus.installed':'Master services installed',
   'installer.step10.master.installedOn':'{0} installed on {1}',
   'installer.step10.startStatus.failed':'Starting services failed',
+  'installer.step10.startStatus.skipped':'Starting services skipped',
   'installer.step10.startStatus.passed':'All tests passed',
   'installer.step10.startStatus.started':'All services started',
   'installer.step10.installTime.seconds':'Install and start completed in {0} seconds',
@@ -908,7 +960,6 @@ Em.I18n.translations = {
   'form.validator.configKey':'Invalid Key. Only alphanumerics, hyphens, underscores, asterisks and periods are allowed.',
   'form.validator.configGroupName':'Invalid Group Name. Only alphanumerics, hyphens, spaces and underscores are allowed.',
   'form.validator.alertGroupName':'Invalid Alert Group Name. Only alphanumerics, hyphens, spaces and underscores are allowed.',
-  'form.validator.alertGroupPlaceHolder':'Alert Group Name',
   'form.validator.configKey.specific':'"{0}" is invalid Key. Only alphanumerics, hyphens, underscores, asterisks and periods are allowed.',
   'form.validator.error.trailingSpaces': 'Cannot contain trailing whitespace',
 
@@ -961,7 +1012,7 @@ Em.I18n.translations = {
   'alerts.definition.details.serviceHost': 'Service / Host',
   'alerts.definition.details.24-hour': '24-Hour',
   'alerts.definition.details.notification': 'Notification',
-  'alerts.definition.details.noAlerts': 'No alert instances to show',
+  'alerts.definition.details.noAlerts': 'No alert instances to display',
   'alerts.definition.details.configs.thresholdsErrorMsg': 'Critical threshold should be larger than warning threshold',
 
   'alerts.notifications.error.email': 'Must be a valid email address',
@@ -1011,6 +1062,15 @@ Em.I18n.translations = {
   'admin.authentication.form.test.success':'The configuration passes the test',
   'admin.authentication.form.test.fail':'The configuration fails the test',
 
+
+  'admin.kerberos.credentials.store.hint.supported': 'When checked, Ambari will store the KDC Admin credentials so they are not required to be re-entered during future changes of services, hosts, and components.',
+  'admin.kerberos.credentials.store.hint.not.supported': 'Ambari is not configured for storing credentials',
+  'admin.kerberos.credentials.store.label': 'Save Admin Credentials',
+  'admin.kerberos.credentials.store.menu.label': 'Manage KDC Credentials',
+  'admin.kerberos.credentials.form.header.stored': 'Update or remove the stored KDC Credentials in the encrypted credential store.',
+  'admin.kerberos.credentials.form.header.not.stored': 'Specify the KDC Admin Credentials to remember in the encrypted credential store.',
+  'admin.kerberos.credentials.remove.confirmation.header': 'Remove KDC Credentials Confirmation',
+  'admin.kerberos.credentials.remove.confirmation.body': 'You are about to remove the KDC Credentials from Ambari. Are you sure?',
   'admin.kerberos.wizard.configuration.note': 'This is the initial configuration created by Enable Kerberos wizard.',
   'admin.kerberos.wizard.header':'Enable Kerberos Wizard',
   'admin.kerberos.button.enable': 'Enable Kerberos',
@@ -1086,6 +1146,7 @@ Em.I18n.translations = {
   'admin.kerberos.regenerate_keytabs.checkbox.label': ' Only regenerate keytabs for missing hosts and components',
   'admin.kerberos.regenerate_keytabs.popup.restart.body': 'After keytab regerate is complete, services relying on them <strong>must</strong> be restarted. This can be done automatically, or manually.',
   'admin.kerberos.regenerate_keytabs.checkbox.restart.label': 'Automatically restart components after keytab regeneration',
+  'admin.kerberos.service.alert.yarn': 'YARN log and local dir will be deleted and ResourceManager state will be formatted as part of Enabling/Disabling Kerberos.',
 
   'admin.kerberos.disable.step1.task0.title': 'Stop Services',
   'admin.kerberos.disable.step1.task1.title': 'Unkerberize Cluster',
@@ -1165,10 +1226,12 @@ Em.I18n.translations = {
   'admin.highAvailability.wizard.step9.task0.title':'Start Additional NameNode',
   'admin.highAvailability.wizard.step9.task1.title':'Install Failover Controllers',
   'admin.highAvailability.wizard.step9.task2.title':'Start Failover Controllers',
-  'admin.highAvailability.wizard.step9.task3.title':'Reconfigure HBase',
-  'admin.highAvailability.wizard.step9.task4.title':'Reconfigure Accumulo',
-  'admin.highAvailability.wizard.step9.task5.title':'Delete Secondary NameNode',
-  'admin.highAvailability.wizard.step9.task6.title':'Start All Services',
+  'admin.highAvailability.wizard.step9.task3.title':'Install PXF',
+  'admin.highAvailability.wizard.step9.task4.title':'Reconfigure HBase',
+  'admin.highAvailability.wizard.step9.task5.title':'Reconfigure Accumulo',
+  'admin.highAvailability.wizard.step9.task6.title':'Reconfigure HAWQ',
+  'admin.highAvailability.wizard.step9.task7.title':'Delete Secondary NameNode',
+  'admin.highAvailability.wizard.step9.task8.title':'Start All Services',
   'admin.highAvailability.wizard.step9.notice.completed':'NameNode HA has been enabled successfully.',
 
   'admin.highAvailability.wizard.step3.curNameNode': '<b>Current NameNode:</b> ',
@@ -1182,22 +1245,26 @@ Em.I18n.translations = {
   'admin.highAvailability.step4.save.configuration.note':'This configuration is created by Enable {0} HA wizard',
   'admin.highAvailability.wizard.step6.jsNoInit':'JournalNodes not initialized yet',
   'admin.highAvailability.wizard.step6.jsInit':'JournalNodes initialized',
+  'admin.highAvailability.wizard.step6.jnStopped':'All JournalNodes should be started before initializing',
   'admin.highAvailability.wizard.step8.metaNoInit':'Metadata not initialized yet',
   'admin.highAvailability.wizard.step8.confirmPopup.body':'Please confirm that you have run the manual steps before continuing.',
 
   'admin.highAvailability.rollback.header':'Disable NameNode HA Wizard',
   'admin.highAvailability.rollback.task0.title':'Stop All Services',
   'admin.highAvailability.rollback.task1.title':'Restore HBase Configurations',
-  'admin.highAvailability.rollback.task2.title':'Stop Failover Controllers',
-  'admin.highAvailability.rollback.task3.title':'Delete Failover Controllers',
-  'admin.highAvailability.rollback.task4.title':'Stop Additional NameNode',
-  'admin.highAvailability.rollback.task5.title':'Stop NameNode',
-  'admin.highAvailability.rollback.task6.title':'Restore HDFS Configurations',
-  'admin.highAvailability.rollback.task7.title':'Enable Secondary NameNode',
-  'admin.highAvailability.rollback.task8.title':'Stop JournalNodes',
-  'admin.highAvailability.rollback.task9.title':'Delete JournalNodes',
-  'admin.highAvailability.rollback.task10.title':'Delete Additional NameNode',
-  'admin.highAvailability.rollback.task11.title':'Start All Services',
+  'admin.highAvailability.rollback.task2.title':'Restore Accumulo Configurations',
+  'admin.highAvailability.rollback.task3.title':'Restore HAWQ Configurations',
+  'admin.highAvailability.rollback.task4.title':'Stop Failover Controllers',
+  'admin.highAvailability.rollback.task5.title':'Delete Failover Controllers',
+  'admin.highAvailability.rollback.task6.title':'Delete PXF',
+  'admin.highAvailability.rollback.task7.title':'Stop Additional NameNode',
+  'admin.highAvailability.rollback.task8.title':'Stop NameNode',
+  'admin.highAvailability.rollback.task9.title':'Restore HDFS Configurations',
+  'admin.highAvailability.rollback.task10.title':'Enable Secondary NameNode',
+  'admin.highAvailability.rollback.task11.title':'Stop JournalNodes',
+  'admin.highAvailability.rollback.task12.title':'Delete JournalNodes',
+  'admin.highAvailability.rollback.task13.title':'Delete Additional NameNode',
+  'admin.highAvailability.rollback.task14.title':'Start All Services',
   'admin.highAvailability.rollback.notice.inProgress':'Please wait while the wizard reverts back to the non-HA setup.',
 
   'admin.highAvailability.rollback.step2.body':
@@ -1278,7 +1345,9 @@ Em.I18n.translations = {
   'admin.rm_highAvailability.wizard.step4.task0.title': 'Stop Required Services',
   'admin.rm_highAvailability.wizard.step4.task1.title': 'Install Additional ResourceManager',
   'admin.rm_highAvailability.wizard.step4.task2.title': 'Reconfigure YARN',
-  'admin.rm_highAvailability.wizard.step4.task3.title': 'Start All Services',
+  'admin.rm_highAvailability.wizard.step4.task3.title': 'Reconfigure HAWQ',
+  'admin.rm_highAvailability.wizard.step4.task4.title': 'Reconfigure HDFS',
+  'admin.rm_highAvailability.wizard.step4.task5.title': 'Start All Services',
   'admin.rm_highAvailability.wizard.step4.notice.inProgress':'Please wait while ResourceManager HA is being deployed.',
   'admin.rm_highAvailability.wizard.step4.notice.completed':'ResourceManager HA has been enabled successfully.',
 
@@ -1394,6 +1463,11 @@ Em.I18n.translations = {
   'admin.misc.header': 'Service Users and Groups',
   'admin.misc.nothingToShow': 'No user accounts to display',
 
+  'admin.serviceAutoStart.title': "Service Auto Start",
+  'admin.serviceAutoStart.header': "Service Auto Start Configuration",
+  'admin.serviceAutoStart.header.text': "Ambari services can be configured to start automatically on system boot. Each service can be configured to start all components, masters and workers, or selectively.",
+  'admin.serviceAutoStart.body.text': "Auto-Start Services Enabled",
+
   'admin.stackVersions.filter.notInstalled': "Not Installed ({0})",
   'admin.stackVersions.filter.all': "All ({0})",
   'admin.stackVersions.filter.upgradeReady': "Upgrade Ready ({0})",
@@ -1401,6 +1475,9 @@ Em.I18n.translations = {
   'admin.stackVersions.filter.current': "Current ({0})",
   'admin.stackVersions.filter.upgrading': "Upgrade/Downgrade In Process ({0})",
   'admin.stackVersions.filter.upgraded': "Ready to Finalize ({0})",
+  'admin.stackVersions.upgrade.start.fail.title':'Upgrade could not be started',
+  'admin.stackVersions.upgrade.installPackage.fail.title':'Packages could not be installed',
+  'admin.stackVersions.upgrade.installPackage.fail.timeout':'Request timed out.',
 
   'admin.stackVersions.editRepositories.info': 'Provide Base URLs for the Operating Systems you are configuring. Uncheck all other Operating Systems.',
   'admin.stackVersions.editRepositories.validation.warning': 'Some of the repositories failed validation. Make changes to the base url or skip validation if you are sure that urls are correct',
@@ -1409,6 +1486,7 @@ Em.I18n.translations = {
   'admin.stackVersions.version.hostsTooltip': 'Click to List Hosts',
   'admin.stackVersions.version.emptyHostsTooltip': 'No Hosts to List',
   'admin.stackVersions.version.notInstalled': "Not Installed",
+  'admin.stackVersions.version.hostsInfoTooltip': "There are {0} hosts that do not need packages installed:<li>{1} Maintenance Mode</li><li>{2} Not Required</li>",
   'admin.stackVersions.manageVersions': "Manage Versions",
   'admin.stackVersions.manageVersions.popup.body': 'You are about to leave the <b>Cluster Management</b> interface' +
     ' and go to the <b>Ambari Administration</b> interface. You can return to cluster management by using the' +
@@ -1420,9 +1498,38 @@ Em.I18n.translations = {
   'admin.stackVersions.version.upgrade.notFinalized.warning': "The upgrade has not been finalized yet. After the cluster is verified to be functional, do not forget to finalize the upgrade as soon as possible (within a couple of days is highly recommended) as running the cluster in unfinalized state causes extra resource requirements on HDFS.",
   'admin.stackVersions.version.upgrade.running': "Upgrade: In Process",
   'admin.stackVersions.version.upgrade.aborted': "Upgrade: Aborted",
+  'admin.stackVersions.version.upgrade.suspended': "Upgrade: Paused",
   'admin.stackVersions.version.downgrade.pause': "Downgrade: Action Required",
   'admin.stackVersions.version.downgrade.running': "Downgrade: In Process",
   'admin.stackVersions.version.downgrade.aborted': "Downgrade: Aborted",
+  'admin.stackVersions.version.downgrade.suspended': "Downgrade: Paused",
+  'admin.stackUpgrade.state.paused.fail.header': "Pause Upgrade failed",
+  'admin.stackUpgrade.state.paused.fail.body': "Upgrade could not be paused. Try again later.",
+  'admin.stackDowngrade.state.paused.fail.header': "Pause Downgrade failed",
+  'admin.stackDowngrade.state.paused.fail.body': "Downgrade could not be paused. Try again later.",
+
+  'admin.stackVersions.version.upgrade.upgradeOptions.header': "Upgrade Options",
+  'admin.stackVersions.version.upgrade.upgradeOptions.bodyMsg.version': "You are about to perform an upgrade to <b>{0}</b>.",
+  'admin.stackVersions.version.upgrade.upgradeOptions.bodyMsg.method': "Choose the upgrade method:",
+  'admin.stackVersions.version.upgrade.upgradeOptions.bodyMsg.tolerance': "Select optional upgrade failure tolerance:",
+  'admin.stackVersions.version.upgrade.upgradeOptions.tolerance.option1': "Skip all Slave Component failures",
+  'admin.stackVersions.version.upgrade.upgradeOptions.tolerance.option2': "Skip all Service Check failures",
+  'admin.stackVersions.version.upgrade.upgradeOptions.tolerance.tooltip': "These upgrade failure tolerance options are useful when performing an upgrade on a large cluster and you want to minimize user intervention.",
+  'admin.stackVersions.version.upgrade.upgradeOptions.RU.title': "Rolling Upgrade",
+  'admin.stackVersions.version.upgrade.upgradeOptions.RU.description': "Services remain running while the upgrade is performed. Minimized disruption but slower upgrade.",
+  'admin.stackVersions.version.upgrade.upgradeOptions.EU.title': "Express Upgrade",
+  'admin.stackVersions.version.upgrade.upgradeOptions.EU.description': "Services are stopped while the upgrade is performed. Incurs downtime, but faster upgrade.",
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.rerun':'Rerun Checks',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.title':'Checks:',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.checking': 'Checking...',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.failed.title': 'Check failed',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.failed.link': 'Rerun',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.allPassed':'Passed',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.allPassed.msg':'All checks passed',
+  'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.failed.tooltip':'Option not available',
+  'admin.stackVersions.version.upgrade.upgradeOptions.notAllowed':'Not allowed by the current version',
+  'admin.stackVersions.version.upgrade.upgradeOptions.EU.confirm.msg': 'You are about to perform an <b>Express Upgrade</b> from <b>{0}</b> to <b>{1}</b>. This will incur cluster downtime. Are you sure you want to proceed?',
+  'admin.stackVersions.version.upgrade.upgradeOptions.RU.confirm.msg': 'You are about to perform a <b>Rolling Upgrade</b> from <b>{0}</b> to <b>{1}</b>. Are you sure you want to proceed?',
 
   'admin.stackVersions.hosts.popup.header.current': "Current",
   'admin.stackVersions.hosts.popup.header.installed': "Installed",
@@ -1444,9 +1551,18 @@ Em.I18n.translations = {
     " <b>You cannot go back to the original version once the downgrade is finalized.</b>",
   'admin.stackUpgrade.finalize.message.skippedServiceChecks': "During the upgrade, checks for the following services failed and were skipped:",
   'admin.stackUpgrade.finalize.message.testServices': "You are strongly recommended to test these services before finalizing upgrade.",
+  'admin.stackUpgrade.failedHosts.message': "Upgrade did not succeed on",
+  'admin.stackUpgrade.failedHosts.showHosts': "{0} hosts",
+  'admin.stackUpgrade.failedHosts.options': "Your options:",
+  'admin.stackUpgrade.failedHosts.options.first': "<b>Pause Upgrade</b>, delete the unhealthy hosts and return to the Upgrade Wizard to Proceed.",
+  'admin.stackUpgrade.failedHosts.options.second': "Perform a <b>Downgrade</b>, which will revert all hosts to the previous stack version.",
+  'admin.stackUpgrade.failedHosts.options.third': "Ignore these failures and <b>Proceed</b> for now (reconcile the failures later).",
+  'admin.stackUpgrade.failedHosts.header': "Failed Hosts",
+  'admin.stackUpgrade.failedHosts.subHeader': "Upgrade failed on {0} hosts",
+  'admin.stackUpgrade.failedHosts.details': "Open Details",
   'admin.stackUpgrade.doThisLater': "Do This Later",
   'admin.stackUpgrade.pauseUpgrade': "Pause Upgrade",
-  'admin.stackUpgrade.pauseDowngrade': "Pause Downgrade",  
+  'admin.stackUpgrade.pauseDowngrade': "Pause Downgrade",
   'admin.stackUpgrade.downgrade.proceed': "Proceed with Downgrade",
   'admin.stackUpgrade.downgrade.body': "Are you sure you wish to abort the upgrade process and downgrade to <b>{0}</b>?",
   'admin.stackUpgrade.downgrade.retry.body': "Are you sure you wish to retry downgrade to <b>{0}</b>?",
@@ -1461,7 +1577,7 @@ Em.I18n.translations = {
   'admin.stackUpgrade.state.paused.downgrade': "Downgrade Paused",
   'admin.stackUpgrade.state.aborted.downgrade': "Downgrade Aborted",
   'admin.stackUpgrade.state.completed.downgrade': "Downgrade Finished",
-  'admin.stackUpgrade.dialog.header': "Rolling Upgrade to {0}",
+  'admin.stackUpgrade.dialog.header': "{0} to {1}",
   'admin.stackUpgrade.dialog.downgrade.header': "Downgrade to {0}",
   'admin.stackUpgrade.dialog.operationFailed': "This operation failed.",
   'admin.stackUpgrade.dialog.stop': "Stop Upgrade",
@@ -1470,15 +1586,24 @@ Em.I18n.translations = {
   'admin.stackUpgrade.dialog.inProgress': "Now Running:",
   'admin.stackUpgrade.dialog.keepRunning': "Keep running Upgrade in background",
   'admin.stackUpgrade.dialog.failed': "Failed on:",
+  'admin.stackUpgrade.dialog.manual.slaveComponentFailures.title': "Slave Component Failures",
+  'admin.stackUpgrade.dialog.manual.serviceCheckFailures.title': "Service Check Failures",
+  'admin.stackUpgrade.dialog.manual.serviceCheckFailures.msg1': "The following service checks failed but were skipped:",
+  'admin.stackUpgrade.dialog.manual.serviceCheckFailures.msg2': "You have the option to Pause Upgrade and fix the above issue(s) before proceeding.",
   'admin.stackUpgrade.dialog.manual': "Manual steps required",
   'admin.stackUpgrade.dialog.manualDone': "I have performed the manual steps above.",
   'admin.stackUpgrade.dialog.closeProgress': "Upgrade is in progress. \n If you dismiss this window, Upgrade will keep running in background.",
   'admin.stackUpgrade.dialog.closePause': "Upgrade is paused. \n If you dismiss this window, you can resume Upgrade later.",
   'admin.stackUpgrade.dialog.aborted': "Upgrade is aborted. \n You can either downgrade or retry upgrade.",
   'admin.stackUpgrade.dialog.downgrade.aborted': "Downgrade is aborted. \n You can retry downgrade.",
+  'admin.stackUpgrade.dialog.suspended': "Upgrade is Paused",
+  'admin.stackUpgrade.dialog.suspended.downgrade': "Downgrade is Paused",
+  'admin.stackUpgrade.dialog.resume': "Resume Upgrade",
+  'admin.stackUpgrade.dialog.resume.downgrade': "Resume Downgrade",
   'admin.stackUpgrade.dialog.details.open': "show details",
   'admin.stackUpgrade.dialog.details.hide': "hide details",
   'admin.stackUpgrade.dialog.notActive': "Waiting to execute the next task...",
+  'admin.stackUpgrade.dialog.prepareUpgrade.header': "Preparing the Upgrade...",
   'services.service.start':'Start',
   'services.service.stop':'Stop',
   'services.service.metrics':'Metrics',
@@ -1565,8 +1690,26 @@ Em.I18n.translations = {
   'services.service.actions.run.stopLdapKnox.title':'Stop Demo LDAP Knox Gateway',
   'services.service.actions.run.stopLdapKnox.context':'Stop Demo LDAP',
   'services.service.actions.run.startStopLdapKnox.error': 'Error during remote command: ',
+  'services.service.actions.run.immediateStopHawqCluster.context':'Stop HAWQ Cluster (Immediate Mode)',
+  'services.service.actions.run.immediateStopHawqSegment.label':'Stop (Immediate Mode)',
+  'services.service.actions.run.immediateStopHawqSegment.context':'Stop HAWQ Segment (Immediate Mode)',
   'services.service.actions.manage_configuration_groups.short':'Manage Config Groups',
   'services.service.actions.serviceActions':'Service Actions',
+
+  'services.service.delete.popup.header': 'Delete Service',
+  'services.service.delete.lastService.popup.body': 'The <b>{0}</b> service can\'t be deleted, at least one service must be installed.',
+  'services.service.delete.popup.dependentServices': 'Prior to deleting <b>{0}</b>, you must delete the following dependent services:',
+  'services.service.delete.popup.mustBeStopped': 'Prior to deleting <b>{0}</b>, you must stop the service.',
+  'services.service.delete.popup.mustBeStopped.dependent': ' Along with dependent service <b>{0}</b>.',
+  'services.service.delete.popup.warning': 'The <b>{0} service will be removed from Ambari and all configurations' +
+  ' and configuration history will be lost.</b>',
+  'services.service.delete.popup.warning.dependent': '<b>Note! {0} will be deleted too.</b>',
+  'services.service.confirmDelete.popup.header': 'Confirm Delete',
+  'services.service.confirmDelete.popup.body': 'You must confirm delete of <b>{0}</b> by typing "yes"' +
+  ' in the confirmation box. <b>This operation is not reversible and all configuration history will be lost.</b>',
+
+  'services.service.confirmDelete.popup.body.dependent': 'You must confirm delete of <b>{0}</b> and <b>{1}</b> by typing "yes"' +
+  ' in the confirmation box. <b>This operation is not reversible and all configuration history will be lost.</b>',
   'services.service.summary.unknown':'unknown',
   'services.service.summary.notRunning':'Not Running',
   'services.service.summary.notAvailable':'n/a',
@@ -1715,24 +1858,6 @@ Em.I18n.translations = {
   'services.service.info.metrics.yarn.apps.states.running': 'Running',
   'services.service.info.metrics.yarn.apps.states.submitted': 'Submitted',
 
-  'services.service.info.metrics.kafka.server.brokerTopic.title': 'Broker Topics',
-  'services.service.info.metrics.kafka.server.brokerTopic.displayNames.AllTopicsBytesOutPerSec': 'Bytes Out',
-  'services.service.info.metrics.kafka.server.brokerTopic.displayNames.AllTopicsBytesInPerSec': 'Bytes In',
-  'services.service.info.metrics.kafka.server.brokerTopic.displayNames.AllTopicsMessagesInPerSec': 'Messages In',
-  'services.service.info.metrics.kafka.server.ReplicaManager.title': 'Replica Manager',
-  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.PartitionCount': 'Partiotions count',
-  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.UnderReplicatedPartitions': 'Under Replicated Partiotions',
-  'services.service.info.metrics.kafka.server.ReplicaManager.displayNames.LeaderCount': 'Leader Count',
-  'services.service.info.metrics.kafka.controller.ControllerStats.title': 'Controller Status',
-  'services.service.info.metrics.kafka.controller.ControllerStats.displayNames.LeaderElectionRateAndTimeMs': 'Leader Election Rate And Time',
-  'services.service.info.metrics.kafka.controller.ControllerStats.displayNames.UncleanLeaderElectionsPerSec': 'Unclean Leader Election',
-  'services.service.info.metrics.kafka.controller.KafkaController.title': 'Active Controller Count',
-  'services.service.info.metrics.kafka.controller.KafkaController.displayNames.ActiveControllerCount': 'Active Controller Count',
-  'services.service.info.metrics.kafka.log.LogFlushStats.title': 'Log Flush Status',
-  'services.service.info.metrics.kafka.log.LogFlushStats.displayNames.LogFlushRateAndTimeMs': 'Log Flush Rate amd Time',
-  'services.service.info.metrics.kafka.server.ReplicaFetcherManager.title': 'Replica MaxLag',
-  'services.service.info.metrics.kafka.server.ReplicaFetcherManager.displayNames.Replica-MaxLag': 'Replica MaxLag',
-
   'services.service.info.menu.summary':'Summary',
   'services.service.info.menu.configs':'Configs',
   'services.service.info.menu.heatmaps':'Heatmaps',
@@ -1741,6 +1866,7 @@ Em.I18n.translations = {
 
   'services.service.config.nothing.to.display': 'No properties to display.',
   'services.service.config.final':'Final',
+  'services.service.config.password.additionalDescription': 'For security purposes, password changes will not be shown in configuration version comparisons',
   'services.service.config.saved':'Save Configuration Changes',
   'services.service.config.notSaved':'Unable to Save Configuration Changes',
   'services.service.config.restartService.TooltipMessage':'<b>Restart Service</b><br>Stale configuration used by {0} components on {1} hosts:{2}',
@@ -1785,9 +1911,7 @@ Em.I18n.translations = {
   'services.service.config.database.msg.jdbcSetup': 'Be sure you have run:<br/>' +
     '<b>ambari-server setup --jdbc-db={0} --jdbc-driver=/path/to/{0}/{1}</b> ' +
     'on the Ambari Server host to make the JDBC driver available and to enable testing the database connection.',
-
   'services.service.config.configHistory.configGroup': 'Config Group',
-  'services.service.config.configHistory.configGroup.name': 'Config Group Name',
   'services.service.config.configHistory.rightArrow.tooltip': 'Show earlier versions',
   'services.service.config.configHistory.leftArrow.tooltip': 'Show later versions',
   'services.service.config.configHistory.dismissIcon.tooltip': 'Dismiss',
@@ -1802,8 +1926,11 @@ Em.I18n.translations = {
   'services.service.add':'Add Service',
   'services.service.startAll':'Start All',
   'services.service.stopAll':'Stop All',
+  'services.service.restartAllRequired':'Restart All Required',
   'services.service.startAll.confirmMsg' : 'You are about to start all services',
   'services.service.stopAll.confirmMsg' : 'You are about to stop all services',
+  'services.service.refreshAll.confirmMsg': '<p>You are about to restart {0}</p>' +
+    '<div class="alert alert-warning">This will trigger alerts as the service is restarted. To suppress alerts, turn on Maintenance Mode for services listed above prior to running Restart All Required</div>',
   'services.service.start.confirmMsg' : 'You are about to start {0}',
   'services.service.stop.confirmMsg' : 'You are about to stop {0}',
   'services.service.stop.confirmButton': 'Confirm Stop',
@@ -1813,6 +1940,16 @@ Em.I18n.translations = {
   'services.service.restartAll.confirmButton': 'Confirm Restart All',
   'services.service.restartAll.confirmMsg': 'You are about to restart {0}',
   'services.service.restartAll.warningMsg.turnOnMM': 'This will trigger alerts as the service is restarted. To suppress alerts, turn on Maintenance Mode for {0} prior to running restart all',
+  'services.service.stop.HDFS.warningMsg.checkPointNA': 'Could not determine the age of the last HDFS checkpoint. Please ensure that you have a recent checkpoint. Otherwise, the NameNode(s) can take a very long time to start up.',
+  'services.service.stop.HDFS.warningMsg.checkPointTooOld.instructions':
+    '<br><ol>' +
+    '<li>Login to the NameNode host <b>{0}</b>.</li>' +
+    '<li>Put the NameNode in Safe Mode (read-only mode):' +
+    '<div class="code-snippet">sudo su {1} -l -c \'hdfs dfsadmin -safemode enter\'</div></li>' +
+    '<li>Once in Safe Mode, create a Checkpoint:' +
+    '<div class="code-snippet">sudo su {1} -l -c \'hdfs dfsadmin -saveNamespace\'</div></li>' +
+    '</ol>',
+  'services.service.stop.HDFS.warningMsg.checkPointTooOld': 'The last HDFS checkpoint is older than {0} hours. Make sure that you have taken a checkpoint before proceeding. Otherwise, the NameNode(s) can take a very long time to start up.',
   'services.service.config_groups_popup.header':'Manage {0} Configuration Groups',
   'services.service.config_groups_popup.notice':'You can apply different sets of {{serviceName}} configurations to groups of hosts by managing {{serviceName}} Configuration Groups and their host membership.  Hosts belonging to a {{serviceName}} Configuration Group have the same set of configurations for {{serviceName}}. Each host belongs to one {{serviceName}} Configuration Group.',
   'services.service.config_groups_popup.rename':'Rename',
@@ -1868,6 +2005,7 @@ Em.I18n.translations = {
   'services.reassign.step4.tasks.configureMySqlServer.title':'Configure MYSQL Server',
   'services.reassign.step4.tasks.startMySqlServer.title':'Start MYSQL Server',
   'services.reassign.step4.tasks.restartMySqlServer.title':'Restart MYSQL Server',
+  'services.reassign.step4.tasks.startServices.title':'Start Services',
   'services.reassign.step4.tasks.testDBConnection.title':'Test DB Connection',
   'services.reassign.step4.tasks.testDBConnection.tooltip':'Database Host: {0}\n' +
   'Database Type: {1}\n' +
@@ -1958,10 +2096,10 @@ Em.I18n.translations = {
     '</div>',
   'services.reassign.step5.body.app_timeline_server': '<div class="alert alert-info">' +
   '<ol>' +
-  '<li>Copy <b>/hadoop/yarn/timeline/leveldb-timeline-store.ldb</b> from the source host <b>{1}</b> to <b>/hadoop/yarn/timeline/leveldb-timeline-store.ldb</b> on the target host <b>{2}</b>.</li>' +
+  '<li>Copy <b>{7}/leveldb-timeline-store.ldb</b> from the source host <b>{1}</b> to <b>{7}/leveldb-timeline-store.ldb</b> on the target host <b>{2}</b>.</li>' +
   '<li>Login to the target host <b>{2}</b> and change permissions by running:' +
-  '<div class="code-snippet">chown -R {3}:{5} /hadoop/yarn/timeline/leveldb-timeline-store.ldb</div></li>' +
-  '<div class="code-snippet">chmod -R 700 /hadoop/yarn/timeline/leveldb-timeline-store.ldb</div></li>' +
+  '<div class="code-snippet">chown -R {3}:{5} {7}/leveldb-timeline-store.ldb</div></li>' +
+  '<div class="code-snippet">chmod -R 700 {7}/leveldb-timeline-store.ldb</div></li>' +
   '</ol>' +
   '</div>',
   'services.reassign.step5.body.securityNotice': '<div class="alert alert-info"> <div class="alert alert-warn"> <strong>Note: </strong> Secure cluster' +
@@ -2107,6 +2245,7 @@ Em.I18n.translations = {
   'hosts.table.menu.l1.allHosts':'All Hosts',
   'hosts.table.menu.l2.allComponents':'All Components',
   'hosts.table.menu.l2.restartAllComponents':'Restart All Components',
+  'hosts.table.menu.l2.reinstallFailedComponents':'Reinstall Failed Components',
 
   'hosts.bulkOperation.confirmation.header':'Confirm Bulk Operation',
   'hosts.bulkOperation.confirmation.hosts':'Are you sure you want to <strong>{0}</strong> on the following {1} hosts?',
@@ -2122,6 +2261,8 @@ Em.I18n.translations = {
   'hosts.selectHostsDialog.message.warning': 'At least one host needs to be selected.',
 
   'hosts.host.serviceNotAvailable': 'Service not available on this host',
+
+  'hosts.host.menu.logs': 'Logs',
 
   'hosts.host.menu.stackVersions': 'Versions',
   'hosts.host.stackVersions.table.allVersions': 'All Versions',
@@ -2175,6 +2316,7 @@ Em.I18n.translations = {
   'hosts.host.summary.hostname':'Hostname',
   'hosts.host.summary.agentHeartbeat':'Heartbeat',
   'hosts.host.summary.hostMetrics':'Host Metrics',
+  'hosts.host.summary.hostLogMetrics':'Host Log Metrics',
   'hosts.host.summary.addComponent':'Add Component',
   'hosts.host.summary.currentVersion':'Current Version',
 
@@ -2194,14 +2336,14 @@ Em.I18n.translations = {
   'host.host.componentFilter.slave':'Slave Components',
   'host.host.componentFilter.client':'Client Components',
   'hosts.host.deleteComponent.popup.msg1':'Are you sure you want to delete {0}?',
-  'hosts.host.deleteComponent.popup.deleteZooKeeperServer':'Deleting <i>ZooKeeper Server</i> may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
+  'hosts.host.deleteComponent.popup.deleteZooKeeperServer':'Deleting <i>ZooKeeper Server</i> may reconfigure such properties:<ul><li>zookeeper.connect</li><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li><li>storm.zookeeper.servers</li><li>instance.zookeeper.host</li></ul>',
   'hosts.host.deleteComponent.popup.deleteRangerKMSServer': 'Deleting <i>Ranger KMS Server</i> may reconfigure such properties:<ul><li>hadoop.security.key.provider.path</li><li>dfs.encryption.key.provider.uri</li>',
   'hosts.host.deleteComponent.popup.warning':'<b>WARNING!</b> Delete the last <i>{0}</i> component in the cluster?</br>Deleting the last component in the cluster could result in permanent loss of service data.',
   'hosts.host.deleteComponent.popup.confirm':'Confirm Delete',
   'hosts.host.installComponent.popup.confirm':'Confirm Install',
   'hosts.host.installComponent.msg':'Are you sure you want to install {0}?',
   'hosts.host.addComponent.msg':'Are you sure you want to add {0}?',
-  'hosts.host.addComponent.ZOOKEEPER_SERVER':'Adding ZooKeeper Server may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
+  'hosts.host.addComponent.ZOOKEEPER_SERVER':'Adding ZooKeeper Server may reconfigure such properties:<ul><li>zookeeper.connect</li><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li><li>storm.zookeeper.servers</li><li>instance.zookeeper.host</li></ul>',
   'hosts.host.addComponent.NIMBUS': 'Adding Nimbus will reconfigure <b>nimbus.seeds</b>, <b>topology.min.replication.count</b>, <b>topology.max.replication.wait.time.sec</b> properties if they are defined.',
   'hosts.host.addComponent.RANGER_KMS_SERVER': 'Adding Ranger KMS Server may reconfigure such properties:<ul><li>hadoop.security.key.provider.path</li><li>dfs.encryption.key.provider.uri</li>',
   'hosts.host.addComponent.deleteHostWithZooKeeper':'Deleting host with ZooKeeper Server may reconfigure such properties:<ul><li>ha.zookeeper.quorum</li><li>hbase.zookeeper.quorum</li><li>templeton.zookeeper.hosts</li><li>yarn.resourcemanager.zk-address</li><li>hive.zookeeper.quorum</li><li>hive.cluster.delegation.token.store.zookeeper.connectString</li></ul>',
@@ -2230,7 +2372,9 @@ Em.I18n.translations = {
   'hosts.host.decommissioned':'Decommissioned',
   'hosts.host.decommissioning':'Decommissioning',
   'hosts.host.addComponent.HIVE_METASTORE':'Adding <i>Hive Metastore</i> will reconfigure such properties:<ul><li>hive.metastore.uris</li><li>templeton.hive.properties</li></ul>',
+  'hosts.host.addComponent.WEBHCAT_SERVER':'Adding <i>WebHCat Server</i> will reconfigure such properties:<ul><li>hive.metastore.uris</li><li>templeton.hive.properties</li></ul>',
   'hosts.host.deleteComponent.popup.deleteHiveMetastore':'Deleting <i>Hive Metastore</i> will reconfigure such properties:<ul><li>hive.metastore.uris</li><li>templeton.hive.properties</li></ul>',
+  'hosts.host.deleteComponent.popup.deleteWebHCatServer':'Deleting <i>WebHCat Server</i> will reconfigure such properties:<ul><li>hive.metastore.uris</li><li>templeton.hive.properties</li></ul>',
   'hosts.host.configs.save.note': 'This configuration is created by ambari while installing/deleting {0} component on a host',
 
   'hosts.component.passive.implied.host.mode.tooltip':'Cannot Turn Off Maintenance Mode because Host is in Maintenance Mode',
@@ -2252,6 +2396,7 @@ Em.I18n.translations = {
   'hosts.host.maintainance.allComponents.context': 'All Host Components',
   'hosts.host.maintainance.stopAllComponents.context': 'Stop All Host Components',
   'hosts.host.maintainance.startAllComponents.context': 'Start All Host Components',
+  'hosts.host.maintainance.reinstallFailedComponents.context': 'Reinstall Failed Components',
   'hosts.host.alerts.st':'&nbsp;!&nbsp;',
   'hosts.decommission.popup.body':'Are you sure?',
   'hosts.decommission.popup.header':'Confirmation',
@@ -2279,6 +2424,8 @@ Em.I18n.translations = {
   'hosts.add.exit.body':'Do you really want to exit Add Host Wizard?',
   'hosts.assignRack':'Assign Rack',
   'hosts.passiveMode.popup':'Are you sure you want to <b>Turn {0} Maintenance Mode</b> for {1}?',
+  'hosts.passiveMode.popup.version.mismatch': '{0} has components from a stack which is not current. Before bringing this host out of maintenance mode, it is recommended that you upgrade its components to {1}',
+  'hosts.passiveMode.popup.version.mismatch.multiple': 'Some hosts have components from a stack which is not current. Before bringing these hosts out of maintenance mode, it is recommended that you upgrade their components to {0}',
 
   'charts.horizon.chart.showText':'show',
   'charts.horizon.chart.hideText':'hide',
@@ -2326,7 +2473,7 @@ Em.I18n.translations = {
   'dashboard.button.switch': 'Switch to classic dashboard',
   'dashboard.button.switchShort': 'Switch',
   'dashboard.button.reset': 'Reset all widgets to default ',
-  'dashboard.button.gangliaLink': 'View metrics in Ganglia',
+  'dashboard.widgets.actions.title': 'Metric Actions',
   'dashboard.widgets.create': 'Create Widget',
   'dashboard.widgets.actions.browse': 'Browse Widgets',
   'dashboard.widgets.layout.import': 'Import a layout',
@@ -2405,7 +2552,7 @@ Em.I18n.translations = {
   'dashboard.services.hdfs.capacity':'HDFS Disk Usage',
   'dashboard.services.hdfs.capacity.dfsUsed':'Disk Usage (DFS Used)',
   'dashboard.services.hdfs.capacity.nonDfsUsed':'Disk Usage (Non DFS Used)',
-  'dashboard.services.hdfs.capacity.remaining':'Disk Usage (Remaining)',
+  'dashboard.services.hdfs.capacity.remaining':'Disk Remaining',
   'dashboard.services.hdfs.capacityUsed':'{0} / {1} ({2}%)',
   'dashboard.services.hdfs.totalFilesAndDirs':'Total Files + Directories',
   'dashboard.services.hdfs.datanodes':'DataNodes',
@@ -2522,6 +2669,8 @@ Em.I18n.translations = {
   'dashboard.configHistory.info-bar.save.popup.title': 'Save Configuration',
   'dashboard.configHistory.info-bar.makeCurrent.popup.title': 'Make Current Confirmation',
   'dashboard.configHistory.info-bar.save.popup.placeholder': 'What did you change?',
+  'dashboard.configHistory.info-bar.save.popup.warningForPasswordChange': 'This configuration change includes a password change. The password change will be saved but for security purposes, password changes will not be shown in configuration version comparisons.',
+  'dashboard.configHistory.info-bar.save.popup.notesForPasswordChange': 'Password change',
   'dashboard.configHistory.info-bar.revert.button': 'Make Current',
   'dashboard.configHistory.info-bar.revert.versionButton': 'Make {0} Current',
   'dashboard.configHistory.info-bar.view.button.disabled': 'You are currently viewing this version.',
@@ -2542,6 +2691,7 @@ Em.I18n.translations = {
   'tableView.filters.clearAllFilters': 'clear filters',
   'tableView.filters.showAll': 'Show All',
   'tableView.filters.filteredConfigVersionInfo': '{0} of {1} versions showing',
+  'tableView.filters.filteredAlertInstancesInfo': '{0} of {1} instances showing',
 
   'rollingrestart.dialog.title': 'Restart {0}s',
   'rollingrestart.dialog.primary': 'Trigger Rolling Restart',
@@ -2558,7 +2708,7 @@ Em.I18n.translations = {
   'rollingrestart.dialog.err.invalid.batchsize': 'Invalid restart batch size: {0}',
   'rollingrestart.dialog.err.invalid.waitTime': 'Invalid wait time between batches: {0}',
   'rollingrestart.dialog.err.invalid.toleratesize': 'Invalid failure toleration count: {0}',
-  'rollingrestart.dialog.warn.datanode.batch.size': 'Restarting more than one DataNode at a time is not recommended. Doing so can lead to data unavailability and/or possible loss of data being actively written to HFDS.',
+  'rollingrestart.dialog.warn.datanode.batch.size': 'Restarting more than one DataNode at a time is not recommended. Doing so can lead to data unavailability and/or possible loss of data being actively written to HDFS.',
   'rollingrestart.dialog.msg.serviceNotInMM':'Note: This will trigger alerts. To suppress alerts, turn on Maintenance Mode for {0} prior to triggering a rolling restart',
   'rollingrestart.dialog.msg.staleConfigsOnly': 'Only restart {0}s with stale configs',
   'rollingrestart.rest.context': 'Rolling Restart of {0}s - batch {1} of {2}',
@@ -2647,12 +2797,24 @@ Em.I18n.translations = {
   'jobs.error.400': 'Unable to load data.',
   'jobs.table.custom.date.am':'AM',
   'jobs.table.custom.date.pm':'PM',
-  'jobs.table.custom.date.header':'Select Custom Dates',
+  'jobs.table.custom.date.header':'Select Time Range',
   'jobs.table.job.fail':'Job failed to run',
   'jobs.customDateFilter.error.required':'This field is required',
+  'jobs.customDateFilter.error.incorrect':'Date is incorrect',
+  'jobs.customDateFilter.error.laterThanNow':'The specified time is in the future',
   'jobs.customDateFilter.error.date.order':'End Date must be after Start Date',
   'jobs.customDateFilter.startTime':'Start Time',
   'jobs.customDateFilter.endTime':'End Time',
+  'jobs.customDateFilter.duration.15min':'15 minutes',
+  'jobs.customDateFilter.duration.30min':'30 minutes',
+  'jobs.customDateFilter.duration.1hr':'1 hour',
+  'jobs.customDateFilter.duration.2hr':'2 hours',
+  'jobs.customDateFilter.duration.4hr':'4 hours',
+  'jobs.customDateFilter.duration.12hr':'12 hours',
+  'jobs.customDateFilter.duration.24hr':'24 hours',
+  'jobs.customDateFilter.duration.1w':'1 week',
+  'jobs.customDateFilter.duration.1m':'1 month',
+  'jobs.customDateFilter.duration.1yr':'1 year',
 
   'views.main.yourViews': 'Your Views',
   'views.main.noViews': 'No views',
@@ -2670,7 +2832,9 @@ Em.I18n.translations = {
   'common.combobox.dropdown.issues': 'Show property issues',
   'common.combobox.dropdown.warnings': 'Show property warnings',
 
-  'quick.links.error.label': 'Hostname is undefined',
+  'quick.links.error.quicklinks.unavailable.label': 'Quick Links are not available',
+  'quick.links.error.nohosts.label': 'Failed to obtain host information for {0}',
+  'quick.links.error.oozie.label': 'Quick Links are not available. Make sure Oozie server is running.',
   'quick.links.publicHostName': '{0} ({1})',
   'quick.links.label.active': 'Active',
   'quick.links.label.standby': 'Standby',
@@ -2701,5 +2865,76 @@ Em.I18n.translations = {
 
   'utils.ajax.errorMessage': 'Error message',
   'utils.ajax.defaultErrorPopupBody.message': 'received on {0} method for API: {1}',
-  'utils.ajax.defaultErrorPopupBody.statusCode': '{0} status code'
+  'utils.ajax.defaultErrorPopupBody.statusCode': '{0} status code',
+
+  'wizard.inProgress': '{0} in Progress',
+
+  'alerts.instance.fullLogPopup.header': 'Instance Response',
+  'admin.addHawqStandby.button.enable': 'Add HAWQ Standby Master',
+  'admin.addHawqStandby.closePopup':'Add HAWQ Standby Master Wizard is in progress. You must allow the wizard to' +
+      ' complete for Ambari to be in usable state. If you choose to quit, you must follow documented manual' +
+  ' instructions to complete or reverting adding HAWQ Standby Master. Are you sure you want to exit the wizard?',
+  'admin.addHawqStandby.wizard.header': 'Add HAWQ Standby Master Wizard',
+  'admin.addHawqStandby.wizard.step1.header': 'Get Started',
+  'admin.addHawqStandby.wizard.step1.body':'This wizard will walk you through adding a HAWQ Standby Master to your cluster.<br/>' +
+      'Once added, you will be running a HAWQ Standby Master in addition to the current HAWQ Master.<br/>' +
+      'This allows for Active-Standby HAWQ configuration that can be used to perform a manual failover.<br/><br/>' +
+      '<b>You should plan a cluster maintenance window and prepare for cluster downtime when adding HAWQ Standby' +
+      ' Master. HAWQ cluster will be stopped and started during the process. </b><br/><br/>',
+  'admin.addHawqStandby.wizard.step2.header': 'Select Host',
+  'admin.addHawqStandby.wizard.step2.body': 'Select a host that will be running the HAWQ Standby Master',
+  'admin.addHawqStandby.wizard.step3.header': 'Review',
+  'admin.addHawqStandby.wizard.step3.configs_changes': 'Review Configuration Changes.',
+  'admin.addHawqStandby.wizard.step3.confirm.host.body':'<b>Confirm your host selections.</b>',
+  'admin.addHawqStandby.wizard.step3.confirm.config.body':'<div class="alert alert-info">' +
+      '<b>Review Configuration Changes.</b></br>' +
+      'The following lists the configuration changes that will be made by the Wizard to add HAWQ Standby Master. This information is for <b> review only </b> and is not editable.' +
+      '</div>',
+  'admin.addHawqStandby.wizard.step3.hawqMaster': 'Current HAWQ Master',
+  'admin.addHawqStandby.wizard.step3.newHawqStandby': 'New HAWQ Standby Master',
+  'admin.addHawqStandby.wizard.step3.confirm.dataDir.title': 'HAWQ Standby Master Directory Confirmation',
+  'admin.addHawqStandby.wizard.step3.confirm.dataDir.body': 'Please confirm that the HAWQ data directory <b>{0}</b> on the Standby Master <b>{1}</b> does not exist or is empty.</br>If there is pre-existing data then HAWQ Standby will get initialized with stale data.',
+  'admin.addHawqStandby.step4.save.configuration.note': 'This configuration is created by Add HAWQ Standby wizard',
+  'admin.addHawqStandby.wizard.step4.header': 'Configure Components',
+  'admin.addHawqStandby.wizard.step4.task0.title': 'Stop HAWQ Service',
+  'admin.addHawqStandby.wizard.step4.task1.title': 'Install HAWQ Standby Master',
+  'admin.addHawqStandby.wizard.step4.task2.title': 'Reconfigure HAWQ',
+  'admin.addHawqStandby.wizard.step4.task3.title': 'Start HAWQ Service',
+  'admin.addHawqStandby.wizard.step4.notice.inProgress':'Please wait while HAWQ Standby Master is being deployed.',
+  'admin.addHawqStandby.wizard.step4.notice.completed':'HAWQ Standby Master has been added successfully.',
+  'admin.activateHawqStandby.button.enable': 'Activate HAWQ Standby',
+  'admin.activateHawqStandby.wizard.header': 'Activate HAWQ Standby Wizard',
+  'admin.activateHawqStandby.wizard.step1.header': 'Get Started',
+  'admin.activateHawqStandby.wizard.step1.body':'This wizard will walk you through activating HAWQ Standby.' +
+      '<br/>Once activated, HAWQ Standby will become HAWQ Master, and the previous HAWQ master will be removed. ' +
+      'Users will be able to connect to HAWQ database using the new HAWQ Master.' +
+      '<br/><br/><b>You should plan a cluster maintenance window and prepare for cluster downtime when ' +
+      'activating HAWQ Standby. During this operation, HAWQ service will be stopped and started.</b>' +
+      '<br/><br/>Note: In order to add standby for HAWQ service, you can use the "Add HAWQ Standby"</b> wizard.',
+  'admin.activateHawqStandby.wizard.step2.header': 'Review',
+  'admin.highAvailability.wizard.step2.toBeDeleted': 'TO BE DELETED',
+  'admin.activateHawqStandby.wizard.step2.hawqMaster': '<b>Current HAWQ Master:</b>',
+  'admin.activateHawqStandby.wizard.step2.hawqStandby': '<b>New HAWQ Master:</b>',
+  'admin.activateHawqStandby.wizard.step2.toBeActivated': 'STANDBY TO BE ACTIVATED',
+  'admin.activateHawqStandby.wizard.step2.confirm.config.body':'<div class="alert alert-info">' +
+      '<b>Review Configuration Changes.</b></br>The following lists the configuration changes that will be ' +
+      'made by the Wizard to activate HAWQ Standby Master. This information is for <b> review only </b> and is not' +
+      ' editable.<br/><br/><b>Note:</b> hawq_standby_address_host property will be removed from hawq-site.xml as ' +
+      'HAWQ Standby will be activated to HAWQ Master.</div>',
+  'admin.activateHawqStandby.wizard.step2.confirm.host.body':'<b>Review HAWQ Master & Standby role changes.</b>',
+  'admin.activateHawqStandby.wizard.step2.confirmPopup.body': 'Do you wish to continue with activating HAWQ Standy? Please confirm, before proceeding as you will not be able to rollback from Ambari.',
+  'admin.activateHawqStandby.wizard.step3.header': 'Finalize Setup',
+  'admin.activateHawqStandby.wizard.step3.task0.title': 'Activate HAWQ Standby',
+  'admin.activateHawqStandby.wizard.step3.task1.title': 'Stop HAWQ Service',
+  'admin.activateHawqStandby.wizard.step3.task2.title': 'Reconfigure HAWQ',
+  'admin.activateHawqStandby.wizard.step3.task3.title': 'Install Role: New HAWQ Master',
+  'admin.activateHawqStandby.wizard.step3.task4.title': 'Delete Role: Old HAWQ Master',
+  'admin.activateHawqStandby.wizard.step3.task5.title': 'Delete Role: Old HAWQ Standby',
+  'admin.activateHawqStandby.wizard.step3.task6.title': 'Start HAWQ Service',
+  'admin.activateHawqStandby.closePopup':'Activate HAWQ Standby Wizard is in progress. You must allow the wizard to' +
+      ' complete for Ambari to be in usable state. If you choose to quit, you must follow manual instructions to' +
+      ' get back to a stable state. Are you sure you want to exit the wizard?',
+  'admin.activateHawqStandby.wizard.step3.notice.inProgress':'Please wait while HAWQ Standby is being activated',
+  'admin.activateHawqStandby.wizard.step3.notice.completed':'HAWQ Standby has been activated successfully.',
+  'admin.activateHawqStandby.wizard.step3.activateHawqStandbyCommand.context': "Execute HAWQ Standby activate command"
 };

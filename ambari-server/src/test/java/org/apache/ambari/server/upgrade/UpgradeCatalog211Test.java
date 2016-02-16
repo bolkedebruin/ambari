@@ -18,13 +18,6 @@
 
 package org.apache.ambari.server.upgrade;
 
-import static org.easymock.EasyMock.anyBoolean;
-import static org.easymock.EasyMock.anyLong;
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.expectLastCall;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.sql.Connection;
@@ -33,6 +26,7 @@ import java.sql.Statement;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.persistence.EntityManager;
 
@@ -41,7 +35,6 @@ import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.configuration.Configuration.DatabaseType;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.ConfigurationRequest;
-import org.apache.ambari.server.controller.ConfigurationResponse;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
@@ -62,6 +55,12 @@ import com.google.inject.Injector;
 import com.google.inject.Module;
 import com.google.inject.Provider;
 import com.google.inject.persist.PersistService;
+
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.newCapture;
 
 
 /**
@@ -90,8 +89,17 @@ public class UpgradeCatalog211Test extends EasyMockSupport {
       expectLastCall().andReturn(statement).anyTimes();
       statement.executeQuery("SELECT COUNT(*) from ambari_sequences where sequence_name='hostcomponentstate_id_seq'");
       expectLastCall().andReturn(resultSet).atLeastOnce();
+
+      ResultSet rs1 = createNiceMock(ResultSet.class);
+      expect(rs1.next()).andReturn(Boolean.TRUE).once();
+
       statement.executeQuery(anyObject(String.class));
-      expectLastCall().andReturn(resultSet).anyTimes();
+      expectLastCall().andReturn(rs1).anyTimes();
+
+      Capture<String> queryCapture = new Capture<String>();
+      dbAccessor.executeQuery(capture(queryCapture));
+      expectLastCall().once();
+
       dbAccessor.setColumnNullable("viewinstanceproperty", "value", true);
       expectLastCall().once();
       dbAccessor.setColumnNullable("viewinstancedata", "value", true);
@@ -112,8 +120,15 @@ public class UpgradeCatalog211Test extends EasyMockSupport {
       f.setAccessible(true);
       f.set(upgradeCatalog, configuration);
 
+      f = UpgradeCatalog211.class.getDeclaredField("m_hcsId");
+      f.setAccessible(true);
+      f.set(upgradeCatalog, new AtomicLong(1001));
+
       upgradeCatalog.executeDDLUpdates();
       verifyAll();
+
+      Assert.assertTrue(queryCapture.hasCaptured());
+      Assert.assertTrue(queryCapture.getValue().contains("1001"));
 
       // Verify sections
       // Example: alertSectionDDL.verify(dbAccessor);
@@ -245,8 +260,16 @@ public class UpgradeCatalog211Test extends EasyMockSupport {
         .once();
 
     Capture<ConfigurationRequest> captureCR = new Capture<ConfigurationRequest>();
-    expect(controller.createConfiguration(capture(captureCR)))
-        .andReturn(createNiceMock(ConfigurationResponse.class))
+    Capture<Cluster> clusterCapture = newCapture();
+    Capture<String> typeCapture = newCapture();
+    Capture<Map> propertiesCapture = newCapture();
+    Capture<String> tagCapture = newCapture();
+    Capture<Map> attributesCapture = newCapture();
+
+
+    expect(controller.createConfig(capture(clusterCapture), capture(typeCapture),
+        capture(propertiesCapture), capture(tagCapture), capture(attributesCapture) ))
+        .andReturn(createNiceMock(Config.class))
         .once();
 
     /* ****
@@ -259,10 +282,7 @@ public class UpgradeCatalog211Test extends EasyMockSupport {
 
     verifyAll();
 
-    ConfigurationRequest capturedCR = captureCR.getValue();
-    Assert.assertNotNull(capturedCR);
-
-    Map<String, String> capturedCRProperties = capturedCR.getProperties();
+    Map<String, String> capturedCRProperties = propertiesCapture.getValue();
     Assert.assertNotNull(capturedCRProperties);
     Assert.assertFalse(capturedCRProperties.containsKey("create_attributes_template"));
     Assert.assertTrue(capturedCRProperties.containsKey("ad_create_attributes_template"));

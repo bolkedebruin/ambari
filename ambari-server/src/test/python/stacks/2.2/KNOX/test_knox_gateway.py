@@ -39,30 +39,45 @@ class TestKnoxGateway(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
-    self.assertResourceCalled('Directory', '/var/lib/knox/data',
+    self.assertResourceCalled('Directory', '/usr/hdp/current/knox-server/data/',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/var/log/knox',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/var/run/knox',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/usr/hdp/current/knox-server/conf',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/usr/hdp/current/knox-server/conf/topologies',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
 
     self.assertResourceCalled('XmlConfig', 'gateway-site.xml',
@@ -84,24 +99,19 @@ class TestKnoxGateway(RMFTestCase):
                               owner = 'knox',
                               content = InlineTemplate(self.getConfig()['configurations']['topology']['content'])
     )
-    self.assertResourceCalled('Execute', ('chown',
-     '-R',
-     'knox:knox',
-     '/var/lib/knox/data',
-     '/var/log/knox',
-     '/var/run/knox',
-     '/usr/hdp/current/knox-server/conf',
-     '/usr/hdp/current/knox-server/conf/topologies'),
-        sudo = True,
+    self.assertResourceCalled('File', '/usr/hdp/current/knox-server/conf/topologies/admin.xml',
+                              group='knox',
+                              owner = 'knox',
+                              content = InlineTemplate(self.getConfig()['configurations']['admin-topology']['content'])
     )
     self.assertResourceCalled('Execute', '/usr/hdp/current/knox-server/bin/knoxcli.sh create-master --master sa',
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
-        not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /var/lib/knox/data/security/master'",
+        not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /usr/hdp/current/knox-server/data/security/master'",
         user = 'knox',
     )
     self.assertResourceCalled('Execute', '/usr/hdp/current/knox-server/bin/knoxcli.sh create-cert --hostname c6401.ambari.apache.org',
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
-        not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /var/lib/knox/data/security/keystores/gateway.jks'",
+        not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /usr/hdp/current/knox-server/data/security/keystores/gateway.jks'",
         user = 'knox',
     )
     self.assertResourceCalled('File', '/usr/hdp/current/knox-server/conf/ldap-log4j.properties',
@@ -221,7 +231,7 @@ class TestKnoxGateway(RMFTestCase):
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
 
   @patch("os.path.isdir")
-  def test_pre_rolling_restart(self, isdir_mock):
+  def test_pre_upgrade_restart(self, isdir_mock):
     isdir_mock.return_value = True
     config_file = self.get_src_folder()+"/test/python/stacks/2.2/configs/knox_upgrade.json"
     with open(config_file, "r") as f:
@@ -231,7 +241,7 @@ class TestKnoxGateway(RMFTestCase):
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/knox_gateway.py",
                        classname = "KnoxGateway",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
@@ -240,15 +250,15 @@ class TestKnoxGateway(RMFTestCase):
      '-zcvhf',
      '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
      '/usr/hdp/current/knox-server/conf/'),
-        sudo = True,
+        sudo = True, tries = 3, try_sleep = 1,
     )
     self.assertResourceCalled('Execute', ('tar',
      '-zcvhf',
      '/tmp/knox-upgrade-backup/knox-data-backup.tar',
      '/var/lib/knox/data'),
-        sudo = True,
+        sudo = True, tries = 3, try_sleep = 1,
     )
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'knox-server', '2.2.1.0-3242'),
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', '2.2.1.0-3242'),
         sudo = True,
     )
     self.assertNoMoreResources()
@@ -257,12 +267,15 @@ class TestKnoxGateway(RMFTestCase):
   @patch("os.path.exists")
   @patch("os.path.isdir")
   @patch("resource_management.core.shell.call")
-  def test_pre_rolling_restart_23(self, call_mock, isdir_mock, path_exists_mock, remove_mock):
+  def test_pre_upgrade_restart_to_hdp_2300(self, call_mock, isdir_mock, path_exists_mock, remove_mock):
+    """
+    In HDP 2.3.0.0, Knox was using a data dir of /var/lib/knox/data
+    """
     isdir_mock.return_value = True
     config_file = self.get_src_folder()+"/test/python/stacks/2.2/configs/knox_upgrade.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
-    version = '2.3.0.0-1234'
+    version = "2.3.0.0-1234"
     json_content['commandParams']['version'] = version
 
     path_exists_mock.return_value = True
@@ -270,26 +283,168 @@ class TestKnoxGateway(RMFTestCase):
 
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/knox_gateway.py",
                        classname = "KnoxGateway",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
-                       call_mocks = [(0, None), (0, None)],
+                       call_mocks = [(0, None, ''), (0, None)],
                        mocks_dict = mocks_dict)
 
     self.assertResourceCalled('Execute', ('tar',
      '-zcvhf',
      '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
      '/usr/hdp/current/knox-server/conf/'),
-        sudo = True,
+        sudo = True,  tries = 3, try_sleep = 1,
     )
     self.assertResourceCalled('Execute', ('tar',
      '-zcvhf',
      '/tmp/knox-upgrade-backup/knox-data-backup.tar',
      '/var/lib/knox/data'),
+        sudo = True,  tries = 3, try_sleep = 1,
+    )
+    self.assertResourceCalledIgnoreEarlier('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', version),sudo = True)
+    self.assertResourceCalled('Execute', ('cp',
+     '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
+     '/usr/hdp/current/knox-server/conf/knox-conf-backup.tar'),
         sudo = True,
     )
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'knox-server', '2.3.0.0-1234'),
+    self.assertResourceCalled('Execute', ('tar',
+     '-xvf',
+     '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
+     '-C',
+     '/usr/hdp/current/knox-server/conf/'),
+        sudo = True,  tries = 3, try_sleep = 1,
+    )
+    self.assertResourceCalled('File', '/usr/hdp/current/knox-server/conf/knox-conf-backup.tar',
+        action = ['delete'],
+    )
+    self.assertNoMoreResources()
+
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
+    self.assertEquals(
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+       mocks_dict['call'].call_args_list[0][0][0])
+
+  @patch("os.remove")
+  @patch("os.path.exists")
+  @patch("os.path.isdir")
+  @patch("resource_management.core.shell.call")
+  def test_pre_upgrade_restart_from_hdp_2300_to_2320(self, call_mock, isdir_mock, path_exists_mock, remove_mock):
+    """
+    In RU from HDP 2.3.0.0 to 2.3.2.0, should backup the data dir used by the source version, which
+    is /var/lib/knox/data
+    """
+    isdir_mock.return_value = True
+    config_file = self.get_src_folder()+"/test/python/stacks/2.2/configs/knox_upgrade.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    source_version = "2.3.0.0-1234"
+    version = "2.3.2.0-5678"
+    # This is an RU from 2.3.0.0 to 2.3.2.0
+    json_content['commandParams']['version'] = version
+    json_content['hostLevelParams']['current_version'] = source_version
+
+    path_exists_mock.return_value = True
+    mocks_dict = {}
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/knox_gateway.py",
+                       classname = "KnoxGateway",
+                       command = "pre_upgrade_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None, ''), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled('Execute', ('tar',
+     '-zcvhf',
+     '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
+     '/usr/hdp/current/knox-server/conf/'),
+        sudo = True,  tries = 3, try_sleep = 1,
+    )
+    self.assertResourceCalled('Execute', ('tar',
+     '-zcvhf',
+     '/tmp/knox-upgrade-backup/knox-data-backup.tar',
+     '/var/lib/knox/data'),
+        sudo = True, tries = 3, try_sleep = 1,
+    )
+    self.assertResourceCalledIgnoreEarlier('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', version),sudo = True)
+    self.assertResourceCalled('Execute', ('cp',
+     '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
+     '/usr/hdp/current/knox-server/conf/knox-conf-backup.tar'),
+        sudo = True,
+    )
+    self.assertResourceCalled('Execute', ('tar',
+     '-xvf',
+     '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
+     '-C',
+     '/usr/hdp/current/knox-server/conf/'),
+        sudo = True, tries = 3, try_sleep = 1,
+    )
+    self.assertResourceCalled('File', '/usr/hdp/current/knox-server/conf/knox-conf-backup.tar',
+        action = ['delete'],
+    )
+    self.assertNoMoreResources()
+
+    self.assertEquals(1, mocks_dict['call'].call_count)
+    self.assertEquals(1, mocks_dict['checked_call'].call_count)
+    self.assertEquals(
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+       mocks_dict['checked_call'].call_args_list[0][0][0])
+    self.assertEquals(
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
+       mocks_dict['call'].call_args_list[0][0][0])
+
+  @patch("os.remove")
+  @patch("os.path.exists")
+  @patch("os.path.isdir")
+  @patch("resource_management.core.shell.call")
+  def test_pre_upgrade_restart_from_hdp_2320(self, call_mock, isdir_mock, path_exists_mock, remove_mock):
+    """
+    In RU from HDP 2.3.2 to anything higher, should backup the data dir used by the source version, which
+    is /var/lib/knox/data_${source_version}
+    """
+    isdir_mock.return_value = True
+    config_file = self.get_src_folder()+"/test/python/stacks/2.2/configs/knox_upgrade.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    source_version = "2.3.2.0-1000"
+    version = "2.3.2.0-1001"
+    # This is an RU from 2.3.2.0 to 2.3.2.1
+    json_content['commandParams']['version'] = version
+    json_content['hostLevelParams']['current_version'] = source_version
+
+    path_exists_mock.return_value = True
+    mocks_dict = {}
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/knox_gateway.py",
+                       classname = "KnoxGateway",
+                       command = "pre_upgrade_restart",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES,
+                       call_mocks = [(0, None, ''), (0, None)],
+                       mocks_dict = mocks_dict)
+
+    self.assertResourceCalled('Execute', ('tar',
+     '-zcvhf',
+     '/tmp/knox-upgrade-backup/knox-conf-backup.tar',
+     '/usr/hdp/current/knox-server/conf/'),
+        sudo = True,  tries = 3, try_sleep = 1,
+    )
+    self.assertResourceCalled('Execute', ('tar',
+     '-zcvhf',
+     '/tmp/knox-upgrade-backup/knox-data-backup.tar',
+     "/usr/hdp/%s/knox/data" % source_version),
+        sudo = True,  tries = 3, try_sleep = 1,
+    )
+
+    '''
+    self.assertResourceCalled('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'knox-server', version),
         sudo = True,
     )
     self.assertResourceCalled('Execute', ('cp',
@@ -312,11 +467,12 @@ class TestKnoxGateway(RMFTestCase):
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'knox', '--stack-version', version, '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
+    '''
 
   @patch("os.path.islink")
   def test_start_default(self, islink_mock):
@@ -330,30 +486,45 @@ class TestKnoxGateway(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
 
-    self.assertResourceCalled('Directory', '/var/lib/knox/data',
+    self.assertResourceCalled('Directory', '/usr/hdp/current/knox-server/data/',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/var/log/knox',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/var/run/knox',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/usr/hdp/current/knox-server/conf',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
     self.assertResourceCalled('Directory', '/usr/hdp/current/knox-server/conf/topologies',
                               owner = 'knox',
                               group = 'knox',
-                              recursive = True
+                              create_parents = True,
+                              mode = 0755,
+                              cd_access = "a",
+                              recursive_ownership = True,
     )
 
     self.assertResourceCalled('XmlConfig', 'gateway-site.xml',
@@ -375,23 +546,19 @@ class TestKnoxGateway(RMFTestCase):
                               owner = 'knox',
                               content = InlineTemplate(self.getConfig()['configurations']['topology']['content'])
     )
-    self.assertResourceCalled('Execute', ('chown',
-                                          '-R',
-                                          'knox:knox',
-                                          '/var/lib/knox/data',
-                                          '/var/log/knox',
-                                          '/var/run/knox',
-                                          '/usr/hdp/current/knox-server/conf', '/usr/hdp/current/knox-server/conf/topologies'),
-                              sudo = True,
-                              )
+    self.assertResourceCalled('File', '/usr/hdp/current/knox-server/conf/topologies/admin.xml',
+                              group='knox',
+                              owner = 'knox',
+                              content = InlineTemplate(self.getConfig()['configurations']['admin-topology']['content'])
+    )
     self.assertResourceCalled('Execute', '/usr/hdp/current/knox-server/bin/knoxcli.sh create-master --master sa',
                               environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
-                              not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /var/lib/knox/data/security/master'",
+                              not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /usr/hdp/current/knox-server/data/security/master'",
                               user = 'knox',
                               )
     self.assertResourceCalled('Execute', '/usr/hdp/current/knox-server/bin/knoxcli.sh create-cert --hostname c6401.ambari.apache.org',
                               environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
-                              not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /var/lib/knox/data/security/keystores/gateway.jks'",
+                              not_if = "ambari-sudo.sh su knox -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]test -f /usr/hdp/current/knox-server/data/security/keystores/gateway.jks'",
                               user = 'knox',
                               )
     self.assertResourceCalled('File', '/usr/hdp/current/knox-server/conf/ldap-log4j.properties',
@@ -409,6 +576,14 @@ class TestKnoxGateway(RMFTestCase):
     self.assertResourceCalled('Link', '/usr/hdp/current/knox-server/pids',
         to = '/var/run/knox',
     )
+    self.assertResourceCalled('Directory', '/var/log/knox',
+                              owner = 'knox',
+                              mode = 0755,
+                              group = 'knox',
+                              create_parents = True,
+                              cd_access = 'a',
+                              recursive_ownership = True,
+                              )
     self.assertResourceCalled("Execute", "/usr/hdp/current/knox-server/bin/gateway.sh start",
                               environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
                               not_if = u'ls /var/run/knox/gateway.pid >/dev/null 2>&1 && ps -p `cat /var/run/knox/gateway.pid` >/dev/null 2>&1',

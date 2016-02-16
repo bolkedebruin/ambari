@@ -55,7 +55,26 @@ App.Router = Em.Router.extend({
   isFwdNavigation: true,
   backBtnForHigherStep: false,
   transitionInProgress: false,
+  nextBtnClickInProgress: false,
 
+  /**
+   * Path for local login page. This page will be always accessible without
+   * redirect to auth server different from ambari-server. Used in some types of
+   * authorizations like knox sso.
+   *
+   * @type {string}
+   */
+  localUserAuthUrl: '/login/local',
+
+  /**
+   * LocalStorage property <code>redirectsCount</code> from <code>tmp</code> namespace
+   * will be incremented by each redirect action performed by UI and reset on success login.
+   * <code>redirectsLimitCount</code> determines maximum redirect tries. When redirects count overflow
+   * then something goes wrong and we have to inform user about the problem.
+   *
+   * @type {number}
+   */
+  redirectsLimitCount: 0,
 
   /**
    * Is true, if cluster.provisioning_state is equal to 'INSTALLED'
@@ -112,17 +131,17 @@ App.Router = Em.Router.extend({
    * @param wizardType one of <code>installer</code>, <code>addHost</code>, <code>addServices</code>
    */
   getWizardCurrentStep: function (wizardType) {
-    var loginName = this.getLoginName();
     var currentStep = App.db.getWizardCurrentStep(wizardType);
-    console.log('getWizardCurrentStep: loginName=' + loginName + ", currentStep=" + currentStep);
     if (!currentStep) {
       currentStep = wizardType === 'installer' ? '0' : '1';
     }
-    console.log('returning currentStep=' + currentStep);
     return currentStep;
   },
 
-  loggedIn: !!App.db.getAuthenticated(),
+  /**
+   * @type {boolean}
+   */
+  loggedIn: App.db.getAuthenticated(),
 
   loginName: function() {
     return this.getLoginName();
@@ -140,7 +159,7 @@ App.Router = Em.Router.extend({
     }).complete(function (xhr) {
       if (xhr.isResolved()) {
         // if server knows the user and user authenticated by UI
-        if (auth && auth === true) {
+        if (auth) {
           dfd.resolve(self.get('loggedIn'));
           // if server knows the user but UI don't, check the response header
           // and try to authorize
@@ -160,6 +179,10 @@ App.Router = Em.Router.extend({
           self.setAuthenticated(false);
           dfd.resolve(false);
         }
+      } else {
+        //if provisioning state unreachable then consider user as unauthenticated
+        self.setAuthenticated(false);
+        dfd.resolve(false);
       }
     });
     return dfd.promise();
@@ -181,16 +204,31 @@ App.Router = Em.Router.extend({
     }
   },
 
+  /**
+
+   * If authentication failed, need to check for jwt auth url
+   * and redirect user if current location is not <code>localUserAuthUrl</code>
+   *
+   * @param {?object} data
+   */
   onAuthenticationError: function (data) {
     if (data.status === 403) {
+      try {
+        var responseJson = JSON.parse(data.responseText);
+        if (responseJson.jwtProviderUrl && this.get('location.lastSetURL') !== this.get('localUserAuthUrl')) {
+          this.redirectByURL(responseJson.jwtProviderUrl + encodeURIComponent(this.getCurrentLocationUrl()));
+        }
+      } catch (e) {
+      } finally {
+        this.setAuthenticated(false);
+      }
+    } else if (data.status >= 500) {
       this.setAuthenticated(false);
-    } else {
-      console.log('error in getAuthenticated');
+      this.loginErrorCallback(data);
     }
   },
 
   setAuthenticated: function (authenticated) {
-    console.log("TRACE: Entering router:setAuthenticated function");
     App.db.setAuthenticated(authenticated);
     this.set('loggedIn', authenticated);
   },
@@ -223,6 +261,7 @@ App.Router = Em.Router.extend({
     this.setAuthenticated(true);
     this.setLoginName(userName);
     this.setUser(App.User.find().findProperty('id', userName));
+    App.db.set('tmp', 'redirectsCount', 0);
   },
 
   /**
@@ -236,7 +275,7 @@ App.Router = Em.Router.extend({
 
   login: function () {
     var controller = this.get('loginController');
-    var loginName = controller.get('loginName').toLowerCase();
+    var loginName = controller.get('loginName');
     controller.set('loginName', loginName);
     var hash = misc.utf8ToB64(loginName + ":" + controller.get('password'));
     var usr = '';
@@ -269,98 +308,186 @@ App.Router = Em.Router.extend({
   },
 
   loginSuccessCallback: function(data, opt, params) {
-    console.log('login success');
+    var self = this;
+    App.router.set('loginController.isSubmitDisabled', false);
     App.usersMapper.map({"items": [data]});
     this.setUserLoggedIn(decodeURIComponent(params.loginName));
     var requestData = {
       loginName: params.loginName,
       loginData: data
     };
-    // no need to load cluster data if it's already loaded
-    if (this.get('clusterData')) {
-      this.loginGetClustersSuccessCallback(this.get('clusterData'), {}, requestData);
-    }
-    else {
+    App.router.get('clusterController').loadAuthorizations().complete(function() {
       App.ajax.send({
-        name: 'router.login.clusters',
-        sender: this,
+        name: 'router.login.message',
+        sender: self,
         data: requestData,
-        success: 'loginGetClustersSuccessCallback'
+        success: 'showLoginMessage',
+        error: 'showLoginMessage'
       });
-    }
+    });
   },
 
-  loginErrorCallback: function(request, ajaxOptions, error, opt) {
+  loginErrorCallback: function(request) {
     var controller = this.get('loginController');
-    console.log("login error: " + error);
     this.setAuthenticated(false);
-    if (request.status == 403) {
+    if (request.status > 400) {
       var responseMessage = request.responseText;
       try{
         responseMessage = JSON.parse(request.responseText).message;
       }catch(e){}
+    }
+    if (request.status == 403) {
       controller.postLogin(true, false, responseMessage);
+    } else if (request.status == 500) {
+      controller.postLogin(false, false, responseMessage);
     } else {
       controller.postLogin(false, false, null);
     }
 
   },
 
-  loginGetClustersSuccessCallback: function (clustersData, opt, params) {
-    var loginController = this.get('loginController');
-    var loginData = params.loginData;
-    var privileges = loginData.privileges || [];
-    var router = this;
-    var permissionList = privileges.mapProperty('PrivilegeInfo.permission_name');
-      var isAdmin = permissionList.contains('AMBARI.ADMIN');
-      var transitionToApp = false;
-      if (isAdmin) {
-        App.set('isAdmin', true);
-        if (clustersData.items.length) {
-          router.setClusterInstalled(clustersData);
-          transitionToApp = true;
-        } else {
-          App.ajax.send({
-            name: 'ambari.service.load_server_version',
-            sender: this,
-            success: 'adminViewInfoSuccessCallback'
-          });
+  /**
+   * success callback of router.login.message
+   * @param {object} data
+   * @param {object} opt
+   * @param {object} params
+   */
+  showLoginMessage: function (data, opt, params){
+    try {
+      var response = JSON.parse(data.Settings.content.replace(/\n/g, "\\n"))
+    } catch (e) {
+      this.setClusterData(data, opt, params);
+      return false;
+    }
+
+    var
+      text = response.text ? response.text : "",
+      buttonText = response.button ? response.button : Em.I18n.t('ok'),
+      status = response.status && response.status == "true" ? true : false,
+      self = this;
+
+    if(text && status){
+      return App.ModalPopup.show({
+        classNames: ['sixty-percent-width-modal'],
+        header: Em.I18n.t('login.message.title'),
+        bodyClass: Ember.View.extend({
+          template: Ember.Handlebars.compile(text)
+        }),
+        primary: buttonText,
+        secondary: null,
+
+        onPrimary: function () {
+          self.setClusterData(data, opt, params);
+          this.hide();
+        },
+        onClose: function () {
+          self.setClusterData(data, opt, params);
+          this.hide();
+        },
+        didInsertElement: function () {
+          this.fitHeight();
         }
-      } else {
-        if (clustersData.items.length) {
-          router.setClusterInstalled(clustersData);
-          //TODO: Iterate over clusters
-          var clusterName = clustersData.items[0].Clusters.cluster_name;
-          var clusterPermissions = privileges.filterProperty('PrivilegeInfo.cluster_name', clusterName).mapProperty('PrivilegeInfo.permission_name');
-          if (clusterPermissions.contains('CLUSTER.OPERATE')) {
-            App.setProperties({
-              isAdmin: true,
-              isOperator: true
-            });
-            transitionToApp = true;
-          } else if (clusterPermissions.contains('CLUSTER.READ')) {
-            transitionToApp = true;
-          }
-        }
-      }
-      App.set('isPermissionDataLoaded', true);
-      if (transitionToApp) {
-        if (!Em.isNone(router.get('preferedPath')) &&
-            router.get('preferedPath') != "#/login") {
-          window.location = router.get('preferedPath');
-          router.set('preferedPath', null);
-        } else {
-          router.getSection(function (route) {
-            router.transitionTo(route);
-            loginController.postLogin(true, true);
-          });
-        }
-      } else {
-        App.router.get('mainViewsController').loadAmbariViews();
-        router.transitionTo('main.views.index');
-        loginController.postLogin(true,true);
-      }
+      });
+    }
   },
+
+  setClusterData: function (data, opt, params) {
+    var
+      self = this,
+      requestData = {
+        loginName: params.loginName,
+        loginData: data
+      };
+    // no need to load cluster data if it's already loaded
+    if (this.get('clusterData')) {
+      this.loginGetClustersSuccessCallback(self.get('clusterData'), {}, requestData);
+    }
+    else {
+      App.ajax.send({
+        name: 'router.login.clusters',
+        sender: self,
+        data: requestData,
+        success: 'loginGetClustersSuccessCallback'
+      });
+    }
+  },
+
+
+  /**
+   * success callback of login request
+   * @param {object} clustersData
+   * @param {object} opt
+   * @param {object} params
+   */
+  loginGetClustersSuccessCallback: function (clustersData, opt, params) {
+    var privileges = params.loginData.privileges || [];
+    var router = this;
+    var isAdmin = privileges.mapProperty('PrivilegeInfo.permission_name').contains('AMBARI.ADMINISTRATOR');
+
+    App.set('isAdmin', isAdmin);
+
+    if (clustersData.items.length) {
+      var clusterPermissions = privileges.
+        filterProperty('PrivilegeInfo.cluster_name', clustersData.items[0].Clusters.cluster_name).
+        mapProperty('PrivilegeInfo.permission_name');
+
+      //cluster installed
+      router.setClusterInstalled(clustersData);
+      if (clusterPermissions.contains('CLUSTER.ADMINISTRATOR')) {
+        App.setProperties({
+          isAdmin: true,
+          isOperator: true
+        });
+      }
+      if (App.get('isOnlyViewUser')) {
+        router.transitionToViews();
+      } else {
+        router.transitionToApp();
+      }
+    } else {
+      if (App.get('isOnlyViewUser')) {
+        router.transitionToViews();
+      } else {
+        router.transitionToAdminView();
+      }
+    }
+    App.set('isPermissionDataLoaded', true);
+    App.router.get('userSettingsController').dataLoading();
+  },
+
+  /**
+   * redirect user to Admin View
+   * @returns {$.ajax}
+   */
+  transitionToAdminView: function() {
+    return App.ajax.send({
+      name: 'ambari.service.load_server_version',
+      sender: this,
+      success: 'adminViewInfoSuccessCallback',
+      error: 'adminViewInfoErrorCallback'
+    });
+  },
+
+  /**
+   * redirect user to application Dashboard
+   */
+  transitionToApp: function () {
+    var router = this;
+    if (!router.restorePreferedPath()) {
+      router.getSection(function (route) {
+        router.transitionTo(route);
+      });
+    }
+  },
+
+  /**
+   * redirect user to application Views
+   */
+  transitionToViews: function() {
+    App.router.get('mainViewsController').loadAmbariViews();
+    this.transitionTo('main.views.index');
+  },
+
   adminViewInfoSuccessCallback: function(data) {
     var components = Em.get(data,'components');
     if (Em.isArray(components)) {
@@ -375,6 +502,10 @@ App.Router = Em.Router.extend({
     }
   },
 
+  adminViewInfoErrorCallback: function() {
+    this.transitionToViews();
+  },
+
   getSection: function (callback) {
     if (App.get('testMode')) {
       if (App.alwaysGoToInstaller) {
@@ -384,26 +515,28 @@ App.Router = Em.Router.extend({
       }
     } else {
       if (this.get('clusterInstallCompleted')) {
-        App.clusterStatus.updateFromServer(false).complete(function () {
-          var route = 'main.dashboard.index';
-          var clusterStatusOnServer = App.clusterStatus.get('value');
-          if (clusterStatusOnServer) {
-            var wizardControllerRoutes = require('data/controller_route');
-            var wizardControllerRoute =  wizardControllerRoutes.findProperty('wizardControllerName', clusterStatusOnServer.wizardControllerName);
-            if (wizardControllerRoute) {
-              route =  wizardControllerRoute.route;
+        App.router.get('wizardWatcherController').getUser().complete(function() {
+          App.clusterStatus.updateFromServer(false).complete(function () {
+            var route = 'main.dashboard.index';
+            var clusterStatusOnServer = App.clusterStatus.get('value');
+            if (clusterStatusOnServer) {
+              var wizardControllerRoutes = require('data/controller_route');
+              var wizardControllerRoute =  wizardControllerRoutes.findProperty('wizardControllerName', clusterStatusOnServer.wizardControllerName);
+              if (wizardControllerRoute && !App.router.get('wizardWatcherController').get('isNonWizardUser')) {
+                route = wizardControllerRoute.route;
+              }
             }
-          }
-          if (wizardControllerRoute && wizardControllerRoute.wizardControllerName === 'mainAdminStackAndUpgradeController')  {
-            var clusterController =   App.router.get('clusterController');
-            clusterController.loadClusterName().done(function(){
-              clusterController.restoreUpgradeState().done(function(){
-                callback(route);
+            if (wizardControllerRoute && wizardControllerRoute.wizardControllerName === 'mainAdminStackAndUpgradeController')  {
+              var clusterController =   App.router.get('clusterController');
+              clusterController.loadClusterName().done(function(){
+                clusterController.restoreUpgradeState().done(function(){
+                  callback(route);
+                });
               });
-            });
-          } else {
-            callback(route);
-          }
+            } else {
+              callback(route);
+            }
+          });
         });
       } else {
         callback('installer');
@@ -422,12 +555,12 @@ App.Router = Em.Router.extend({
     App.db.cleanUp();
     App.setProperties({
       isAdmin: false,
+      auth: null,
       isOperator: false,
       isPermissionDataLoaded: false
     });
     this.set('loggedIn', false);
     this.clearAllSteps();
-    console.log("Log off: " + App.router.getClusterName());
     this.set('loginController.loginName', '');
     this.set('loginController.password', '');
     // When logOff is called by Sign Out button, context contains event object. As it is only case we should send logoff request, we are checking context below.
@@ -446,13 +579,12 @@ App.Router = Em.Router.extend({
   },
 
   logOffSuccessCallback: function () {
-    console.log("invoked logout on the server successfully");
     var applicationController = App.router.get('applicationController');
     applicationController.set('isPollerRunning', false);
   },
 
   logOffErrorCallback: function () {
-    console.log("failed to invoke logout on the server");
+
   },
 
   /**
@@ -469,6 +601,44 @@ App.Router = Em.Router.extend({
   },
 
   /**
+   * save prefered path
+   * @param {string} path
+   * @param {string} key
+   */
+  savePreferedPath: function(path, key) {
+    if (key) {
+      if (path.contains(key)) {
+        this.set('preferedPath', path.slice(path.indexOf(key) + key.length));
+      }
+    } else {
+      this.set('preferedPath', path);
+    }
+  },
+
+  /**
+   * If path exist route to it, otherwise return false
+   * @returns {boolean}
+   */
+  restorePreferedPath: function() {
+    var preferredPath = this.get('preferedPath');
+    var isRestored = false;
+
+    if (preferredPath) {
+      // If the preferred path is relative, allow a redirect to it.
+      // If the path is not relative, silently ignore it - if the path is an absolute URL, the user
+      // may be routed to a different server where the possibility exists for a phishing attack.
+      if ((preferredPath.startsWith('/') || preferredPath.startsWith('#')) && !preferredPath.contains('#/login')) {
+        window.location = preferredPath;
+        isRestored = true;
+      }
+      // Unset preferedPath
+      this.set('preferedPath', null);
+    }
+
+    return isRestored;
+  },
+
+  /**
    * initialize isAdmin if user is administrator
    */
   initAdmin: function(){
@@ -477,7 +647,6 @@ App.Router = Em.Router.extend({
       if (user) {
         if (user.admin) {
           App.set('isAdmin', true);
-          console.log('Administrator logged in');
         }
         if (user.operator) {
           App.set('isOperator', true);
@@ -485,6 +654,81 @@ App.Router = Em.Router.extend({
         App.set('isPermissionDataLoaded', true);
       }
     }
+  },
+
+  /**
+   * initialize Auth for user
+   */
+  initAuth: function(){
+    if (App.db) {
+      var auth = App.db.getAuth();
+      if(auth)
+        App.set('auth', auth);
+    }
+  },
+
+  /**
+   * Increment redirect count if <code>redirected</code> parameter passed.
+   */
+  handleUIRedirect: function() {
+    if (/(\?|&)redirected=/.test(location.hash)) {
+      var redirectsCount = App.db.get('tmp', 'redirectsCount') || 0;
+      App.db.set('tmp', 'redirectsCount', ++redirectsCount);
+    }
+  },
+
+  /**
+   * <code>window.location</code> setter. Will add query param which determines that we redirect user
+   * @param {string} url - url to navigate
+   */
+  redirectByURL: function(url) {
+    var suffix = "?redirected=true";
+    var redirectsCount = App.db.get('tmp', 'redirectsCount') || 0;
+    if (redirectsCount > this.get('redirectsLimitCount')) {
+      this.showRedirectIssue();
+      return;
+    }
+    // skip adding redirected parameter if added
+    if (/(\?|&)redirected=/.test(location.hash)) {
+      this.setLocationUrl(url);
+      return;
+    }
+    // detect if query params were assigned and replace "?" with "&" for suffix param
+    if (/\?\w+=/.test(location.hash)) {
+      suffix = suffix.replace('?', '&');
+    }
+    this.setLocationUrl(url + suffix);
+  },
+
+  /**
+   * Convenient method to set <code>window.location</code>.
+   * Useful for faking url manipulation in tests.
+   *
+   * @param {string} url
+   */
+  setLocationUrl: function(url) {
+    window.location = url;
+  },
+
+  /**
+   * Convenient method to get current <code>window.location</code>.
+   * Useful for faking url manipulation in tests.
+   */
+  getCurrentLocationUrl: function() {
+    return window.location.href;
+  },
+
+  /**
+   * Inform user about redirect issue in modal popup.
+   *
+   * @returns {App.ModalPopup}
+   */
+  showRedirectIssue: function() {
+    var bodyMessage = Em.I18n.t('app.redirectIssuePopup.body').format(location.origin + '/#' + this.get('localUserAuthUrl'));
+    var popupHeader = Em.I18n.t('app.redirectIssuePopup.header');
+    var popup = App.showAlertPopup(popupHeader, bodyMessage);
+    popup.set('encodeBody', false);
+    return popup;
   },
 
   root: Em.Route.extend({
@@ -495,40 +739,46 @@ App.Router = Em.Router.extend({
 
     enter: function(router){
       router.initAdmin();
+      router.initAuth();
+      router.handleUIRedirect();
     },
 
     login: Em.Route.extend({
-      route: '/login',
+      route: '/login:suffix',
 
       /**
        *  If the user is already logged in, redirect to where the user was previously
        */
       enter: function (router, context) {
+        if ($.mocho) {
+          return;
+        }
+        var location = router.location.location.hash;
         router.getAuthenticated().done(function (loggedIn) {
-          var location = router.location.location.hash;
-          //key to parse URI for prefered path to route
-          var key = '?targetURI=';
-
           if (loggedIn) {
             Ember.run.next(function () {
-              console.log(router.getLoginName() + ' already authenticated.  Redirecting...');
               router.getSection(function (route) {
                 router.transitionTo(route, context);
               });
             });
           } else {
-            if (location.contains(key)) {
-              router.set('preferedPath', location.slice(location.indexOf(key) + key.length));
-            }
+            //key to parse URI for prefered path to route
+            router.savePreferedPath(location, '?targetURI=');
           }
         });
       },
 
       connectOutlets: function (router, context) {
         $('title').text(Em.I18n.t('app.name'));
-        console.log('/login:connectOutlet');
-        console.log('currentStep is: ' + router.getInstallerCurrentStep());
         router.get('applicationController').connectOutlet('login');
+      },
+
+      serialize: function(router, context) {
+        // check for login/local hash
+        var location = router.get('location.location.hash');
+        return {
+          suffix: location === '#' + router.get('localUserAuthUrl') ? '/local' : ''
+        };
       }
     }),
 
@@ -539,7 +789,7 @@ App.Router = Em.Router.extend({
     adminView: Em.Route.extend({
       route: '/adminView',
       enter: function (router) {
-        if (!router.get('loggedIn') || !App.isAccessible('upgrade_ADMIN') || App.isAccessible('upgrade_OPERATOR')) {
+        if (!router.get('loggedIn') || !App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
           Em.run.next(function () {
             router.transitionTo('login');
           });
@@ -556,7 +806,7 @@ App.Router = Em.Router.extend({
     experimental: Em.Route.extend({
       route: '/experimental',
       enter: function (router, context) {
-        if (App.isAccessible('upgrade_OPERATOR')) {
+        if (App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
           Em.run.next(function () {
             if (router.get('clusterInstallCompleted')) {
               router.transitionTo("main.dashboard.widgets");
@@ -564,17 +814,18 @@ App.Router = Em.Router.extend({
               router.route("installer");
             }
           });
-        } else if (!App.isAccessible('upgrade_ADMIN')) {
+        } else if (!App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
           Em.run.next(function () {
             router.transitionTo("main.views.index");
           });
         }
       },
       connectOutlets: function (router, context) {
-        if (App.isAccessible('upgrade_ONLY_ADMIN')) {
-          $('title').text(Em.I18n.t('app.name.subtitle.experimental'));
-          console.log('/experimental:connectOutlet');
-          router.get('applicationController').connectOutlet('experimental');
+        if (App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK')) {
+          App.router.get('experimentalController').loadSupports().complete(function () {
+            $('title').text(Em.I18n.t('app.name.subtitle.experimental'));
+            router.get('applicationController').connectOutlet('experimental');
+          });
         }
       }
     }),

@@ -18,10 +18,12 @@
 'use strict';
 
 angular.module('ambariAdminConsole')
-.controller('StackVersionsCreateCtrl', ['$scope', 'Stack', '$routeParams', '$location', 'Alert', function($scope, Stack, $routeParams, $location, Alert) {
+.controller('StackVersionsCreateCtrl', ['$scope', 'Stack', '$routeParams', '$location', 'Alert', '$translate', 'Cluster', function($scope, Stack, $routeParams, $location, Alert, $translate, Cluster) {
+  var $t = $translate.instant;
   $scope.createController = true;
   $scope.osList = [];
   $scope.skipValidation = false;
+  $scope.useRedhatSatellite = false;
   $scope.selectedOS = 0;
   $scope.repoSubversion = "";
 
@@ -42,10 +44,12 @@ angular.module('ambariAdminConsole')
       });
       $scope.upgradeStack.options = versions;
       $scope.upgradeStack.selected = versions[versions.length - 1];
-      $scope.afterStackVersionChange();
+      $scope.afterStackVersionChange().then(function(){
+        $scope.disableUnusedOS();
+      });
     })
     .catch(function (data) {
-      Alert.error('Fetch stack version filter list error', data.message);
+      Alert.error($t('versions.alerts.filterListError'), data.message);
     });
   };
   $scope.fetchStackVersionFilterList();
@@ -57,14 +61,11 @@ angular.module('ambariAdminConsole')
           .success(function () {
             var versionName = $scope.upgradeStack.selected.stack_version + '.' + $scope.repoSubversion;
             var stackName = $scope.upgradeStack.selected.stack_name;
-            Alert.success('Created version ' +
-            '<a href="#/stackVersions/' + stackName + '/' + versionName + '/edit">'
-              + stackName + '-' + versionName +
-            '</a>');
+            Alert.success($t('versions.alerts.versionCreated', {stackName: stackName, versionName: versionName}));
             $location.path('/stackVersions');
           })
           .error(function (data) {
-              Alert.error('Version creation error', data.message);
+              Alert.error($t('versions.alerts.versionCreationError'), data.message);
           });
       } else {
         Stack.highlightInvalidUrls(invalidUrls);
@@ -73,7 +74,7 @@ angular.module('ambariAdminConsole')
   };
 
   $scope.afterStackVersionChange = function () {
-    Stack.getSupportedOSList($scope.upgradeStack.selected.stack_name, $scope.upgradeStack.selected.stack_version)
+    return Stack.getSupportedOSList($scope.upgradeStack.selected.stack_name, $scope.upgradeStack.selected.stack_version)
     .then(function (data) {
       var operatingSystems = data.operating_systems;
         $scope.osList = operatingSystems.map(function (os) {
@@ -85,7 +86,17 @@ angular.module('ambariAdminConsole')
         });
     })
     .catch(function (data) {
-      Alert.error('getSupportedOSList error', data.message);
+      Alert.error($t('versions.alerts.osListError'), data.message);
+    });
+  };
+
+  $scope.disableUnusedOS = function() {
+    Cluster.getClusterOS().then(function(usedOS){
+      angular.forEach($scope.osList, function (os) {
+        if (os.OperatingSystems.os_type !== usedOS) {
+          os.disabled = true;
+        }
+      });
     });
   };
 

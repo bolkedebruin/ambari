@@ -19,8 +19,7 @@
 var App = require('app');
 
 describe('#_overrideConfigIsRequired', function () {
-  var controller,
-    instanceObject,
+  var instanceObject,
     configs,
     serviceConfig;
 
@@ -48,11 +47,8 @@ describe('#_overrideConfigIsRequired', function () {
 
   it('should make isRequired = false for kerberos properties', function () {
     instanceObject.overrideConfigIsRequired(serviceConfig);
-    // toggle isRequired to false
-    configs.forEach(function(p) {
-      expect(p.isRequired).to.be.false;
-      expect(p.error).to.be.false;
-    });
+    expect(configs.everyProperty('isRequired', false)).to.be.true;
+    expect(configs.everyProperty('error', false)).to.be.true;
   });
 
   it('should make isRequired = true for kerberos properties', function () {
@@ -60,9 +56,6 @@ describe('#_overrideConfigIsRequired', function () {
     instanceObject.overrideConfigIsRequired(serviceConfig);
     // toggle to true
     instanceObject.overrideConfigIsRequired(serviceConfig);
-
-    configs.forEach(function(p) {
-      expect(p.isRequired).to.be.true;
-    });
+    expect(configs.everyProperty('isRequired', true)).to.be.true;
   });
 });

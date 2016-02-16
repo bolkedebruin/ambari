@@ -27,8 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.controller.ResourceProviderFactory;
 import org.apache.ambari.server.controller.predicate.AndPredicate;
@@ -42,19 +40,30 @@ import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.StackDAO;
+import org.apache.ambari.server.orm.entities.ClusterEntity;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
+import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
+import org.apache.ambari.server.orm.entities.RepositoryEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.OperatingSystemInfo;
+import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.RepositoryVersionState;
+import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.stack.UpgradePack;
+import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
@@ -62,21 +71,50 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
 
+import junit.framework.Assert;
+
 /**
  * RepositoryVersionResourceProvider tests.
  */
 public class RepositoryVersionResourceProviderTest {
+
+  private ClusterVersionDAO clusterVersionDAO;
 
   private static Injector injector;
 
   private static String jsonStringRedhat6 = "[{\"OperatingSystems\":{\"os_type\":\"redhat6\"},\"repositories\":[]}]";
   private static String jsonStringRedhat7 = "[{\"OperatingSystems\":{\"os_type\":\"redhat7\"},\"repositories\":[]}]";
 
+  private List<ClusterVersionEntity> getNoClusterVersions() {
+    final List<ClusterVersionEntity> emptyList = new ArrayList<ClusterVersionEntity>();
+    return emptyList;
+  }
+
+  private List<ClusterVersionEntity> getInstallFailedClusterVersions() {
+    ClusterEntity cluster = new ClusterEntity();
+    cluster.setClusterName("c1");
+    cluster.setClusterId(1L);
+
+    final List<ClusterVersionEntity> clusterVersions = new ArrayList<ClusterVersionEntity>();
+    final RepositoryVersionEntity repositoryVersion = new RepositoryVersionEntity();
+    repositoryVersion.setId(1L);
+    final ClusterVersionEntity installFailedVersion = new ClusterVersionEntity();
+    installFailedVersion.setState(RepositoryVersionState.INSTALL_FAILED);
+    installFailedVersion.setRepositoryVersion(repositoryVersion);
+    installFailedVersion.setClusterEntity(cluster);
+    clusterVersions.add(installFailedVersion);
+    cluster.setClusterVersionEntities(clusterVersions);
+    return clusterVersions;
+  }
+
   @Before
   public void before() throws Exception {
     final Set<String> validVersions = Sets.newHashSet("1.1", "1.1-17", "1.1.1.1", "1.1.343432.2", "1.1.343432.2-234234324");
+    final Set<StackInfo> stacks = new HashSet<StackInfo>();
+
     final AmbariMetaInfo ambariMetaInfo = Mockito.mock(AmbariMetaInfo.class);
-    final ClusterVersionDAO clusterVersionDAO = Mockito.mock(ClusterVersionDAO.class);
+    clusterVersionDAO = Mockito.mock(ClusterVersionDAO.class);
+
     final InMemoryDefaultTestModule injectorModule = new InMemoryDefaultTestModule() {
       @Override
       protected void configure() {
@@ -93,11 +131,21 @@ public class RepositoryVersionResourceProviderTest {
         final Map<String, UpgradePack> map = new HashMap<String, UpgradePack>();
         final UpgradePack pack1 = new UpgradePack() {
           @Override
+          public String getName() {
+            return "pack1";
+          }
+
+          @Override
           public String getTarget() {
             return "1.1.*.*";
           }
         };
         final UpgradePack pack2 = new UpgradePack() {
+          @Override
+          public String getName() {
+            return "pack2";
+          }
+
           @Override
           public String getTarget() {
             return "1.1.*.*";
@@ -108,6 +156,9 @@ public class RepositoryVersionResourceProviderTest {
         return map;
       }
     };
+    stackInfo.setName("HDP");
+    stackInfo.setVersion("1.1");
+    stacks.add(stackInfo);
     Mockito.when(ambariMetaInfo.getStack(Mockito.anyString(), Mockito.anyString())).thenAnswer(new Answer<StackInfo>() {
 
       @Override
@@ -122,7 +173,7 @@ public class RepositoryVersionResourceProviderTest {
       }
 
     });
-
+    Mockito.when(ambariMetaInfo.getStacks()).thenReturn(stacks);
     Mockito.when(ambariMetaInfo.getUpgradePacks(Mockito.anyString(), Mockito.anyString())).thenAnswer(new Answer<Map<String, UpgradePack>>() {
 
       @Override
@@ -151,29 +202,17 @@ public class RepositoryVersionResourceProviderTest {
       }
     });
 
-    Mockito.when(
-        clusterVersionDAO.findByStackAndVersion(Mockito.anyString(),
-            Mockito.anyString(), Mockito.anyString())).thenAnswer(
+    Mockito.when(clusterVersionDAO.findByStackAndVersion(Mockito.anyString(), Mockito.anyString(), Mockito.anyString())).thenAnswer(
         new Answer<List<ClusterVersionEntity>>() {
-
       @Override
-      public List<ClusterVersionEntity> answer(InvocationOnMock invocation)
-          throws Throwable {
+      public List<ClusterVersionEntity> answer(InvocationOnMock invocation) throws Throwable {
         final String stack = invocation.getArguments()[0].toString();
         final String version = invocation.getArguments()[1].toString();
+
         if (stack.equals("HDP-1.1") && version.equals("1.1.1.1")) {
-          final List<ClusterVersionEntity> notEmptyList = new ArrayList<ClusterVersionEntity>();
-          notEmptyList.add(null);
-          return notEmptyList;
+          return getNoClusterVersions();
         } else {
-          final List<ClusterVersionEntity> clusterVersions = new ArrayList<ClusterVersionEntity>();
-          final RepositoryVersionEntity repositoryVersion = new RepositoryVersionEntity();
-          repositoryVersion.setId(1L);
-          final ClusterVersionEntity installFailedVersion = new ClusterVersionEntity();
-          installFailedVersion.setState(RepositoryVersionState.INSTALL_FAILED);
-          installFailedVersion.setRepositoryVersion(repositoryVersion);
-          clusterVersions.add(installFailedVersion);
-          return clusterVersions;
+          return getInstallFailedClusterVersions();
         }
       }
     });
@@ -187,10 +226,24 @@ public class RepositoryVersionResourceProviderTest {
     stackEntity.setStackName("HDP");
     stackEntity.setStackVersion("1.1");
     stackDAO.create(stackEntity);
+
+    Clusters clusters = injector.getInstance(Clusters.class);
+    clusters.addCluster("c1", new StackId("HDP", "1.1"));
   }
 
   @Test
-  public void testCreateResources() throws Exception {
+  public void testCreateResourcesAsAdministrator() throws Exception {
+    testCreateResources(TestAuthenticationFactory.createAdministrator());
+  }
+
+  @Test(expected = AuthorizationException.class)
+  public void testCreateResourcesAsClusterAdministrator() throws Exception {
+    testCreateResources(TestAuthenticationFactory.createClusterAdministrator());
+  }
+
+  private void testCreateResources(Authentication authentication) throws Exception {
+    SecurityContextHolder.getContext().setAuthentication(authentication);
+
     final ResourceProvider provider = injector.getInstance(ResourceProviderFactory.class).getRepositoryVersionResourceProvider();
 
     final Set<Map<String, Object>> propertySet = new LinkedHashSet<Map<String, Object>>();
@@ -198,7 +251,6 @@ public class RepositoryVersionResourceProviderTest {
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID, "name");
     properties.put(RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID, new Gson().fromJson("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"1\",\"Repositories/repo_name\":\"1\",\"Repositories/base_url\":\"1\"}]}]", Object.class));
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID, "HDP");
-    properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID, "pack1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID, "1.1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID, "1.1.1.1");
     propertySet.add(properties);
@@ -215,7 +267,18 @@ public class RepositoryVersionResourceProviderTest {
   }
 
   @Test
-  public void testGetResources() throws Exception {
+  public void testGetResourcesAsAdministrator() throws Exception {
+    testGetResources(TestAuthenticationFactory.createAdministrator());
+  }
+
+  @Test
+  public void testGetResourcesAsClusterAdministrator() throws Exception {
+    testGetResources(TestAuthenticationFactory.createClusterAdministrator());
+  }
+
+  private void testGetResources(Authentication authentication) throws Exception {
+    SecurityContextHolder.getContext().setAuthentication(authentication);
+
     StackDAO stackDAO = injector.getInstance(StackDAO.class);
     StackEntity stackEntity = stackDAO.find("HDP", "1.1");
     Assert.assertNotNull(stackEntity);
@@ -251,7 +314,6 @@ public class RepositoryVersionResourceProviderTest {
     final RepositoryVersionEntity entity = new RepositoryVersionEntity();
     entity.setDisplayName("name");
     entity.setStack(stackEntity);
-    entity.setUpgradePackage("pack1");
     entity.setVersion("1.1");
     entity.setOperatingSystems("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"1\",\"Repositories/repo_name\":\"1\",\"Repositories/base_url\":\"http://example.com/repo1\"}]}]");
 
@@ -281,13 +343,6 @@ public class RepositoryVersionResourceProviderTest {
     } catch (Exception ex) {
     }
 
-    entity.setUpgradePackage("pack2");
-    try {
-      provider.validateRepositoryVersion(entity);
-      Assert.fail("Should throw exception");
-    } catch (Exception ex) {
-    }
-
     StackEntity bigtop = new StackEntity();
     stackEntity.setStackName("BIGTOP");
     entity.setStack(bigtop);
@@ -300,7 +355,6 @@ public class RepositoryVersionResourceProviderTest {
     final RepositoryVersionDAO repositoryVersionDAO = injector.getInstance(RepositoryVersionDAO.class);
     entity.setDisplayName("name");
     entity.setStack(stackEntity);
-    entity.setUpgradePackage("pack1");
     entity.setVersion("1.1");
     entity.setOperatingSystems("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"1\",\"Repositories/repo_name\":\"1\",\"Repositories/base_url\":\"http://example.com/repo1\"}]}]");
     repositoryVersionDAO.create(entity);
@@ -309,7 +363,6 @@ public class RepositoryVersionResourceProviderTest {
     entity2.setId(2l);
     entity2.setDisplayName("name2");
     entity2.setStack(stackEntity);
-    entity2.setUpgradePackage("pack1");
     entity2.setVersion("1.2");
     entity2.setOperatingSystems("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"1\",\"Repositories/repo_name\":\"1\",\"Repositories/base_url\":\"http://example.com/repo1\"}]}]");
 
@@ -322,7 +375,18 @@ public class RepositoryVersionResourceProviderTest {
   }
 
   @Test
-  public void testDeleteResources() throws Exception {
+  public void testDeleteResourcesAsAdministrator() throws Exception {
+    testDeleteResources(TestAuthenticationFactory.createAdministrator());
+  }
+
+  @Test(expected = AuthorizationException.class)
+  public void testDeleteResourcesAsClusterAdministrator() throws Exception {
+    testDeleteResources(TestAuthenticationFactory.createClusterAdministrator());
+  }
+
+  private void testDeleteResources(Authentication authentication) throws Exception {
+    SecurityContextHolder.getContext().setAuthentication(authentication);
+
     final ResourceProvider provider = injector.getInstance(ResourceProviderFactory.class).getRepositoryVersionResourceProvider();
 
     final Set<Map<String, Object>> propertySet = new LinkedHashSet<Map<String, Object>>();
@@ -330,7 +394,6 @@ public class RepositoryVersionResourceProviderTest {
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID, "name");
     properties.put(RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID, new Gson().fromJson("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"1\",\"Repositories/repo_name\":\"1\",\"Repositories/base_url\":\"1\"}]}]", Object.class));
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID, "HDP");
-    properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID, "pack1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID, "1.1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID, "1.1.1.2");
     propertySet.add(properties);
@@ -352,15 +415,33 @@ public class RepositoryVersionResourceProviderTest {
   }
 
   @Test
-  public void testUpdateResources() throws Exception {
+  public void testUpdateResourcesAsAdministrator() throws Exception {
+    testUpdateResources(TestAuthenticationFactory.createAdministrator());
+  }
+
+  @Test(expected = AuthorizationException.class)
+  public void testUpdateResourcesAsClusterAdministrator() throws Exception {
+    testUpdateResources(TestAuthenticationFactory.createClusterAdministrator());
+  }
+
+  private void testUpdateResources(Authentication authentication) throws Exception {
+    SecurityContextHolder.getContext().setAuthentication(authentication);
+
     final ResourceProvider provider = injector.getInstance(ResourceProviderFactory.class).getRepositoryVersionResourceProvider();
+
+    Mockito.when(clusterVersionDAO.findByStackAndVersion(Mockito.anyString(), Mockito.anyString(), Mockito.anyString())).thenAnswer(
+        new Answer<List<ClusterVersionEntity>>() {
+          @Override
+          public List<ClusterVersionEntity> answer(InvocationOnMock invocation) throws Throwable {
+            return getNoClusterVersions();
+          }
+        });
 
     final Set<Map<String, Object>> propertySet = new LinkedHashSet<Map<String, Object>>();
     final Map<String, Object> properties = new LinkedHashMap<String, Object>();
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID, "name");
     properties.put(RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID, new Gson().fromJson("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"1\",\"Repositories/repo_name\":\"1\",\"Repositories/base_url\":\"http://example.com/repo1\"}]}]", Object.class));
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID, "HDP");
-    properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID, "pack1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID, "1.1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID, "1.1.1.1");
     propertySet.add(properties);
@@ -368,9 +449,8 @@ public class RepositoryVersionResourceProviderTest {
     final Predicate predicateStackName = new PredicateBuilder().property(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID).equals("HDP").toPredicate();
     final Predicate predicateStackVersion = new PredicateBuilder().property(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID).equals("1.1").toPredicate();
     final Request getRequest = PropertyHelper.getReadRequest(
-        RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID,
-        RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID,
-        RepositoryVersionResourceProvider.REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID);
+      RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID,
+      RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID);
     Assert.assertEquals(0, provider.getResources(getRequest, new AndPredicate(predicateStackName, predicateStackVersion)).size());
 
     final Request createRequest = PropertyHelper.getCreateRequest(propertySet, null);
@@ -379,8 +459,6 @@ public class RepositoryVersionResourceProviderTest {
     Assert.assertEquals(1, provider.getResources(getRequest, new AndPredicate(predicateStackName, predicateStackVersion)).size());
     Assert.assertEquals("name", provider.getResources(getRequest, new AndPredicate(predicateStackName, predicateStackVersion)).iterator().next().getPropertyValue(RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID));
 
-    properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID, null);
-
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_ID_PROPERTY_ID, "1");
     properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID, "name2");
     final Request updateRequest = PropertyHelper.getUpdateRequest(properties, null);
@@ -388,20 +466,67 @@ public class RepositoryVersionResourceProviderTest {
 
     Assert.assertEquals("name2", provider.getResources(getRequest, new AndPredicate(predicateStackName, predicateStackVersion)).iterator().next().getPropertyValue(RepositoryVersionResourceProvider.REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID));
 
+    AmbariMetaInfo ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
+    String stackName = properties.get(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID).toString();
+    String stackVersion = properties.get(RepositoryVersionResourceProvider.REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID).toString();
+    Object operatingSystems = properties.get(RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID);
+    Gson gson = new Gson();
+    String operatingSystemsJson = gson.toJson(operatingSystems);
+    RepositoryVersionHelper repositoryVersionHelper = new RepositoryVersionHelper();
+    List<OperatingSystemEntity> operatingSystemEntities = repositoryVersionHelper.parseOperatingSystems(operatingSystemsJson);
+    for (OperatingSystemEntity operatingSystemEntity : operatingSystemEntities) {
+      String osType = operatingSystemEntity.getOsType();
+      List<RepositoryEntity> repositories = operatingSystemEntity.getRepositories();
+      for (RepositoryEntity repository : repositories) {
+        RepositoryInfo repo = ambariMetaInfo.getRepository(stackName, stackVersion, osType, repository.getRepositoryId());
+        if (repo != null) {
+          String baseUrlActual = repo.getBaseUrl();
+          String baseUrlExpected = repository.getBaseUrl();
+          Assert.assertEquals(baseUrlExpected, baseUrlActual);
+        }
+      }
+    }
+
     properties.put(RepositoryVersionResourceProvider.SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID, new Gson().fromJson("[{\"OperatingSystems/os_type\":\"redhat6\",\"repositories\":[{\"Repositories/repo_id\":\"2\",\"Repositories/repo_name\":\"2\",\"Repositories/base_url\":\"2\"}]}]", Object.class));
     provider.updateResources(updateRequest, new AndPredicate(predicateStackName, predicateStackVersion));
+    // Now, insert a cluster version whose state is INSTALL_FAILED, so the operation will not be permitted.
+    Mockito.when(clusterVersionDAO.findByStackAndVersion(Mockito.anyString(), Mockito.anyString(), Mockito.anyString())).thenAnswer(
+      new Answer<List<ClusterVersionEntity>>() {
+        @Override
+        public List<ClusterVersionEntity> answer(InvocationOnMock invocation) throws Throwable {
+          return getInstallFailedClusterVersions();
+        }
+      });
 
-    properties.put(RepositoryVersionResourceProvider.REPOSITORY_VERSION_UPGRADE_PACK_PROPERTY_ID, "pack2");
     try {
       provider.updateResources(updateRequest, new AndPredicate(predicateStackName, predicateStackVersion));
-      Assert.fail("Update of upgrade pack should not be allowed when repo version is installed on any cluster");
     } catch (Exception ex) {
+      Assert.fail("Update of repository should be allowed when repo version is installed on any cluster");
     }
+  }
+
+  @Test
+  public void testVersionInStack(){
+    StackId sid = new StackId("HDP-2.3");
+    StackId sid2 = new StackId("HDP-2.3.NEW");
+    Assert.assertEquals(true, RepositoryVersionEntity.isVersionInStack(sid, "2.3"));
+    Assert.assertEquals(true, RepositoryVersionEntity.isVersionInStack(sid2, "2.3"));
+
+    Assert.assertEquals(true, RepositoryVersionEntity.isVersionInStack(sid, "2.3.1"));
+    Assert.assertEquals(true, RepositoryVersionEntity.isVersionInStack(sid2, "2.3.1"));
+
+    Assert.assertEquals(true, RepositoryVersionEntity.isVersionInStack(sid, "2.3.2.0-2300"));
+    Assert.assertEquals(true, RepositoryVersionEntity.isVersionInStack(sid2, "2.3.2.1-3562"));
+
+    Assert.assertEquals(false, RepositoryVersionEntity.isVersionInStack(sid, "2.4.2.0-2300"));
+    Assert.assertEquals(false, RepositoryVersionEntity.isVersionInStack(sid2, "2.1"));
   }
 
   @After
   public void after() {
     injector.getInstance(PersistService.class).stop();
     injector = null;
+
+    SecurityContextHolder.getContext().setAuthentication(null);
   }
 }

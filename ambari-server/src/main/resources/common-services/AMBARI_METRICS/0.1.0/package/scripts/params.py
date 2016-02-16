@@ -19,6 +19,9 @@ limitations under the License.
 """
 
 from functions import calc_xmn_from_xms
+from functions import check_append_heap_property
+from functions import trim_heap_property
+
 from resource_management import *
 import status_params
 from ambari_commons import OSCheck
@@ -47,11 +50,20 @@ ams_pid_dir = status_params.ams_collector_pid_dir
 ams_collector_script = "/usr/sbin/ambari-metrics-collector"
 ams_collector_pid_dir = status_params.ams_collector_pid_dir
 ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
-ams_collector_host_single = ams_collector_hosts[0] #TODO cardinality is 1+ so we can have more than one host
-metric_collector_port = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
-if metric_collector_port and metric_collector_port.find(':') != -1:
-  metric_collector_port = metric_collector_port.split(':')[1]
-pass
+if 'cluster-env' in config['configurations'] and \
+    'metrics_collector_vip_host' in config['configurations']['cluster-env']:
+  metric_collector_host = config['configurations']['cluster-env']['metrics_collector_vip_host']
+else:
+  metric_collector_host = ams_collector_hosts[0]
+if 'cluster-env' in config['configurations'] and \
+    'metrics_collector_vip_port' in config['configurations']['cluster-env']:
+  metric_collector_port = config['configurations']['cluster-env']['metrics_collector_vip_port']
+else:
+  metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
+  if metric_collector_web_address.find(':') != -1:
+    metric_collector_port = metric_collector_web_address.split(':')[1]
+  else:
+    metric_collector_port = '6188'
 
 ams_collector_log_dir = config['configurations']['ams-env']['metrics_collector_log_dir']
 ams_monitor_log_dir = config['configurations']['ams-env']['metrics_monitor_log_dir']
@@ -60,7 +72,22 @@ ams_monitor_dir = "/usr/lib/python2.6/site-packages/resource_monitoring"
 ams_monitor_pid_dir = status_params.ams_monitor_pid_dir
 ams_monitor_script = "/usr/sbin/ambari-metrics-monitor"
 
+ams_grafana_script = "/usr/sbin/ambari-metrics-grafana"
+ams_grafana_home_dir = '/usr/lib/ambari-metrics-grafana'
+ams_grafana_log_dir = default("/configurations/ams-grafana-env/metrics_grafana_log_dir", '/var/log/ambari-metrics-grafana')
+ams_grafana_pid_dir = status_params.ams_grafana_pid_dir
+ams_grafana_conf_dir = '/etc/ambari-metrics-grafana/conf'
+ams_grafana_data_dir = default("/configurations/ams-grafana-env/metrics_grafana_data_dir", '/var/lib/ambari-metrics-grafana')
+
+ams_grafana_port = default("/configurations/ams-grafana-ini/port", 3000)
+ams_grafana_protocol = default("/configurations/ams-grafana-ini/protocol", 'http')
+ams_grafana_cert_file = default("/configurations/ams-grafana-ini/cert_file", '/etc/ambari-metrics/conf/ams-grafana.crt')
+ams_grafana_cert_key = default("/configurations/ams-grafana-ini/cert_key", '/etc/ambari-metrics/conf/ams-grafana.key')
+
 ams_hbase_home_dir = "/usr/lib/ams-hbase/"
+
+ams_hbase_normalizer_enabled = default("/configurations/ams-hbase-site/hbase.normalizer.enabled", None)
+ams_hbase_fifo_compaction_enabled = default("/configurations/ams-site/timeline.metrics.hbase.fifo.compaction.enabled", None)
 
 #hadoop params
 
@@ -71,8 +98,11 @@ hbase_included_hosts = config['commandParams']['included_hosts']
 hbase_user = status_params.hbase_user
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 hbase_root_dir = config['configurations']['ams-hbase-site']['hbase.rootdir']
+hbase_pid_dir = status_params.hbase_pid_dir
 
-is_hbase_distributed = hbase_root_dir.startswith('hdfs://')
+is_hbase_distributed = config['configurations']['ams-hbase-site']['hbase.cluster.distributed']
+is_local_fs_rootdir = hbase_root_dir.startswith('file://')
+is_ams_distributed = config['configurations']['ams-site']['timeline.metrics.service.operation.mode'] == 'distributed'
 
 # security is disabled for embedded mode, when HBase is backed by file
 security_enabled = False if not is_hbase_distributed else config['configurations']['cluster-env']['security_enabled']
@@ -84,15 +114,24 @@ metric_prop_file_name = "hadoop-metrics2-hbase.properties"
 java64_home = config['hostLevelParams']['java_home']
 java_version = int(config['hostLevelParams']['java_version'])
 
-metrics_collector_heapsize = default('/configurations/ams-env/metrics_collector_heapsize', "512m")
+metrics_collector_heapsize = default('/configurations/ams-env/metrics_collector_heapsize', "512")
 host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
+metrics_report_interval = default("/configurations/ams-site/timeline.metrics.sink.report.interval", 60)
+metrics_collection_period = default("/configurations/ams-site/timeline.metrics.sink.collection.period", 10)
 
 hbase_log_dir = config['configurations']['ams-hbase-env']['hbase_log_dir']
+hbase_classpath_additional = default("/configurations/ams-hbase-env/hbase_classpath_additional", None)
 master_heapsize = config['configurations']['ams-hbase-env']['hbase_master_heapsize']
 regionserver_heapsize = config['configurations']['ams-hbase-env']['hbase_regionserver_heapsize']
 
-regionserver_xmn_max = default('configurations/ams-hbase-env/hbase_regionserver_xmn_max', None)
+# Check if hbase java options already have appended "m". If Yes, remove the trailing m.
+metrics_collector_heapsize = check_append_heap_property(str(metrics_collector_heapsize), "m")
+master_heapsize = check_append_heap_property(str(master_heapsize), "m")
+regionserver_heapsize = check_append_heap_property(str(regionserver_heapsize), "m")
+
+regionserver_xmn_max = default('/configurations/ams-hbase-env/hbase_regionserver_xmn_max', None)
 if regionserver_xmn_max:
+  regionserver_xmn_max = int(trim_heap_property(str(regionserver_xmn_max), "m"))
   regionserver_xmn_percent = config['configurations']['ams-hbase-env']['hbase_regionserver_xmn_ratio']
   regionserver_xmn_size = calc_xmn_from_xms(regionserver_heapsize, regionserver_xmn_percent, regionserver_xmn_max)
 else:
@@ -101,6 +140,11 @@ pass
 
 hbase_master_xmn_size = config['configurations']['ams-hbase-env']['hbase_master_xmn_size']
 hbase_master_maxperm_size = config['configurations']['ams-hbase-env']['hbase_master_maxperm_size']
+
+# Check if hbase java options already have appended "m". If Yes, remove the trailing m.
+hbase_master_maxperm_size = check_append_heap_property(str(hbase_master_maxperm_size), "m")
+hbase_master_xmn_size = check_append_heap_property(str(hbase_master_xmn_size), "m")
+regionserver_xmn_size = check_append_heap_property(str(regionserver_xmn_size), "m")
 
 # Choose heap size for embedded mode as sum of master + regionserver
 if not is_hbase_distributed:
@@ -112,7 +156,15 @@ else:
 
 max_open_files_limit = default("/configurations/ams-hbase-env/max_open_files_limit", "32768")
 
-zookeeper_quorum_hosts = ','.join(ams_collector_hosts) if is_hbase_distributed else 'localhost'
+if not is_hbase_distributed:
+  zookeeper_quorum_hosts = 'localhost'
+  zookeeper_clientPort = '61181'
+else:
+  zookeeper_quorum_hosts = ",".join(config['clusterHostInfo']['zookeeper_hosts'])
+  if 'zoo.cfg' in config['configurations'] and 'clientPort' in config['configurations']['zoo.cfg']:
+    zookeeper_clientPort = config['configurations']['zoo.cfg']['clientPort']
+  else:
+    zookeeper_clientPort = '2181'
 
 ams_checkpoint_dir = config['configurations']['ams-site']['timeline.metrics.aggregator.checkpoint.dir']
 hbase_pid_dir = status_params.hbase_pid_dir
@@ -167,8 +219,6 @@ if security_enabled:
   regionserver_keytab_path = config['configurations']['ams-hbase-security-site']['hbase.regionserver.keytab.file']
   regionserver_jaas_princ = config['configurations']['ams-hbase-security-site']['hbase.regionserver.kerberos.principal'].replace('_HOST',_hostname_lowercase)
 
-  zk_servicename = ams_zookeeper_principal_name.rpartition('/')[0]
-
 #log4j.properties
 if (('ams-hbase-log4j' in config['configurations']) and ('content' in config['configurations']['ams-hbase-log4j'])):
   hbase_log4j_props = config['configurations']['ams-hbase-log4j']['content']
@@ -182,6 +232,8 @@ else:
 
 hbase_env_sh_template = config['configurations']['ams-hbase-env']['content']
 ams_env_sh_template = config['configurations']['ams-env']['content']
+ams_grafana_env_sh_template = config['configurations']['ams-grafana-env']['content']
+ams_grafana_ini_template = config['configurations']['ams-grafana-ini']['content']
 
 hbase_staging_dir = default("/configurations/ams-hbase-site/hbase.bulkload.staging.dir", "/amshbase/staging")
 

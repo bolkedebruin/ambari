@@ -39,6 +39,8 @@ class HbaseMaster(Script):
     hbase(name='master')
 
   def install(self, env):
+    import params
+    env.set_params(params)
     self.install_packages(env)
 
   def decommission(self, env):
@@ -71,19 +73,19 @@ class HbaseMasterDefault(HbaseMaster):
   def get_stack_to_component(self):
     return {"HDP": "hbase-master"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     upgrade.prestart(env, "hbase-master")
 
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env) # for security
-    setup_ranger_hbase(rolling_upgrade=rolling_restart)  
+    setup_ranger_hbase(upgrade_type=upgrade_type)
     hbase_service('master', action = 'start')
     
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     hbase_service('master', action = 'stop')

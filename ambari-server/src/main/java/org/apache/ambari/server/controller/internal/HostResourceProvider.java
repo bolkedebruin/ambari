@@ -20,6 +20,7 @@ package org.apache.ambari.server.controller.internal;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -49,6 +50,10 @@ import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.apache.ambari.server.security.authorization.AuthorizationHelper;
+import org.apache.ambari.server.security.authorization.ResourceType;
+import org.apache.ambari.server.security.authorization.RoleAuthorization;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
@@ -61,8 +66,8 @@ import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.topology.InvalidTopologyException;
 import org.apache.ambari.server.topology.InvalidTopologyTemplateException;
+import org.apache.ambari.server.topology.LogicalRequest;
 import org.apache.ambari.server.topology.TopologyManager;
-import org.apache.ambari.server.topology.TopologyRequest;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,6 +145,11 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
   public static final String HOST_PREDICATE_PROPERTY_ID =
       PropertyHelper.getPropertyId(null, "host_predicate");
 
+  //todo use the same json structure for cluster host addition (cluster template and upscale)
+  public static final String HOST_RACK_INFO_NO_CATEGORY_PROPERTY_ID =
+      PropertyHelper.getPropertyId(null, "rack_info");
+
+
   private static Set<String> pkPropertyIds =
       new HashSet<String>(Arrays.asList(new String[]{
           HOST_NAME_PROPERTY_ID}));
@@ -167,12 +177,19 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
                        @Assisted Map<Resource.Type, String> keyPropertyIds,
                        @Assisted AmbariManagementController managementController) {
     super(propertyIds, keyPropertyIds, managementController);
+
+    Set<RoleAuthorization> authorizationsAddDelete = EnumSet.of(RoleAuthorization.HOST_ADD_DELETE_HOSTS);
+
+    setRequiredCreateAuthorizations(authorizationsAddDelete);
+    setRequiredDeleteAuthorizations(authorizationsAddDelete);
+    setRequiredGetAuthorizations(RoleAuthorization.AUTHORIZATIONS_VIEW_CLUSTER);
+    setRequiredUpdateAuthorizations(RoleAuthorization.AUTHORIZATIONS_UPDATE_CLUSTER);
   }
 
   // ----- ResourceProvider ------------------------------------------------
 
   @Override
-  public RequestStatus createResources(final Request request)
+  protected RequestStatus createResourcesAuthorized(final Request request)
       throws SystemException,
           UnsupportedPropertyException,
           ResourceAlreadyExistsException,
@@ -196,7 +213,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
   }
 
   @Override
-  public Set<Resource> getResources(Request request, Predicate predicate)
+  protected Set<Resource> getResourcesAuthorized(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
 
     final Set<HostRequest> requests = new HashSet<HostRequest>();
@@ -289,7 +306,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
   }
 
   @Override
-  public RequestStatus updateResources(final Request request, Predicate predicate)
+  protected RequestStatus updateResourcesAuthorized(final Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
 
     final Set<HostRequest> requests = new HashSet<HostRequest>();
@@ -299,7 +316,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
 
     modifyResources(new Command<Void>() {
       @Override
-      public Void invoke() throws AmbariException {
+      public Void invoke() throws AmbariException, AuthorizationException {
         updateHosts(requests);
         return null;
       }
@@ -311,7 +328,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
   }
 
   @Override
-  public RequestStatus deleteResources(Predicate predicate)
+  protected RequestStatus deleteResourcesAuthorized(Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
 
     final Set<HostRequest> requests = new HashSet<HostRequest>();
@@ -342,6 +359,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
     //todo: constants
     baseUnsupported.remove(HOST_COUNT_PROPERTY_ID);
     baseUnsupported.remove(HOST_PREDICATE_PROPERTY_ID);
+    baseUnsupported.remove(HOST_RACK_INFO_NO_CATEGORY_PROPERTY_ID);
 
     return checkConfigPropertyIds(baseUnsupported, "Hosts");
   }
@@ -394,7 +412,11 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
         (String) properties.get(HOST_CLUSTER_NAME_PROPERTY_ID),
         null);
     hostRequest.setPublicHostName((String) properties.get(HOST_PUBLIC_NAME_PROPERTY_ID));
-    hostRequest.setRackInfo((String) properties.get(HOST_RACK_INFO_PROPERTY_ID));
+
+    String rackInfo = (String) ((null != properties.get(HOST_RACK_INFO_PROPERTY_ID))? properties.get(HOST_RACK_INFO_PROPERTY_ID):
+            properties.get(HOST_RACK_INFO_NO_CATEGORY_PROPERTY_ID));
+
+    hostRequest.setRackInfo(rackInfo);
     hostRequest.setBlueprintName((String) properties.get(BLUEPRINT_PROPERTY_ID));
     hostRequest.setHostGroupName((String) properties.get(HOSTGROUP_PROPERTY_ID));
     
@@ -647,7 +669,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
     return response;
   }
 
-  protected synchronized void updateHosts(Set<HostRequest> requests) throws AmbariException {
+  protected synchronized void updateHosts(Set<HostRequest> requests) throws AmbariException, AuthorizationException {
 
     if (requests.isEmpty()) {
       LOG.warn("Received an empty requests set");
@@ -673,6 +695,9 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
       Host host = clusters.getHost(request.getHostname());
 
       String clusterName = request.getClusterName();
+      Cluster cluster = clusters.getCluster(clusterName);
+      Long clusterId = cluster.getClusterId();
+      Long resourceId = cluster.getResourceId();
 
       try {
         // The below method call throws an exception when trying to create a duplicate mapping in the clusterhostmapping
@@ -683,6 +708,9 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
       }
 
       if (null != request.getHostAttributes()) {
+        if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, resourceId, RoleAuthorization.HOST_ADD_DELETE_HOSTS)) {
+          throw new AuthorizationException("The authenticated user is not authorized to update host attributes");
+        }
         host.setHostAttributes(request.getHostAttributes());
       }
 
@@ -691,35 +719,64 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
       boolean rackChange      = requestRackInfo != null && !requestRackInfo.equals(rackInfo);
 
       if (rackChange) {
+        if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, resourceId, RoleAuthorization.HOST_ADD_DELETE_HOSTS)) {
+          throw new AuthorizationException("The authenticated user is not authorized to update host rack information");
+        }
         host.setRackInfo(requestRackInfo);
       }
 
       if (null != request.getPublicHostName()) {
+        if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, resourceId, RoleAuthorization.HOST_ADD_DELETE_HOSTS)) {
+          throw new AuthorizationException("The authenticated user is not authorized to update host attributes");
+        }
         host.setPublicHostName(request.getPublicHostName());
       }
       
       if (null != clusterName && null != request.getMaintenanceState()) {
-        Cluster c = clusters.getCluster(clusterName);
+        if(!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, resourceId, RoleAuthorization.HOST_TOGGLE_MAINTENANCE)) {
+          throw new AuthorizationException("The authenticated user is not authorized to update host maintenance state");
+        }
         MaintenanceState newState = MaintenanceState.valueOf(request.getMaintenanceState());
-        MaintenanceState oldState = host.getMaintenanceState(c.getClusterId());
+        MaintenanceState oldState = host.getMaintenanceState(clusterId);
         if (!newState.equals(oldState)) {
           if (newState.equals(MaintenanceState.IMPLIED_FROM_HOST)
               || newState.equals(MaintenanceState.IMPLIED_FROM_SERVICE)) {
             throw new IllegalArgumentException("Invalid arguments, can only set " +
               "maintenance state to one of " + EnumSet.of(MaintenanceState.OFF, MaintenanceState.ON));
           } else {
-            host.setMaintenanceState(c.getClusterId(), newState);
+            host.setMaintenanceState(clusterId, newState);
           }
         }
       }
 
       // Create configurations
       if (null != clusterName && null != request.getDesiredConfigs()) {
-        Cluster c = clusters.getCluster(clusterName);
-
         if (clusters.getHostsForCluster(clusterName).containsKey(host.getHostName())) {
 
           for (ConfigurationRequest cr : request.getDesiredConfigs()) {
+            String configType = cr.getType();
+
+            // If the config type is for a service, then allow a user with SERVICE_MODIFY_CONFIGS to
+            // update, else ensure the user has CLUSTER_MODIFY_CONFIGS
+            String service = null;
+
+            try {
+              service = cluster.getServiceForConfigTypes(Collections.singleton(configType));
+            } catch (IllegalArgumentException e) {
+              // Ignore this since we may have hit a config type that spans multiple services. This may
+              // happen in unit test cases but should not happen with later versions of stacks.
+            }
+
+            if(StringUtils.isEmpty(service)) {
+              if (!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, cluster.getResourceId(), EnumSet.of(RoleAuthorization.CLUSTER_MODIFY_CONFIGS))) {
+                throw new AuthorizationException("The authenticated user does not have authorization to modify cluster configurations");
+              }
+            }
+            else {
+              if (!AuthorizationHelper.isAuthorized(ResourceType.CLUSTER, cluster.getResourceId(), EnumSet.of(RoleAuthorization.SERVICE_MODIFY_CONFIGS))) {
+                throw new AuthorizationException("The authenticated user does not have authorization to modify service configurations");
+              }
+            }
 
             if (null != cr.getProperties() && cr.getProperties().size() > 0) {
               LOG.info(MessageFormat.format("Applying configuration with tag ''{0}'' to host ''{1}'' in cluster ''{2}''",
@@ -727,18 +784,18 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
                   request.getHostname(),
                   clusterName));
 
-              cr.setClusterName(c.getClusterName());
+              cr.setClusterName(cluster.getClusterName());
               controller.createConfiguration(cr);
             }
 
-            Config baseConfig = c.getConfig(cr.getType(), cr.getVersionTag());
+            Config baseConfig = cluster.getConfig(cr.getType(), cr.getVersionTag());
             if (null != baseConfig) {
               String authName = controller.getAuthName();
-              DesiredConfig oldConfig = host.getDesiredConfigs(c.getClusterId()).get(cr.getType());
+              DesiredConfig oldConfig = host.getDesiredConfigs(clusterId).get(cr.getType());
 
-              if (host.addDesiredConfig(c.getClusterId(), cr.isSelected(), authName,  baseConfig)) {
+              if (host.addDesiredConfig(clusterId, cr.isSelected(), authName,  baseConfig)) {
                 Logger logger = LoggerFactory.getLogger("configchange");
-                logger.info("cluster '" + c.getClusterName() + "', "
+                logger.info("cluster '" + cluster.getClusterName() + "', "
                     + "host '" + host.getHostName() + "' "
                     + "changed by: '" + authName + "'; "
                     + "type='" + baseConfig.getType() + "' "
@@ -754,6 +811,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
       if (clusterName != null && !clusterName.isEmpty()) {
         clusters.getCluster(clusterName).recalculateAllClusterVersionStates();
         if (rackChange) {
+          // Authorization check for this update was performed before we got to this point.
           controller.registerRackChange(clusterName);
         }
       }
@@ -828,6 +886,10 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
       // Assume the user also wants to delete it entirely, including all clusters.
       clusters.deleteHost(hostRequest.getHostname());
 
+      for (LogicalRequest logicalRequest: topologyManager.getRequests(Collections.<Long>emptyList())) {
+        logicalRequest.removeHostRequestByHostName(hostRequest.getHostname());
+      }
+
       if (null != hostRequest.getClusterName()) {
         clusters.getCluster(hostRequest.getClusterName()).recalculateAllClusterVersionStates();
       }
@@ -854,7 +916,7 @@ public class HostResourceProvider extends AbstractControllerResourceProvider {
   //todo: for api/v1/hosts we also end up here so we need to ensure proper 400 response
   //todo: since a user shouldn't be posing to that endpoint
   private RequestStatusResponse submitHostRequests(Request request) throws SystemException {
-    TopologyRequest requestRequest;
+    ScaleClusterRequest requestRequest;
     try {
       requestRequest = new ScaleClusterRequest(request.getProperties());
     } catch (InvalidTopologyTemplateException e) {

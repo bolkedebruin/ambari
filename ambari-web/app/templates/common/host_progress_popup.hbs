@@ -137,7 +137,7 @@
         {{/if}}
       </div>
     {{else}}
-      <div class="spinner"></div>
+      {{view App.SpinnerView}}
     {{/if}}
   </div>
 
@@ -193,9 +193,14 @@
         <i {{bindAttr class="view.openedTask.status :task-detail-status-ico view.openedTask.icon"}}></i>
 
         <div class="task-detail-ico-wrap">
-          <a title="Click to Copy" {{action "textTrigger" taskInfo target="view"}} class="task-detail-copy"><i
+          <a {{translateAttr title="common.fullLogPopup.clickToCopy"}} {{action "textTrigger" taskInfo target="view"}} class="task-detail-copy"><i
                   class="icon-copy"></i> {{t common.copy}}</a>
-          <a title="Open in New Window" {{action openTaskLogInDialog}} class="task-detail-open-dialog"><i
+          {{#if App.supports.logSearch}}
+            <a {{action navigateToHostLogs target="view"}} {{bindAttr class="view.isLogsLinkVisible::hidden"}} href="#">
+              <i class="icon-file"></i> {{t common.logs}}
+            </a>
+          {{/if}}
+          <a {{translateAttr title="common.openNewWindow"}} {{action openTaskLogInDialog}} class="task-detail-open-dialog"><i
                   class="icon-external-link"></i> {{t common.open}}</a>
         </div>
         <span class="task-detail-log-rolename">{{view.openedTask.commandDetail}}</span>
@@ -234,11 +239,11 @@
         </div>
       </div>
     {{else}}
-      <div class="spinner"></div>
+      {{view App.SpinnerView}}
     {{/if}}
   </div>
 {{else}}
-  <div class="spinner"></div>
+  {{view App.SpinnerView}}
 {{/if}}
 </div>
 {{#if view.isPaginate}}

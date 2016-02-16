@@ -27,9 +27,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.ambari.annotations.Experimental;
+import org.apache.ambari.annotations.ExperimentalFeature;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.agent.CommandReport;
 import org.apache.ambari.server.agent.ExecutionCommand;
+import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.events.HostRemovedEvent;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.ExecutionCommandDAO;
 import org.apache.ambari.server.orm.dao.HostDAO;
@@ -48,6 +53,9 @@ import org.apache.ambari.server.orm.entities.RoleSuccessCriteriaEntity;
 import org.apache.ambari.server.orm.entities.StageEntity;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Host;
+import org.apache.ambari.server.utils.LoopBody;
+import org.apache.ambari.server.utils.Parallel;
+import org.apache.ambari.server.utils.ParallelLoopResult;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
@@ -55,6 +63,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.eventbus.Subscribe;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.google.inject.name.Named;
@@ -102,17 +111,22 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
   @Inject
   RequestScheduleDAO requestScheduleDAO;
 
+  @Inject
+  Configuration configuration;
+
   private Cache<Long, HostRoleCommand> hostRoleCommandCache;
   private long cacheLimit; //may be exceeded to store tasks from one request
 
   @Inject
-  public ActionDBAccessorImpl(@Named("executionCommandCacheSize") long cacheLimit) {
+  public ActionDBAccessorImpl(@Named("executionCommandCacheSize") long cacheLimit,
+                              AmbariEventPublisher eventPublisher) {
 
     this.cacheLimit = cacheLimit;
     hostRoleCommandCache = CacheBuilder.newBuilder().
         expireAfterAccess(5, TimeUnit.MINUTES).
         build();
 
+    eventPublisher.register(this);
   }
 
   @Inject
@@ -134,10 +148,12 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
    */
   @Override
   public List<Stage> getAllStages(long requestId) {
-    List<Stage> stages = new ArrayList<Stage>();
-    for (StageEntity stageEntity : stageDAO.findByRequestId(requestId)) {
+    List<StageEntity> stageEntities = stageDAO.findByRequestId(requestId);
+    List<Stage> stages = new ArrayList<>(stageEntities.size());
+    for (StageEntity stageEntity : stageEntities ){
       stages.add(stageFactory.createExisting(stageEntity));
     }
+
     return stages;
   }
 
@@ -206,16 +222,41 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
    * {@inheritDoc}
    */
   @Override
+  @Experimental(feature = ExperimentalFeature.PARALLEL_PROCESSING)
   public List<Stage> getStagesInProgress() {
-    List<Stage> stages = new ArrayList<Stage>();
+    List<StageEntity> stageEntities = stageDAO.findByCommandStatuses(
+      HostRoleStatus.IN_PROGRESS_STATUSES);
 
-    List<StageEntity> stageEntities = stageDAO.findByCommandStatuses(HostRoleStatus.IN_PROGRESS_STATUSES);
-
-    for (StageEntity stageEntity : stageEntities) {
-      stages.add(stageFactory.createExisting(stageEntity));
+    // experimentally enable parallel stage processing
+    @Experimental(feature = ExperimentalFeature.PARALLEL_PROCESSING)
+    boolean useConcurrentStageProcessing = configuration.isExperimentalConcurrentStageProcessingEnabled();
+    if (useConcurrentStageProcessing) {
+      ParallelLoopResult<Stage> loopResult = Parallel.forLoop(stageEntities,
+          new LoopBody<StageEntity, Stage>() {
+            @Override
+            public Stage run(StageEntity stageEntity) {
+              return stageFactory.createExisting(stageEntity);
+            }
+          });
+      if (loopResult.getIsCompleted()) {
+        return loopResult.getResult();
+      } else {
+        // Fetch any missing results sequentially
+        List<Stage> stages = loopResult.getResult();
+        for (int i = 0; i < stages.size(); i++) {
+          if (stages.get(i) == null) {
+            stages.set(i, stageFactory.createExisting(stageEntities.get(i)));
+          }
+        }
+        return stages;
+      }
+    } else {
+      List<Stage> stages = new ArrayList<>(stageEntities.size());
+      for (StageEntity stageEntity : stageEntities) {
+        stages.add(stageFactory.createExisting(stageEntity));
+      }
+      return stages;
     }
-
-    return stages;
   }
 
   /**
@@ -392,18 +433,29 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
     List<HostRoleCommandEntity> commandEntities = hostRoleCommandDAO.findByPKs(taskReports.keySet());
     for (HostRoleCommandEntity commandEntity : commandEntities) {
       CommandReport report = taskReports.get(commandEntity.getTaskId());
-      if (commandEntity.getStatus() != HostRoleStatus.ABORTED) {
-        // We don't want to overwrite statuses for ABORTED tasks with
-        // statuses that have been received from the agent after aborting task
-        HostRoleStatus status = HostRoleStatus.valueOf(report.getStatus());
-        // if FAILED and marked for holding then set status = HOLDING_FAILED
-        if (status == HostRoleStatus.FAILED && commandEntity.isRetryAllowed()) {
-          status = HostRoleStatus.HOLDING_FAILED;
-        }
-        commandEntity.setStatus(status);
-      } else {
-        abortedCommandUpdates.add(commandEntity.getTaskId());
+
+      switch (commandEntity.getStatus()) {
+        case ABORTED:
+          // We don't want to overwrite statuses for ABORTED tasks with
+          // statuses that have been received from the agent after aborting task
+          abortedCommandUpdates.add(commandEntity.getTaskId());
+          break;
+        default:
+          HostRoleStatus status = HostRoleStatus.valueOf(report.getStatus());
+          // if FAILED and marked for holding then set status = HOLDING_FAILED
+          if (status == HostRoleStatus.FAILED && commandEntity.isRetryAllowed()) {
+            status = HostRoleStatus.HOLDING_FAILED;
+
+            // tasks can be marked as skipped when they fail
+            if (commandEntity.isFailureAutoSkipped()) {
+              status = HostRoleStatus.SKIPPED_FAILED;
+            }
+          }
+
+          commandEntity.setStatus(status);
+          break;
       }
+
       commandEntity.setStdOut(report.getStdOut().getBytes());
       commandEntity.setStdError(report.getStdErr().getBytes());
       commandEntity.setStructuredOut(report.getStructuredOut() == null ? null :
@@ -441,20 +493,30 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
         + "HostName " + hostname + " requestId " + requestId + " stageId "
         + stageId + " role " + role + " report " + report);
     }
+
     long now = System.currentTimeMillis();
     List<HostRoleCommandEntity> commands = hostRoleCommandDAO.findByHostRole(
       hostname, requestId, stageId, role);
+
     for (HostRoleCommandEntity command : commands) {
       HostRoleStatus status = HostRoleStatus.valueOf(report.getStatus());
+
       // if FAILED and marked for holding then set status = HOLDING_FAILED
       if (status == HostRoleStatus.FAILED && command.isRetryAllowed()) {
         status = HostRoleStatus.HOLDING_FAILED;
+
+        // tasks can be marked as skipped when they fail
+        if (command.isFailureAutoSkipped()) {
+          status = HostRoleStatus.SKIPPED_FAILED;
+        }
       }
+
       command.setStatus(status);
       command.setStdOut(report.getStdOut().getBytes());
       command.setStdError(report.getStdErr().getBytes());
       command.setStructuredOut(report.getStructuredOut() == null ? null :
         report.getStructuredOut().getBytes());
+
       if (HostRoleStatus.getCompletedStates().contains(command.getStatus())) {
         command.setEndTime(now);
         if (requestDAO.getLastStageId(requestId).equals(stageId)) {
@@ -463,6 +525,7 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
       }
       command.setExitcode(report.getExitCode());
     }
+
     hostRoleCommandDAO.mergeAll(commands);
 
     if (checkRequest) {
@@ -540,18 +603,6 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
     return getTasks(
         hostRoleCommandDAO.findTaskIdsByRequestIds(requestIds)
     );
-  }
-
-  @Override
-  public List<HostRoleCommand> getTasksByRequestAndTaskIds(Collection<Long> requestIds, Collection<Long> taskIds) {
-    if (!requestIds.isEmpty() && !taskIds.isEmpty()) {
-      return getTasks(hostRoleCommandDAO.findTaskIdsByRequestAndTaskIds(requestIds, taskIds));
-
-    } else if (requestIds.isEmpty()) {
-      return getTasks(taskIds);
-    } else {
-      return getAllTasksByRequestIds(requestIds);
-    }
   }
 
   @Override
@@ -638,7 +689,7 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
     }
 
     return hostRoleCommandDAO.getRequestsByTaskStatus(taskStatuses, maxResults,
-        ascOrder);
+      ascOrder);
   }
 
   @Override
@@ -652,7 +703,7 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
   }
 
   @Override
-  public List<Request> getRequests(Collection<Long> requestIds){
+  public List<Request> getRequests(Collection<Long> requestIds) {
     List<RequestEntity> requestEntities = requestDAO.findByPks(requestIds);
     List<Request> requests = new ArrayList<Request>(requestEntities.size());
     for (RequestEntity requestEntity : requestEntities) {
@@ -673,5 +724,16 @@ public class ActionDBAccessorImpl implements ActionDBAccessor {
     }
 
     hostRoleCommandDAO.mergeAll(tasks);
+  }
+
+  /**
+   * Invalidate cached HostRoleCommands if a host is deleted.
+   * @param event @HostRemovedEvent
+   */
+  @Subscribe
+  public void invalidateCommandCacheOnHostRemove(HostRemovedEvent event) {
+    LOG.info("Invalidating command cache on host delete event." );
+    LOG.debug("HostRemovedEvent => " + event);
+    hostRoleCommandCache.invalidateAll();
   }
 }

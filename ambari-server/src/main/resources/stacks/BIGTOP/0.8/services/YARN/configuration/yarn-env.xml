@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>yarn_log_dir_prefix</name>
     <value>/var/log/hadoop-yarn</value>
@@ -33,9 +33,13 @@
   </property>
   <property>
     <name>yarn_user</name>
+    <display-name>Yarn User</display-name>
     <value>yarn</value>
     <property-type>USER</property-type>
     <description>YARN User</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>yarn_heapsize</name>
@@ -179,6 +183,9 @@ if [ "x$JAVA_LIBRARY_PATH" != "x" ]; then
 fi
 YARN_OPTS="$YARN_OPTS -Dyarn.policy.file=$YARN_POLICYFILE"
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
 </configuration>

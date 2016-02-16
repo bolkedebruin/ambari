@@ -24,13 +24,15 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Public;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
+import org.apache.hadoop.metrics2.sink.timeline.PrecisionLimitExceededException;
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetricMetadata;
 import org.apache.hadoop.yarn.api.records.timeline.TimelineEntities;
 import org.apache.hadoop.yarn.api.records.timeline.TimelineEntity;
 import org.apache.hadoop.yarn.api.records.timeline.TimelineEvents;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.yarn.api.records.timeline.TimelinePutResponse;
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.Precision;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricStore;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.timeline.EntityIdentifier;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.timeline.GenericObjectMapper;
@@ -64,6 +66,7 @@ import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -148,15 +151,15 @@ public class TimelineWebServices {
     TimelineEntities entities = null;
     try {
       entities = store.getEntities(
-          parseStr(entityType),
-          parseLongStr(limit),
-          parseLongStr(windowStart),
-          parseLongStr(windowEnd),
-          parseStr(fromId),
-          parseLongStr(fromTs),
-          parsePairStr(primaryFilter, ":"),
-          parsePairsStr(secondaryFilter, ",", ":"),
-          parseFieldsStr(fields, ","));
+        parseStr(entityType),
+        parseLongStr(limit),
+        parseLongStr(windowStart),
+        parseLongStr(windowEnd),
+        parseStr(fromId),
+        parseLongStr(fromTs),
+        parsePairStr(primaryFilter, ":"),
+        parsePairsStr(secondaryFilter, ",", ":"),
+        parseFieldsStr(fields, ","));
     } catch (NumberFormatException e) {
       throw new BadRequestException(
           "windowStart, windowEnd or limit is not a numeric value.");
@@ -319,11 +322,8 @@ public class TimelineWebServices {
         "or hours");
     } catch (IllegalArgumentException iae) {
       throw new BadRequestException(iae.getMessage());
-    } catch (SQLException sql) {
+    } catch (SQLException | IOException sql) {
       throw new WebApplicationException(sql,
-        Response.Status.INTERNAL_SERVER_ERROR);
-    } catch (IOException io) {
-      throw new WebApplicationException(io,
         Response.Status.INTERNAL_SERVER_ERROR);
     }
   }
@@ -341,11 +341,11 @@ public class TimelineWebServices {
    * @param precision Precision [ seconds, minutes, hours ]
    * @param limit limit on total number of {@link TimelineMetric} records
    *              retrieved.
-   * @return {@link TimelineMetrics}
+   * @return {@link @TimelineMetrics}
    */
   @GET
   @Path("/metrics")
-  @Produces({ MediaType.APPLICATION_JSON /* , MediaType.APPLICATION_XML */})
+  @Produces({ MediaType.APPLICATION_JSON })
   public TimelineMetrics getTimelineMetrics(
     @Context HttpServletRequest req,
     @Context HttpServletResponse res,
@@ -381,17 +381,47 @@ public class TimelineWebServices {
     } catch (Precision.PrecisionFormatException pfe) {
       throw new BadRequestException("precision should be seconds, minutes " +
         "or hours");
+    } catch (PrecisionLimitExceededException iae) {
+      throw new PrecisionLimitExceededException(iae.getMessage());
     } catch (IllegalArgumentException iae) {
       throw new BadRequestException(iae.getMessage());
-    } catch (SQLException sql) {
-      throw new WebApplicationException(sql,
-        Response.Status.INTERNAL_SERVER_ERROR);
-    } catch (IOException io) {
-      throw new WebApplicationException(io,
+    } catch (SQLException | IOException e) {
+      throw new WebApplicationException(e,
         Response.Status.INTERNAL_SERVER_ERROR);
     }
   }
 
+  @GET
+  @Path("/metrics/metadata")
+  @Produces({ MediaType.APPLICATION_JSON })
+  public Map<String, List<TimelineMetricMetadata>> getTimelineMetricMetadata(
+    @Context HttpServletRequest req,
+    @Context HttpServletResponse res
+  ) {
+    init(res);
+
+    try {
+      return timelineMetricStore.getTimelineMetricMetadata();
+    } catch (Exception e) {
+      throw new WebApplicationException(e, Response.Status.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @GET
+  @Path("/metrics/hosts")
+  @Produces({ MediaType.APPLICATION_JSON })
+  public Map<String, Set<String>> getHostedAppsMetadata(
+    @Context HttpServletRequest req,
+    @Context HttpServletResponse res
+  ) {
+    init(res);
+
+    try {
+      return timelineMetricStore.getHostAppsMetadata();
+    } catch (Exception e) {
+      throw new WebApplicationException(e, Response.Status.INTERNAL_SERVER_ERROR);
+    }
+  }
 
   /**
    * Store the given entities into the timeline store, and return the errors

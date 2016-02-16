@@ -35,7 +35,6 @@ import java.util.UUID;
 
 import javax.persistence.EntityManager;
 
-import junit.framework.Assert;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
@@ -72,6 +71,7 @@ import org.apache.ambari.server.orm.entities.ResourceTypeEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.orm.entities.StageEntity;
 import org.apache.ambari.server.orm.entities.UserEntity;
+import org.apache.ambari.server.security.authorization.ResourceType;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Host;
@@ -94,6 +94,8 @@ import com.google.inject.Injector;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
 import com.google.inject.persist.Transactional;
+
+import junit.framework.Assert;
 
 @Singleton
 public class OrmTestHelper {
@@ -142,8 +144,8 @@ public class OrmTestHelper {
     StackEntity stackEntity = stackDAO.find("HDP", "2.2.0");
 
     ResourceTypeEntity resourceTypeEntity =  new ResourceTypeEntity();
-    resourceTypeEntity.setId(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
-    resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
+    resourceTypeEntity.setId(ResourceType.CLUSTER.getId());
+    resourceTypeEntity.setName(ResourceType.CLUSTER.name());
 
     ResourceEntity resourceEntity = new ResourceEntity();
     resourceEntity.setResourceType(resourceTypeEntity);
@@ -324,8 +326,8 @@ public class OrmTestHelper {
     ResourceTypeDAO resourceTypeDAO = injector.getInstance(ResourceTypeDAO.class);
 
     ResourceTypeEntity resourceTypeEntity =  new ResourceTypeEntity();
-    resourceTypeEntity.setId(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
-    resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
+    resourceTypeEntity.setId(ResourceType.CLUSTER.getId());
+    resourceTypeEntity.setName(ResourceType.CLUSTER.name());
     resourceTypeEntity = resourceTypeDAO.merge(resourceTypeEntity);
 
     ResourceEntity resourceEntity = new ResourceEntity();
@@ -613,7 +615,7 @@ public class OrmTestHelper {
     if (repositoryVersion == null) {
       try {
         repositoryVersion = repositoryVersionDAO.create(stackEntity, version,
-            String.valueOf(System.currentTimeMillis()), "pack", "");
+            String.valueOf(System.currentTimeMillis()), "");
       } catch (Exception ex) {
         Assert.fail(MessageFormat.format("Unable to create Repo Version for Stack {0} and version {1}",
             stackEntity.getStackName() + "-" + stackEntity.getStackVersion(), version));
@@ -626,11 +628,15 @@ public class OrmTestHelper {
    * Convenient method to create host version for given stack.
    */
   public HostVersionEntity createHostVersion(String hostName, RepositoryVersionEntity repositoryVersionEntity,
-                                             RepositoryVersionState repositoryVersionState) {
+      RepositoryVersionState repositoryVersionState) {
     HostEntity hostEntity = hostDAO.findByName(hostName);
     HostVersionEntity hostVersionEntity = new HostVersionEntity(hostEntity, repositoryVersionEntity, repositoryVersionState);
+    hostVersionEntity.setHostId(hostEntity.getHostId());
     hostVersionDAO.create(hostVersionEntity);
+
+    hostEntity.getHostVersionEntities().add(hostVersionEntity);
+    hostDAO.merge(hostEntity);
+
     return hostVersionEntity;
   }
-
 }

@@ -26,6 +26,11 @@ App.AddHostController = App.WizardController.extend({
   totalSteps: 7,
 
   /**
+   * @type {string}
+   */
+  displayName: Em.I18n.t('hosts.add.header'),
+
+  /**
    * Used for hiding back button in wizard
    */
   hideBackButton: true,
@@ -159,7 +164,6 @@ App.AddHostController = App.WizardController.extend({
       });
     }
     this.set("content.slaveComponentHosts", slaveComponentHosts);
-    console.log("AddHostController.loadSlaveComponentHosts: loaded hosts ", slaveComponentHosts);
   },
 
   /**
@@ -171,7 +175,6 @@ App.AddHostController = App.WizardController.extend({
     var clients = this.getClientsToInstall(services, serviceComponents);
     this.setDBProperty('clientInfo', clients);
     this.set('content.clients', clients);
-    console.log("AddHostController.saveClients: saved list ", clients);
   },
 
   /**
@@ -278,7 +281,7 @@ App.AddHostController = App.WizardController.extend({
             var serviceName = service.get('serviceName');
             var configGroups = this.get('content.configGroups').filterProperty('ConfigGroup.tag', serviceName);
             var configGroupsNames = configGroups.mapProperty('ConfigGroup.group_name');
-            var defaultGroupName = service.get('displayName') + ' Default';
+            var defaultGroupName = 'Default';
             var selectedService = selectedServices.findProperty('serviceId', serviceName);
             configGroupsNames.unshift(defaultGroupName);
             if (selectedService) {
@@ -321,7 +324,7 @@ App.AddHostController = App.WizardController.extend({
         } else {
           var configGroups = this.get('content.configGroups').filterProperty('ConfigGroup.tag', serviceName);
           var configGroupsNames = configGroups.mapProperty('ConfigGroup.group_name').sort();
-          var defaultGroupName = service.get('displayName') + ' Default';
+          var defaultGroupName = 'Default';
           configGroupsNames.unshift(defaultGroupName);
           selectedServices.push({
             serviceId: serviceName,
@@ -344,7 +347,6 @@ App.AddHostController = App.WizardController.extend({
       serviceConfigProperties = App.db.get('Installer', 'serviceConfigProperties');
     }
     this.set('content.serviceConfigProperties', serviceConfigProperties);
-    console.log("AddHostController.loadServiceConfigProperties: loaded config ", serviceConfigProperties);
   },
   /**
    * Load data for all steps until <code>current step</code>
@@ -402,10 +404,13 @@ App.AddHostController = App.WizardController.extend({
   /**
    * send request to server in order to install services
    * @param isRetry
+   * @param callback
+   * @param errorCallback
    */
   installServices: function (isRetry, callback, errorCallback) {
     callback = callback || Em.K;
     this.set('content.cluster.oldRequestsId', []);
+    this.set('content.cluster.status', 'PENDING');
     var clusterName = this.get('content.cluster.name');
     var hostNames = [];
     var hosts = this.getDBProperty('hosts');

@@ -20,15 +20,16 @@ var App = require('app');
 var controller;
 var helpers = require('test/helpers');
 
+
+function getController() {
+  return App.ManageAlertNotificationsController.create({});
+}
+var createEditPopupView = getController().showCreateEditPopup();
+
 describe('App.ManageAlertNotificationsController', function () {
 
   beforeEach(function () {
-    controller = App.ManageAlertNotificationsController.create({});
-    sinon.stub($, 'ajax', Em.K);
-  });
-
-  afterEach(function () {
-    $.ajax.restore();
+    controller = getController();
   });
 
   describe('#alertNotifications', function () {
@@ -101,45 +102,48 @@ describe('App.ManageAlertNotificationsController', function () {
 
   describe('#addAlertNotification()', function () {
 
+    var inputFields = Em.Object.create({
+      a: {
+        value: '',
+        defaultValue: 'a'
+      },
+      b: {
+        value: '',
+        defaultValue: 'b'
+      },
+      c: {
+        value: '',
+        defaultValue: 'c'
+      },
+      severityFilter: {
+        value: [],
+        defaultValue: ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']
+      },
+      global: {
+        value: false
+      },
+      allGroups: Em.Object.create({
+        value: 'custom'
+      })
+    });
+
     beforeEach(function () {
       sinon.stub(controller, 'showCreateEditPopup');
+      controller.set('inputFields', inputFields);
+      controller.addAlertNotification();
     });
 
     afterEach(function () {
       controller.showCreateEditPopup.restore();
     });
 
-    it("should set value for inputFields and call showCreateEditPopup", function () {
-
-      controller.set('inputFields', Em.Object.create({
-        a: {
-          value: '',
-          defaultValue: 'a'
-        },
-        b: {
-          value: '',
-          defaultValue: 'b'
-        },
-        c: {
-          value: '',
-          defaultValue: 'c'
-        },
-        severityFilter: {
-          value: [],
-          defaultValue: ['OK', 'WARNING', 'CRITICAL', 'UNKNOWN']
-        },
-        global: {
-          value: false
-        },
-        allGroups: Em.Object.create({
-          value: 'custom'
-        })
-      }));
-      controller.addAlertNotification();
-
-      Em.keys(controller.get('inputFields')).forEach(function (key) {
-        expect(controller.get('inputFields.' + key + '.value')).to.eql(controller.get('inputFields.' + key + '.defaultValue'));
+    Object.keys(inputFields).forEach(function (key) {
+      it(key, function () {
+        expect(controller.get('inputFields.' + key + '.value')).to.be.eql(controller.get('inputFields.' + key + '.defaultValue'));
       });
+    });
+
+    it("should call showCreateEditPopup", function () {
       expect(controller.showCreateEditPopup.calledOnce).to.be.true;
     });
 
@@ -503,13 +507,11 @@ describe('App.ManageAlertNotificationsController', function () {
 
     });
 
+    App.TestAliases.testAsComputedOr(getController().showCreateEditPopup(), 'disablePrimary', ['isSaving', 'hasErrors']);
+
     describe('#bodyClass', function () {
-
-      var view;
-
-      beforeEach(function () {
-
-        view = controller.showCreateEditPopup().get('bodyClass').create({
+      function getBodyClass() {
+        return createEditPopupView.get('bodyClass').create({
           controller: Em.Object.create({
             inputFields: {
               name: {},
@@ -528,8 +530,15 @@ describe('App.ManageAlertNotificationsController', function () {
             hasErrors: false
           })
         });
+      }
 
+      var view;
+
+      beforeEach(function () {
+        view = getBodyClass();
       });
+
+      App.TestAliases.testAsComputedOr(getBodyClass(), 'someErrorExists', ['nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'hostError', 'portError', 'passwordError']);
 
       describe('#selectAllGroups', function () {
 
@@ -574,20 +583,20 @@ describe('App.ManageAlertNotificationsController', function () {
           expect(view.get('parentView.hasErrors')).to.be.true;
         });
 
-        it('should check inputFields.name.value', function () {
+        it('should check inputFields.name.value (2)', function () {
           view.set('controller.inputFields.name.errorMsg', 'error');
           view.set('controller.inputFields.name.value', 'test');
           expect(view.get('controller.inputFields.name.errorMsg')).to.equal('');
         });
 
-        it('should check inputFields.name.value', function () {
+        it('should check inputFields.name.value (3)', function () {
           view.set('isEdit', true);
           view.set('controller.inputFields.name.value', '');
           expect(view.get('controller.inputFields.name.errorMsg')).to.equal(Em.I18n.t('alerts.actions.manage_alert_notifications_popup.error.name.empty'));
           expect(view.get('parentView.hasErrors')).to.be.true;
         });
 
-        it('should check inputFields.name.value', function () {
+        it('should check inputFields.name.value (4)', function () {
           view.set('isEdit', true);
           view.set('controller.inputFields.name.errorMsg', 'error');
           view.set('controller.inputFields.name.value', 'test');
@@ -609,7 +618,7 @@ describe('App.ManageAlertNotificationsController', function () {
 
         });
 
-        it('should check inputFields.retypeSMTPPassword.value', function () {
+        it('should check inputFields.retypeSMTPPassword.value (2)', function () {
 
           view.set('parentView.hasErrors', true);
           view.set('controller.inputFields.retypeSMTPPassword.errorMsg', 'error');
@@ -658,16 +667,26 @@ describe('App.ManageAlertNotificationsController', function () {
         });
 
         cases.forEach(function (item) {
-          it(item.method, function () {
-            item.errors.forEach(function (errorName) {
-              view.set(errorName, true);
+          describe(item.method, function () {
+
+            beforeEach(function () {
+              item.errors.forEach(function (errorName) {
+                view.set(errorName, true);
+              });
+              view.set('controller.inputFields.method.value', item.method);
             });
-            view.set('controller.inputFields.method.value', item.method);
+
             item.errors.forEach(function (errorName) {
-              expect(view.get(errorName)).to.be.false;
+              it(errorName + ' is false', function () {
+                expect(view.get(errorName)).to.be.false;
+              });
+
             });
             validators.forEach(function (validatorName) {
-              expect(view.get(validatorName).calledOnce).to.equal(item.validators.contains(validatorName));
+              var called = item.validators.contains(validatorName);
+              it(validatorName + ' ' + (called ? '' : 'not') + ' called', function () {
+                expect(view.get(validatorName).calledOnce).to.equal(called);
+              });
             });
           });
         });
@@ -784,8 +803,8 @@ describe('App.ManageAlertNotificationsController', function () {
     it("should send ajax request", function () {
 
       controller.createAlertNotification();
-      expect($.ajax.calledOnce).to.be.true;
-      expect($.ajax.args[0][0].url.contains('overwrite_existing=true')).to.be.false;
+      var args = helpers.findAjaxRequest('name', 'alerts.create_alert_notification');
+      expect(args[0]).to.exists;
     });
 
   });
@@ -820,7 +839,8 @@ describe('App.ManageAlertNotificationsController', function () {
     it("should send ajax request", function () {
 
       controller.updateAlertNotification();
-      expect($.ajax.calledOnce).to.be.true;
+      var args = helpers.findAjaxRequest('name', 'alerts.update_alert_notification');
+      expect(args[0]).to.exists;
     });
 
   });
@@ -866,30 +886,40 @@ describe('App.ManageAlertNotificationsController', function () {
 
       expect(App.showConfirmationPopup.calledOnce).to.be.true;
       popup.onPrimary();
-      expect($.ajax.calledOnce).to.be.true;
+      var args = helpers.findAjaxRequest('name', 'alerts.delete_alert_notification');
+      expect(args[0]).to.exists;
     });
 
   });
 
   describe('#deleteAlertNotificationSuccessCallback()', function () {
+    var mockSelectedAlertNotification;
 
-    it("should call loadAlertNotifications, selectedAlertNotification.deleteRecord and set null to selectedAlertNotification", function () {
-
-      var mockSelectedAlertNotification = {
+    beforeEach(function () {
+      mockSelectedAlertNotification = {
         deleteRecord: Em.K
       };
       controller.set('selectedAlertNotification', mockSelectedAlertNotification);
       sinon.stub(controller, 'loadAlertNotifications', Em.K);
       sinon.spy(mockSelectedAlertNotification, 'deleteRecord');
-
       controller.deleteAlertNotificationSuccessCallback();
+    });
 
-      expect(controller.loadAlertNotifications.calledOnce).to.be.true;
-      expect(mockSelectedAlertNotification.deleteRecord.calledOnce).to.be.true;
-      expect(controller.get('selectedAlertNotification')).to.equal(null);
-
+    afterEach(function () {
       controller.loadAlertNotifications.restore();
       mockSelectedAlertNotification.deleteRecord.restore();
+    });
+
+    it("should call loadAlertNotifications", function () {
+      expect(controller.loadAlertNotifications.calledOnce).to.be.true;
+    });
+
+    it("should call selectedAlertNotification.deleteRecord", function () {
+      expect(mockSelectedAlertNotification.deleteRecord.calledOnce).to.be.true;
+    });
+
+    it("should set null to selectedAlertNotification", function () {
+      expect(controller.get('selectedAlertNotification')).to.equal(null);
     });
 
   });
@@ -922,13 +952,13 @@ describe('App.ManageAlertNotificationsController', function () {
       controller.set('inputFields.customProperties', []);
     });
 
+    /*eslint-disable mocha-cleanup/asserts-limit */
     it('should add custom Property to customProperties', function () {
-
       controller.set('newCustomProperty', {name: 'n1', value: 'v1'});
       controller.addCustomProperty();
       helpers.nestedExpect([{name: 'n1', value: 'v1', defaultValue: 'v1'}], controller.get('inputFields.customProperties'));
-
     });
+    /*eslint-enable mocha-cleanup/asserts-limit */
 
   });
 
@@ -944,8 +974,8 @@ describe('App.ManageAlertNotificationsController', function () {
       ]);
     });
 
+    /*eslint-disable mocha-cleanup/asserts-limit */
     it('should remove selected custom property', function () {
-
       controller.removeCustomPropertyHandler({context: c});
       helpers.nestedExpect(
         [
@@ -954,8 +984,8 @@ describe('App.ManageAlertNotificationsController', function () {
         ],
         controller.get('inputFields.customProperties')
       );
-
     });
+    /*eslint-enable mocha-cleanup/asserts-limit */
 
   });
 

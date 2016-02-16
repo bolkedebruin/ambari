@@ -86,6 +86,8 @@ import org.apache.ambari.server.state.host.HostRegistrationRequestEvent;
 import org.apache.ambari.server.state.host.HostStatusUpdatesReceivedEvent;
 import org.apache.ambari.server.state.host.HostUnhealthyHeartbeatEvent;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
+import org.apache.ambari.server.state.stack.upgrade.Direction;
+import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpFailedEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpInProgressEvent;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpSucceededEvent;
@@ -199,7 +201,7 @@ public class HeartBeatHandler {
   public HeartBeatResponse handleHeartBeat(HeartBeat heartbeat)
       throws AmbariException {
     long now = System.currentTimeMillis();
-    if(heartbeat.getAgentEnv() != null && heartbeat.getAgentEnv().getHostHealth() != null) {
+    if (heartbeat.getAgentEnv() != null && heartbeat.getAgentEnv().getHostHealth() != null) {
       heartbeat.getAgentEnv().getHostHealth().setServerTimeStampAtReporting(now);
     }
 
@@ -229,7 +231,18 @@ public class HeartBeatHandler {
     response = new HeartBeatResponse();
     response.setResponseId(++currentResponseId);
 
-    Host hostObject = clusterFsm.getHost(hostname);
+    Host hostObject;
+    try {
+      hostObject = clusterFsm.getHost(hostname);
+    } catch (HostNotFoundException e) {
+      LOG.error("Host: {} not found. Agent is still heartbeating.", hostname);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Host associated with the agent heratbeat might have been " +
+          "deleted", e);
+      }
+      // For now return empty response with only response id.
+      return response;
+    }
 
     if (hostObject.getState().equals(HostState.HEARTBEAT_LOST)) {
       // After loosing heartbeat agent should reregister
@@ -547,7 +560,7 @@ public class HeartBeatHandler {
                 //do nothing, pass this data further for processing
               }
 
-              String newVersion = structuredOutput == null ? null : structuredOutput.getVersion();
+              String newVersion = structuredOutput == null ? null : structuredOutput.version;
 
               // Pass true to always publish a version event.  It is safer to recalculate the version even if we don't
               // detect a difference in the value.  This is useful in case that a manual database edit is done while
@@ -555,7 +568,7 @@ public class HeartBeatHandler {
               handleComponentVersionReceived(cl, scHost, newVersion, true);
             }
 
-            // Updating stack version, if needed
+            // Updating stack version, if needed (this is not actually for express/rolling upgrades!)
             if (scHost.getState().equals(State.UPGRADING)) {
               scHost.setStackVersion(scHost.getDesiredStackVersion());
             } else if ((report.getRoleCommand().equals(RoleCommand.START.toString()) ||
@@ -600,6 +613,19 @@ public class HeartBeatHandler {
                   hostname, now));
             }
           } else if (report.getStatus().equals("FAILED")) {
+
+            if (StringUtils.isNotBlank(report.getStructuredOut())) {
+              try {
+                ComponentVersionStructuredOut structuredOutput = gson.fromJson(report.getStructuredOut(), ComponentVersionStructuredOut.class);
+
+                if (null != structuredOutput.upgradeDirection && structuredOutput.upgradeDirection.isUpgrade()) {
+                  scHost.setUpgradeState(UpgradeState.FAILED);
+                }
+              } catch (JsonSyntaxException ex) {
+                LOG.warn("Structured output was found, but not parseable: {}", report.getStructuredOut());
+              }
+            }
+
             LOG.warn("Operation failed - may be retried. Service component host: "
                 + schName + ", host: " + hostname + " Action id" + report.getActionId());
             if (actionManager.isInProgressCommand(report)) {
@@ -963,9 +989,46 @@ public class HeartBeatHandler {
     if(response.getAgentConfig() != null) {
       LOG.debug("Agent configuration map set to " + response.getAgentConfig());
     }
-    response.setRecoveryConfig(RecoveryConfig.getRecoveryConfig(config));
+
+    //
+    // Filter the enabled components by maintenance mode
+    //
+
+    // Build a map of component name => Service component host
+    // for easy look up of maintenance state by component name.
+    // As of now, a host can belong to only one cluster.
+    // Clusters::getClustersForHost(hostname) returns one item.
+    Map<String, ServiceComponentHost> schFromComponentName = new HashMap<>();
+
+    for (Cluster cl : clusterFsm.getClustersForHost(hostname)) {
+      List<ServiceComponentHost> scHosts = cl.getServiceComponentHosts(hostname);
+      for (ServiceComponentHost sch : scHosts) {
+        schFromComponentName.put(sch.getServiceComponentName(), sch);
+      }
+    }
+
+    // Keep only the components that have maintenance state set to OFF
+    List<String> enabledComponents = new ArrayList<>();
+    String[] confEnabledComponents = config.getEnabledComponents().split(",");
+
+    for (String componentName : confEnabledComponents) {
+      ServiceComponentHost sch = schFromComponentName.get(componentName);
+
+      // Append the component name only if it is
+      // in the host and  not in maintenance mode.
+      if (sch != null && sch.getMaintenanceState() == MaintenanceState.OFF) {
+        enabledComponents.add(componentName);
+      }
+    }
+
+    // Overwrite the pre-constructed RecoveryConfig's list of
+    // enabled components with the filtered list
+    RecoveryConfig rc = RecoveryConfig.getRecoveryConfig(config);
+    rc.setEnabledComponents(StringUtils.join(enabledComponents, ','));
+    response.setRecoveryConfig(rc);
+
     if(response.getRecoveryConfig() != null) {
-      LOG.debug("Recovery configuration set to " + response.getRecoveryConfig().toString());
+      LOG.info("Recovery configuration set to " + response.getRecoveryConfig().toString());
     }
 
     Long requestId = 0L;
@@ -1173,13 +1236,12 @@ public class HeartBeatHandler {
     @SerializedName("version")
     private String version;
 
-    public String getVersion() {
-      return version;
-    }
+    @SerializedName("upgrade_type")
+    private UpgradeType upgradeType = null;
 
-    public void setVersion(String version) {
-      this.version = version;
-    }
+    @SerializedName("direction")
+    private Direction upgradeDirection = null;
+
   }
 
   /**

@@ -59,7 +59,10 @@ import org.apache.commons.lang.ArrayUtils;
     @NamedQuery(name = "HostRoleCommandEntity.findByCommandStatuses", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.status IN :statuses ORDER BY command.requestId, command.stageId"),
     @NamedQuery(name = "HostRoleCommandEntity.findByHostId", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostId=:hostId"),
     @NamedQuery(name = "HostRoleCommandEntity.findByHostRole", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostEntity.hostName=:hostName AND command.requestId=:requestId AND command.stageId=:stageId AND command.role=:role ORDER BY command.taskId"),
-    @NamedQuery(name = "HostRoleCommandEntity.findByHostRoleNullHost", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostEntity IS NULL AND command.requestId=:requestId AND command.stageId=:stageId AND command.role=:role")
+    @NamedQuery(name = "HostRoleCommandEntity.findByHostRoleNullHost", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostEntity IS NULL AND command.requestId=:requestId AND command.stageId=:stageId AND command.role=:role"),
+    @NamedQuery(name = "HostRoleCommandEntity.findByStatusBetweenStages", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.requestId = :requestId AND command.stageId >= :minStageId AND command.stageId <= :maxStageId AND command.status = :status"),
+    @NamedQuery(name = "HostRoleCommandEntity.updateAutoSkipExcludeRoleCommand", query = "UPDATE HostRoleCommandEntity command SET command.autoSkipOnFailure = :autoSkipOnFailure WHERE command.requestId = :requestId AND command.roleCommand <> :roleCommand"),
+    @NamedQuery(name = "HostRoleCommandEntity.updateAutoSkipForRoleCommand", query = "UPDATE HostRoleCommandEntity command SET command.autoSkipOnFailure = :autoSkipOnFailure WHERE command.requestId = :requestId AND command.roleCommand = :roleCommand")
 })
 public class HostRoleCommandEntity {
 
@@ -140,6 +143,13 @@ public class HostRoleCommandEntity {
 
   @Column(name = "retry_allowed", nullable = false)
   private Integer retryAllowed = Integer.valueOf(0);
+
+  /**
+   * If the command fails and is skippable, then this will instruct the
+   * scheduler to skip the command.
+   */
+  @Column(name = "auto_skip_on_failure", nullable = false)
+  private Integer autoSkipOnFailure = Integer.valueOf(0);
 
   // This is really command type as well as name
   @Column(name = "role_command")
@@ -346,6 +356,26 @@ public class HostRoleCommandEntity {
     retryAllowed = enabled ? 1 : 0;
   }
 
+  /**
+   * Gets whether commands which fail and are retryable are automatically
+   * skipped and marked with {@link HostRoleStatus#SKIPPED_FAILED}.
+   *
+   * @return
+   */
+  public boolean isFailureAutoSkipped() {
+    return autoSkipOnFailure != 0;
+  }
+
+  /**
+   * Sets whether commands which fail and are retryable are automatically
+   * skipped and marked with {@link HostRoleStatus#SKIPPED_FAILED}.
+   *
+   * @param skipFailures
+   */
+  public void setAutoSkipOnFailure(boolean skipFailures) {
+    autoSkipOnFailure = skipFailures ? 1 : 0;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -464,5 +494,21 @@ public class HostRoleCommandEntity {
 
   public void setTopologyLogicalTaskEntity(TopologyLogicalTaskEntity topologyLogicalTaskEntity) {
     this.topologyLogicalTaskEntity = topologyLogicalTaskEntity;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public String toString() {
+    StringBuilder buffer = new StringBuilder("HostRoleCommandEntity{ ");
+    buffer.append("taskId").append(taskId);
+    buffer.append(", stageId=").append(stageId);
+    buffer.append(", requestId=").append(requestId);
+    buffer.append(", role=").append(role);
+    buffer.append(", roleCommand=").append(roleCommand);
+    buffer.append(", exitcode=").append(exitcode);
+    buffer.append("}");
+    return buffer.toString();
   }
 }

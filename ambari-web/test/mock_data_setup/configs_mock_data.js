@@ -107,15 +107,15 @@ module.exports = {
         });
       });
     } else {
-      for (var serviceName in configTags) {
-        configTags[serviceName].forEach(function(tag) {
+      Object.keys(configTags).forEach(function (sName) {
+        configTags[sName].forEach(function(tag) {
           configTagsObject.push({
             siteName: tag,
             tagName: "version1",
             newTagName: null
           });
         });
-      }
+      });
     }
     return configTagsObject.uniq();
   },
@@ -232,12 +232,11 @@ module.exports = {
         "isOverridable":false,
         "showLabel":true,
         "serviceName":"STORM",
-        "displayType":"masterHosts",
+        "displayType":"componentHosts",
         "isVisible":true,
         "description":"desc",
         "isSecureConfig":false,
         "category":"General",
-        "id":"site property",
         "displayName":"storm.zookeeper.servers"
       },
       {
@@ -249,8 +248,7 @@ module.exports = {
         "isOverridable":true,
         "showLabel":true,
         "serviceName":"STORM",
-        "id":"site property",
-        "displayType":"advanced",
+        "displayType":"string",
         "displayName":"single_line_property",
         "category":"AdvancedStormSite"
       },
@@ -263,7 +261,6 @@ module.exports = {
         "isOverridable":true,
         "showLabel":true,
         "serviceName":"STORM",
-        "id":"site property",
         "displayType":"multiLine",
         "displayName":"multi_line_property",
         "category":"AdvancedStormSite"
@@ -278,7 +275,6 @@ module.exports = {
         "showLabel":true,
         "serviceName":"STORM",
         "isVisible":false,
-        "id":"puppet var",
         "displayName":null,
         "options":null
       },
@@ -299,7 +295,6 @@ module.exports = {
         "index":1,
         "isSecureConfig":false,
         "category":"DataNode",
-        "id":"site property",
         "displayName":"DataNode directories"
       },
       {
@@ -319,7 +314,6 @@ module.exports = {
         "description":"desc",
         "isSecureConfig":false,
         "category":"AdvancedHDFSLog4j",
-        "id":"site property",
         "displayName":"content"
       },
       {
@@ -339,7 +333,6 @@ module.exports = {
         "description":"desc",
         "isSecureConfig":false,
         "category":"AdvancedHDFSLog4j",
-        "id":"site property",
         "displayName":"content"
       },
       {
@@ -359,7 +352,6 @@ module.exports = {
         "description":"Storm log directory",
         "isSecureConfig":false,
         "category":"General",
-        "id":"puppet var",
         "displayName":"storm_log_dir"
       }
     ];

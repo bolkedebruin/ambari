@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -84,6 +84,11 @@ pig.disable.counter=false
 hcat.bin=/usr/bin/hcat
 
     </value>
+    <value-attributes>
+      <type>content</type>
+      <empty-value-valid>true</empty-value-valid>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 
 </configuration>

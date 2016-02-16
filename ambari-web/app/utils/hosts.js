@@ -53,6 +53,8 @@ module.exports = {
 
       classNames: [ 'sixty-percent-width-modal' ],
 
+      elementId: 'host-selection-dialog',
+
       header: popupDescription.header,
 
       dialogMessage: popupDescription.dialogMessage,
@@ -72,9 +74,7 @@ module.exports = {
         this.hide();
       },
 
-      disablePrimary: function () {
-        return !this.get('isLoaded');
-      }.property('isLoaded'),
+      disablePrimary: Em.computed.not('isLoaded'),
 
       onSecondary: function () {
         callback(null);
@@ -122,9 +122,7 @@ module.exports = {
 
         filterComponent: null,
 
-        isDisabled: function () {
-          return !this.get('parentView.isLoaded');
-        }.property('parentView.isLoaded'),
+        isDisabled: Em.computed.not('parentView.isLoaded'),
 
         didInsertElement: function() {
           var defaultFilterColumn = this.get('filterColumns').findProperty('selected');
@@ -134,6 +132,11 @@ module.exports = {
           this.set('parentView.isLoaded', true);
           this.filteredContentObsOnce();
         },
+
+        /**
+         * Default filter-method isn't needed
+         */
+        filter: Em.K,
 
         filterHosts: function () {
           var filterText = this.get('filterText');

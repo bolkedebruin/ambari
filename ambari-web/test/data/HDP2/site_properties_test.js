@@ -16,53 +16,60 @@
  * limitations under the License.
  */
 
-var App = require('app');
 require('utils/helper');
+require('data/HDP2/gluster_fs_properties');
 var siteProperties = require('data/HDP2/site_properties').configProperties;
 
 describe('hdp2SiteProperties', function () {
-
-  // No site properties should be made invisible
-  siteProperties.forEach(function(siteProperty){
-    it('Check invisible attribute of "' + siteProperty.name  + '"' + '. It should not be defined ', function () {
-      expect(siteProperty.isVisible).to.equal(undefined);
-    });
+  /**
+   * @stackProperties: All the properties that are derived from stack definition
+   */
+  var stackProperties = siteProperties.filter(function(item){
+    return !(item.isRequiredByAgent === false || item.category === 'Ambari Principals')
   });
 
-  // No site properties should have value and recommendedValue defined on client side.
-  // These should be always retrieved from server.
-
-    siteProperties.forEach(function(siteProperty){
-      it('Check value and recommendedValue attribute of "' + siteProperty.name + '"' + '. It should not be defined ', function () {
-        expect(siteProperty.value).to.equal(undefined);
-        expect(siteProperty.recommendedValue).to.equal(undefined);
+  stackProperties.forEach(function(siteProperty){
+    /**
+     * Following config attributes are stack driven and should be defined in the stack metainfo instead of ambari-web site-properties file
+     * isVisible
+     * isOverridable
+     * value
+     * recommendedValue
+     * isReconfigurable
+     * isRequired
+     * displayName
+     * description
+     * showLabel
+     * unit
+     */
+    describe('Check attributes of "{0}/{1}". Stack driven attributes should be undefined '.format(siteProperty.filename, siteProperty.name), function () {
+      ['isVisible', 'value', 'recommendedValue', 'description', 'isReconfigurable', 'isRequired', 'displayName', 'showLabel', 'unit'].forEach(function (p) {
+        it(p, function () {
+          expect(siteProperty[p]).to.not.exist;
+        });
+      });
     });
-  });
 
-  // No site properties should have description field duplicated on client side.
-  // These should be always retrieved from server.
-  siteProperties.forEach(function(siteProperty){
-    it('Check description attribute of "' + siteProperty.name + '"' + '. It should not be defined ', function () {
-      expect(siteProperty.description).to.equal(undefined);
+    /**
+     * displayTypes <code>supportTextConnection<code> and <code>radio button<code>
+     * can be used as exception. Other displayTypes values should be used in stack definition
+     */
+    it('Check attributes of "{0}/{1}". Display type value {2} should be described in stack '.format(siteProperty.filename, siteProperty.name, siteProperty.displayType), function () {
+      expect(siteProperty.displayType).to.match(/undefined|supportTextConnection|radio button/);
     });
-  });
 
-  // All the site properties should be persisted in the configuration tag
-  // So isRequiredByAgent should be never defined over here
-  // These should be always retrieved from server and saved in the correct configuration resource via API.
-  siteProperties.forEach(function(siteProperty){
-    it('Check isRequiredByAgent attribute of "' + siteProperty.name + '"' + '. It should not be defined ', function () {
-      expect(siteProperty.isRequiredByAgent).to.equal(undefined);
-    });
-  });
-
-  // All Falcon site properties should be mapped to site file. There is a property with same name (*.domain)
-  // in different site files of Falcon service
-
-    var falconSiteProperties = siteProperties.filterProperty('serviceName','FALCON');
-    falconSiteProperties.forEach(function(siteProperty){
-      it('Check filename attribute for "' + siteProperty.name + '"' + ' property of Falcon service. It should be defined ', function () {
-        expect(siteProperty).to.have.property('filename');
+    /**
+     * Following config attributes uniquely represent a config property
+     * name
+     * filename
+     */
+    describe('Check primary attributes of "{0}/{1}". Attributes that uniquely represent a property should be defined '.format(siteProperty.filename, siteProperty.name), function () {
+      it('name', function () {
+        expect(siteProperty.name).to.not.equal(undefined);
+      });
+      it('filename', function () {
+        expect(siteProperty.filename).to.not.equal(undefined);
+      });
     });
   });
 

@@ -16,11 +16,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 """
+from resource_management import Script
+from resource_management.core.logger import Logger
+from resource_management.core.resources.system import Execute, File, Directory
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import Direction
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
+from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.check_process_status import check_process_status
+from kafka import ensure_base_directories
 
-from resource_management import *
-import sys
 import upgrade
-
 from kafka import kafka
 from setup_ranger_kafka import setup_ranger_kafka
 
@@ -32,20 +39,41 @@ class KafkaBroker(Script):
   def install(self, env):
     self.install_packages(env)
 
-  def configure(self, env):
+  def configure(self, env, upgrade_type=None):
     import params
     env.set_params(params)
-    kafka()
+    kafka(upgrade_type=upgrade_type)
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
     env.set_params(params)
-    upgrade.prestart(env, "kafka-broker")
 
-  def start(self, env, rolling_restart=False):
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      hdp_select.select("kafka-broker", params.version)
+
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.3.0.0') >= 0:
+      conf_select.select(params.stack_name, "kafka", params.version)
+
+    # This is extremely important since it should only be called if crossing the HDP 2.3.4.0 boundary. 
+    if params.current_version and params.version and params.upgrade_direction:
+      src_version = dst_version = None
+      if params.upgrade_direction == Direction.UPGRADE:
+        src_version = format_hdp_stack_version(params.current_version)
+        dst_version = format_hdp_stack_version(params.version)
+      else:
+        # These represent the original values during the UPGRADE direction
+        src_version = format_hdp_stack_version(params.version)
+        dst_version = format_hdp_stack_version(params.downgrade_from_version)
+
+      if compare_versions(src_version, '2.3.4.0') < 0 and compare_versions(dst_version, '2.3.4.0') >= 0:
+        # Calling the acl migration script requires the configs to be present.
+        self.configure(env, upgrade_type=upgrade_type)
+        upgrade.run_migration(env, upgrade_type)
+
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
-    self.configure(env)
+    self.configure(env, upgrade_type=upgrade_type)
     if params.is_supported_kafka_ranger:
       setup_ranger_kafka() #Ranger Kafka Plugin related call 
     daemon_cmd = format('source {params.conf_dir}/kafka-env.sh ; {params.kafka_bin} start')
@@ -55,14 +83,18 @@ class KafkaBroker(Script):
             not_if=no_op_test
     )
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
+    # Kafka package scripts change permissions on folders, so we have to
+    # restore permissions after installing repo version bits
+    # before attempting to stop Kafka Broker
+    ensure_base_directories()
     daemon_cmd = format('source {params.conf_dir}/kafka-env.sh; {params.kafka_bin} stop')
     Execute(daemon_cmd,
             user=params.kafka_user,
     )
-    File (params.kafka_pid_file, 
+    File(params.kafka_pid_file,
           action = "delete"
     )
 

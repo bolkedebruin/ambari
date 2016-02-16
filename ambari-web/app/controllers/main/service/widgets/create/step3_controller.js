@@ -21,9 +21,7 @@ var App = require('app');
 App.WidgetWizardStep3Controller = Em.Controller.extend({
   name: "widgetWizardStep3Controller",
 
-  isEditController: function () {
-    return this.get('content.controllerName') == 'widgetEditController';
-  }.property('content.controllerName'),
+  isEditController: Em.computed.equal('content.controllerName', 'widgetEditController'),
 
   /**
    * @type {string}
@@ -48,9 +46,7 @@ App.WidgetWizardStep3Controller = Em.Controller.extend({
   /**
    * @type {string}
    */
-  widgetScope: function () {
-    return this.get('isSharedChecked') ? 'Cluster' : 'User';
-  }.property('isSharedChecked'),
+  widgetScope: Em.computed.ifThenElse('isSharedChecked', 'Cluster', 'User'),
 
   /**
    * @type {string}
@@ -74,26 +70,26 @@ App.WidgetWizardStep3Controller = Em.Controller.extend({
   widgetMetrics: [],
 
   /**
-   * @type {boolean}
+   * @type {bool}
    */
-  isSubmitDisabled: function () {
-    var widgetNameEmpty = this.get('widgetName') ? !Boolean(this.get('widgetName').trim()) : true;
-    return widgetNameEmpty || this.get('isNameInvalid') || this.get('isDescriptionInvalid');
-  }.property('widgetName', 'isNameInvalid', 'isDescriptionInvalid'),
-
-  /**
-   * @type {boolean}
-   */
-  isNameInvalid: function () {
-    return this.get('widgetName') ? this.get('widgetName').length >= 129 : false;
+  widgetNameEmpty: function () {
+    return this.get('widgetName') ? !Boolean(this.get('widgetName').trim()) : true;
   }.property('widgetName'),
 
   /**
    * @type {boolean}
    */
-  isDescriptionInvalid: function () {
-    return this.get('widgetDescription') ? this.get('widgetDescription').length >= 2049 : false;
-  }.property('widgetDescription'),
+  isSubmitDisabled: Em.computed.or('widgetNameEmpty', 'isNameInvalid', 'isDescriptionInvalid'),
+
+  /**
+   * @type {boolean}
+   */
+  isNameInvalid: Em.computed.gte('widgetName.length', 129),
+
+  /**
+   * @type {boolean}
+   */
+  isDescriptionInvalid: Em.computed.gte('widgetDescription.length', 2049),
 
   /**
    * restore widget data set on 2nd step

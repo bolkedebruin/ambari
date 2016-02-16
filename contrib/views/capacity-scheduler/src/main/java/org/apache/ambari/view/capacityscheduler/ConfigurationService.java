@@ -23,6 +23,7 @@ import org.apache.ambari.view.capacityscheduler.utils.MisconfigurationFormattedE
 import org.apache.ambari.view.capacityscheduler.utils.ServiceFormattedException;
 import org.apache.ambari.view.utils.ambari.AmbariApi;
 import org.apache.commons.io.IOUtils;
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import org.slf4j.Logger;
@@ -104,7 +105,7 @@ public class ConfigurationService {
   // Privilege Reading
   // ================================================================================
 
-  private static final String CLUSTER_OPERATOR_PRIVILEGE_URL = "?privileges/PrivilegeInfo/permission_name=CLUSTER.OPERATE&privileges/PrivilegeInfo/principal_name=%s";
+  private static final String CLUSTER_OPERATOR_PRIVILEGE_URL = "?privileges/PrivilegeInfo/permission_name=CLUSTER.ADMINISTRATOR&privileges/PrivilegeInfo/principal_name=%s";
   private static final String AMBARI_ADMIN_PRIVILEGE_URL = "/api/v1/users/%s?Users/admin=true";
 
   /**
@@ -266,12 +267,12 @@ public class ConfigurationService {
   private   boolean isOperator() {
       validateViewConfiguration();
             
-      // first check if the user is an CLUSTER.OPERATOR
+      // first check if the user is an CLUSTER.ADMINISTRATOR
       String url = String.format(CLUSTER_OPERATOR_PRIVILEGE_URL, context.getUsername());
       JSONObject json = readFromCluster(url);
 
       if (json == null || json.size() <= 0) {
-        // user is not a CLUSTER.OPERATOR but might be an AMBARI.ADMIN
+        // user is not a CLUSTER.ADMINISTRATOR but might be an AMBARI.ADMINISTRATOR
         url = String.format(AMBARI_ADMIN_PRIVILEGE_URL, context.getUsername());
         String response = ambariApi.readFromAmbari(url, "GET", null, null);
         if (response == null || response.isEmpty()) {
@@ -482,6 +483,29 @@ public class ConfigurationService {
 
   private String getRMUrl() {
     return ambariApi.getServices().getRMUrl();
+  }
+
+  @GET
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Produces(MediaType.APPLICATION_JSON)
+  @Path("/getConfig")
+  public Response getConfigurationValue(@QueryParam("siteName") String siteName,@QueryParam("configName") String configName){
+    try{
+      String configValue = ambariApi.getCluster().getConfigurationValue(siteName,configName);
+      JSONObject res = new JSONObject();
+      JSONArray arr = new JSONArray();
+      JSONObject conf = new JSONObject();
+      conf.put("siteName",siteName);
+      conf.put("configName", configName);
+      conf.put("configValue", configValue);
+      arr.add(conf);
+      res.put("configs" ,arr);
+      return Response.ok(res).build();
+    } catch (WebApplicationException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new ServiceFormattedException(ex.getMessage(), ex);
+    }
   }
 
   private String getRMHosts() {

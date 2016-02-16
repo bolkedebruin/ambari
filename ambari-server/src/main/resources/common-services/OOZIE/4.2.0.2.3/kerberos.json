@@ -8,9 +8,6 @@
         },
         {
           "name": "/smokeuser"
-        },
-        {
-          "name": "/HDFS/hdfs"
         }
       ],
       "auth_to_local_properties" : [
@@ -23,7 +20,6 @@
             "oozie.service.AuthorizationService.authorization.enabled": "true",
             "oozie.service.HadoopAccessorService.kerberos.enabled": "true",
             "local.realm": "${realm}",
-            "oozie.authentication.kerberos.name.rules": "",
             "oozie.credentials.credentialclasses": "hcat=org.apache.oozie.action.hadoop.HCatCredentials,hive2=org.apache.oozie.action.hadoop.Hive2Credentials"
           }
         }
@@ -32,6 +28,9 @@
         {
           "name": "OOZIE_SERVER",
           "identities": [
+            {
+              "name": "/HDFS/NAMENODE/hdfs"
+            },
             {
               "name": "oozie_server",
               "principal": {

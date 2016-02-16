@@ -30,12 +30,6 @@ from os.path import join
 import random
 import string
 
-UI_MAPPING_TEMPLATE = """var App = require('app');
-module.exports = {0};
-"""
-UI_MAPPING_MAP = {"2.2":"HDP2.2",
-                  "2.3":"HDP2.3"}
-
 def generate_random_string(size=7, chars=string.ascii_uppercase + string.digits):
   return ''.join(random.choice(chars) for _ in range(size))
 
@@ -375,6 +369,9 @@ def process_py_files(file_path, config_data, stack_version_changes):
 def process_xml_files(file_path, config_data, stack_version_changes):
   return process_replacements(file_path, config_data, stack_version_changes)
 
+def process_other_files(file_path, config_data, stack_version_changes):
+  return process_replacements(file_path, config_data, stack_version_changes)
+
 def process_config_xml(file_path, config_data):
   tree = ET.parse(file_path)
   root = tree.getroot()
@@ -477,11 +474,13 @@ class GeneratorHelper(object):
 
   def copy_stacks(self):
     original_folder = os.path.join(self.resources_folder, 'stacks', self.config_data.baseStackName)
+    partial_target_folder = os.path.join(self.resources_folder, 'stacks', self.config_data.stackName)
     target_folder = os.path.join(self.output_folder, 'stacks', self.config_data.stackName)
 
     for stack in self.config_data.versions:
       original_stack = os.path.join(original_folder, stack.baseVersion)
       target_stack = os.path.join(target_folder, stack.version)
+      partial_target_stack = os.path.join(partial_target_folder, stack.version)
 
       desired_services = [service.name for service in stack.services]
       desired_services.append('stack_advisor.py')  # stack_advisor.py placed in stacks folder
@@ -526,10 +525,19 @@ class GeneratorHelper(object):
           ###################################################################
           target = process_py_files(target, self.config_data, self.stack_version_changes)
           return
+        ####################################################################
+        # Generic processing for all other types of files.
+        ####################################################################
+        if target.endswith(".j2") or target.endswith(".sh"):
+          process_other_files(target, self.config_data, self.stack_version_changes)
 
       copy_tree(original_stack, target_stack, ignored_files, post_copy=post_copy)
-      # copy default stack advisor
-      shutil.copy(os.path.join(self.resources_folder, 'stacks', 'stack_advisor.py'), os.path.join(target_folder, '../stack_advisor.py'))
+      # After generating target stack from base stack, overlay target stack partial definition defined under
+      # <resourceDir>/stacks/<targetStackName>/<targetStackVersion>
+      copy_tree(partial_target_stack, target_stack, ignored_files, post_copy=None)
+
+    # copy default stack advisor
+    shutil.copy(os.path.join(self.resources_folder, 'stacks', 'stack_advisor.py'), os.path.join(target_folder, '../stack_advisor.py'))
 
   def copy_common_services(self, common_services = []):
     ignored_files = ['.pyc']
@@ -548,17 +556,36 @@ class GeneratorHelper(object):
             # process configuration xml
             target = process_config_xml(target, self.config_data)
           # process generic xml
-          if target.endswith('.xml'):
-            process_xml_files(target, self.config_data, self.stack_version_changes)
+          process_xml_files(target, self.config_data, self.stack_version_changes)
+          return
         # process python files
         if target.endswith('.py'):
           process_py_files(target, self.config_data, self.stack_version_changes)
           return
+        ####################################################################
+        # Generic processing for all other types of files.
+        ####################################################################
+        if target.endswith(".j2") or target.endswith(".sh"):
+          process_other_files(target, self.config_data, self.stack_version_changes)
 
       copy_tree(source_folder, target_folder, ignored_files, post_copy=post_copy)
       if parent_services:
         self.copy_common_services(parent_services)
     pass
+
+  def copy_remaining_common_services(self, common_services = []):
+    ignored_files = ['.pyc']
+    source_common_services_path = os.path.join(self.resources_folder, "common-services")
+    dest_common_services_path = os.path.join(self.output_folder, "common-services")
+
+    source_common_services_list = os.listdir(source_common_services_path)
+    dest_common_services_list = os.listdir(dest_common_services_path)
+
+    for service_name in source_common_services_list:
+      if service_name not in dest_common_services_list:
+        source = os.path.join(source_common_services_path, service_name)
+        dest = os.path.join(dest_common_services_path, service_name)
+        copy_tree(source, dest, ignored_files, post_copy=None)
 
   def copy_resource_management(self):
     source_folder = join(os.path.abspath(join(self.resources_folder, "..", "..", "..", "..")),
@@ -589,32 +616,24 @@ class GeneratorHelper(object):
 
     with open(source_ambari_properties, 'r') as in_file:
       with open(target_ambari_properties, 'w') as out_file:
+        replaced_properties = []
         for line in in_file:
           property = line.split('=')[0]
           if property in propertyMap:
             out_file.write('='.join([property, propertyMap[property]]))
             out_file.write(os.linesep)
+            replaced_properties.append(property)
           else:
             out_file.write(line)
 
-  def generate_ui_mapping(self):
-    stack_name = self.config_data.stackName
-    records = []
-    for _from, _to in self.stack_version_changes.iteritems():
-      base_stack_folder = UI_MAPPING_MAP[_from] if _from in UI_MAPPING_MAP else "HDP2"
-      record = {"stackName": stack_name,
-                "stackVersionNumber": _to,
-                "sign": "=",
-                "baseStackFolder": base_stack_folder}
-      records.append(record)
-    if "uiMapping" in self.config_data:
-      for mapping in self.config_data.uiMapping:
-        mapping["stackName"] = stack_name
-        records.append(mapping)
-    js_file_content = UI_MAPPING_TEMPLATE.format(json.dumps(records, indent=2))
-    open(os.path.join(self.output_folder, "custom_stack_map.js"),"w").write(js_file_content)
-    pass
+        if len(propertyMap) - len(replaced_properties) > 0:
+          out_file.write(os.linesep)  #make sure we don't break last entry from original properties
 
+        for key in propertyMap:
+          if key not in replaced_properties:
+            out_file.write('='.join([key, propertyMap[key]]))
+            out_file.write(os.linesep)
+            
   def copy_custom_actions(self):
     original_folder = os.path.join(self.resources_folder, 'custom_actions')
     target_folder = os.path.join(self.output_folder, 'custom_actions')
@@ -658,8 +677,8 @@ def main(argv):
   gen_helper.copy_stacks()
   gen_helper.copy_resource_management()
   gen_helper.copy_common_services()
+  gen_helper.copy_remaining_common_services()
   gen_helper.copy_ambari_properties()
-  gen_helper.generate_ui_mapping()
   gen_helper.copy_custom_actions()
 
 

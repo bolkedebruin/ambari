@@ -19,7 +19,7 @@
 var App = require('app');
 require('controllers/wizard/step7_controller');
 
-App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
+App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend(App.KDCCredentialsControllerMixin, {
   name: "kerberosWizardStep2Controller",
 
   isKerberosWizard: true,
@@ -45,9 +45,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
    * Should Back-button be disabled
    * @type {boolean}
    */
-  isBackBtnDisabled: function() {
-    return this.get('testConnectionInProgress');
-  }.property('testConnectionInProgress'),
+  isBackBtnDisabled: Em.computed.alias('testConnectionInProgress'),
 
   /**
    * Should Next-button be disabled
@@ -58,9 +56,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     return (!this.get('stepConfigs').filterProperty('showConfig', true).everyProperty('errorCount', 0) || this.get("miscModalVisible"));
   }.property('stepConfigs.@each.errorCount', 'miscModalVisible', 'submitButtonClicked', 'testConnectionInProgress'),
 
-  hostNames: function () {
-    return App.get('allHostNames');
-  }.property('App.allHostNames'),
+  hostNames: Em.computed.alias('App.allHostNames'),
 
   serviceConfigTags: [],
 
@@ -72,28 +68,34 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
   },
 
 
-  isConfigsLoaded: function () {
-    return this.get('wizardController.stackConfigsLoaded');
-  }.property('wizardController.stackConfigsLoaded'),
+  isConfigsLoaded: Em.computed.alias('wizardController.stackConfigsLoaded'),
 
   /**
    * On load function
    * @method loadStep
    */
+
   loadStep: function () {
-    console.log("TRACE: Loading step2: Configure Kerberos");
     if (!App.StackService.find().someProperty('serviceName', 'KERBEROS') || !this.get('isConfigsLoaded')) {
       return;
     }
     this.clearStep();
-    //STEP 2: Load on-site configs by service from local DB
-    var storedConfigs = this.get('content.serviceConfigProperties');
-    //STEP 3: Merge pre-defined configs with loaded on-site configs
-    this.set('configs', App.config.mergePreDefinedWithStack(this.get('selectedServiceNames')));
     App.config.setPreDefinedServiceConfigs(this.get('addMiscTabToPage'));
+    var stored = this.get('content.serviceConfigProperties');
+    var kerberosConfigTypes = Em.keys(App.config.get('preDefinedServiceConfigs').findProperty('serviceName', 'KERBEROS').get('configTypes'));
+
+    this.set('configs', stored || App.configsCollection.getAll().filter(function(configProperty) {
+      var fileName = Em.getWithDefault(configProperty, 'fileName', false);
+      var isService = ['KERBEROS'].contains(Em.get(configProperty, 'serviceName'));
+      var isFileName = fileName && kerberosConfigTypes.contains(App.config.getConfigTagFromFileName(fileName));
+      return isService || isFileName;
+    }));
 
     this.filterConfigs(this.get('configs'));
-    this.applyServicesConfigs(this.get('configs'), storedConfigs);
+    if (App.get('supports.storeKDCCredentials') && !this.get('wizardController.skipClientInstall')) {
+      this.initilizeKDCStoreProperties(this.get('configs'));
+    }
+    this.applyServicesConfigs(this.get('configs'));
   },
 
   /**
@@ -109,6 +111,8 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     var kerberosWizardController = this.controllers.get('kerberosWizardController');
     var manageIdentitiesConfig = configs.findProperty('name', 'manage_identities');
 
+    configs.filterProperty('serviceName', 'KERBEROS').setEach('isVisible', true);
+    this.setKDCTypeProperty(configs);
     if (kdcType === Em.I18n.t('admin.kerberos.wizard.step1.option.manual')) {
       if (kerberosWizardController.get('skipClientInstall')) {
         kerberosWizardController.overrideVisibility(configs, false, kerberosWizardController.get('exceptionsOnSkipClient'));
@@ -145,7 +149,7 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     if (this.get('isSubmitDisabled')) return false;
     this.set('isSubmitDisabled', true);
     var self = this;
-    this.deleteKerberosService().always(function (data) {
+    this.get('wizardController').deleteKerberosService().always(function () {
       self.configureKerberos();
     });
   },
@@ -165,26 +169,6 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     } else {
       wizardController.createKerberosResources(callback);
     }
-  },
-
-  /**
-   * Delete Kerberos service if it exists
-   */
-  deleteKerberosService: function () {
-    var serviceName = this.selectedServiceNames[0];
-    if (App.cache.services.someProperty('ServiceInfo.service_name', 'KERBEROS')) {
-      App.cache.services.removeAt(App.cache.services.indexOf(App.cache.services.findProperty('ServiceInfo.service_name', 'KERBEROS')));
-    }
-    if (App.Service.find().someProperty('serviceName', 'KERBEROS')) {
-      App.serviceMapper.deleteRecord(App.Service.find('KERBEROS'));
-    }
-    return App.ajax.send({
-      name: 'common.delete.service',
-      sender: this,
-      data: {
-        serviceName: serviceName
-      }
-    });
   },
 
   createConfigurations: function () {
@@ -286,6 +270,10 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
    */
   createKerberosAdminSession: function (configs) {
     configs = configs || this.get('stepConfigs')[0].get('configs');
+    if (App.get('supports.storeKDCCredentials') && !this.get('wizardController.skipClientInstall')) {
+      return this.createKDCCredentials(configs);
+    }
+
     var adminPrincipalValue = configs.findProperty('name', 'admin_principal').value;
     var adminPasswordValue = configs.findProperty('name', 'admin_password').value;
     return App.ajax.send({
@@ -310,5 +298,17 @@ App.KerberosWizardStep2Controller = App.WizardStep7Controller.extend({
     var primaryText = Em.I18n.t('common.exitAnyway');
     var msg = Em.I18n.t('services.service.config.connection.exitPopup.msg');
     App.showConfirmationPopup(primary, msg, null, null, primaryText)
+  },
+
+  setKDCTypeProperty: function(configs) {
+    var selectedOption = this.get('content.kerberosOption');
+    var kdcTypeProperty = configs.filterProperty('filename', 'kerberos-env.xml').findProperty('name', 'kdc_type');
+    var kdcValuesMap = App.router.get('mainAdminKerberosController.kdcTypesValues');
+    var kdcTypeValue = Em.keys(kdcValuesMap).filter(function(typeAlias) {
+      return Em.get(kdcValuesMap, typeAlias) === selectedOption;
+    })[0];
+    if (kdcTypeProperty) {
+      Em.set(kdcTypeProperty, 'value', kdcValuesMap[kdcTypeValue]);
+    }
   }
 });

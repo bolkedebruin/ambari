@@ -43,10 +43,15 @@ limitations under the License.
   <property>
     <name>hive.zookeeper.quorum</name>
     <value>localhost:2181</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>List of ZooKeeper servers to talk to. This is needed for: 1.
       Read/write locks - when hive.lock.manager is set to
       org.apache.hadoop.hive.ql.lockmgr.zookeeper.ZooKeeperHiveLockManager,
       2. When HiveServer2 supports service discovery via Zookeeper.</description>
+    <value-attributes>
+      <type>multiLine</type>
+      <empty-value-valid>true</empty-value-valid>
+    </value-attributes>
   </property>
 
   <property>
@@ -106,10 +111,11 @@ limitations under the License.
     <description>The delegation token store implementation.
       Set to org.apache.hadoop.hive.thrift.ZooKeeperTokenStore for load-balanced cluster.</description>
   </property>
-  
+
   <property>
     <name>hive.cluster.delegation.token.store.zookeeper.connectString</name>
     <value>localhost:2181</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>The ZooKeeper token store connect string.</description>
   </property>
 
@@ -121,8 +127,11 @@ limitations under the License.
       when it is brought up. JDBC/ODBC clients should use the ZooKeeper ensemble: hive.zookeeper.quorum
       in their connection string.
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
-  
+
   <property>
     <name>fs.hdfs.impl.disable.cache</name>
     <value>false</value>
@@ -229,6 +238,14 @@ limitations under the License.
         <type>hive-env</type>
         <name>hive_timeline_logging_enabled</name>
       </property>
+      <property>
+        <type>application-properties</type>
+        <name>atlas.server.http.port</name>
+      </property>
+      <property>
+        <type>application-properties</type>
+        <name>atlas.server.https.port</name>
+      </property>
     </depends-on>
   </property>
 
@@ -330,6 +347,7 @@ limitations under the License.
   <property>
     <name>hive.metastore.uris</name>
     <value>thrift://localhost:9083</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>Thrift URI for the remote metastore. Used by metastore client to connect to remote metastore.</description>
   </property>
 
@@ -337,13 +355,33 @@ limitations under the License.
     <name>javax.jdo.option.ConnectionPassword</name>
     <value></value>
     <property-type>PASSWORD</property-type>
+    <display-name>Database Password</display-name>
     <description>password to use against metastore database</description>
+    <value-attributes>
+      <type>password</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
     <value>jdbc:mysql://localhost/hive?createDatabaseIfNotExist=true</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
+    <display-name>Database URL</display-name>
     <description>JDBC connect string for a JDBC metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <name>hive_database</name>
+        <type>hive-env</type>
+      </property>
+      <property>
+        <name>ambari.hive.db.schema.name</name>
+        <type>hive-site</type>
+      </property>
+    </depends-on>
   </property>
 
   <property>
@@ -399,13 +437,28 @@ limitations under the License.
   <property>
     <name>javax.jdo.option.ConnectionDriverName</name>
     <value>com.mysql.jdbc.Driver</value>
+    <display-name>JDBC Driver Class</display-name>
     <description>Driver class name for a JDBC metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <name>hive_database</name>
+        <type>hive-env</type>
+      </property>
+    </depends-on>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionUserName</name>
     <value>hive</value>
-    <description>Username to use against metastore database</description>
+    <display-name>Database Username</display-name>
+    <description>username to use against metastore database</description>
+    <value-attributes>
+      <type>db_user</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -418,12 +471,6 @@ limitations under the License.
     <name>hive.cbo.enable</name>
     <value>true</value>
     <description>Flag to control enabling Cost Based Optimizations using Calcite framework.</description>
-    <depends-on>
-      <property>
-        <type>hive-env</type>
-        <name>cost_based_optimizer</name>
-      </property>
-    </depends-on>
   </property>
 
   <property>
@@ -767,10 +814,6 @@ limitations under the License.
     </value-attributes>
     <depends-on>
       <property>
-        <type>hive-env</type>
-        <name>cost_based_optimizer</name>
-      </property>
-      <property>
         <type>hive-site</type>
         <name>hive.cbo.enable</name>
       </property>
@@ -801,10 +844,6 @@ limitations under the License.
       <selection-cardinality>1</selection-cardinality>
     </value-attributes>
     <depends-on>
-      <property>
-        <type>hive-env</type>
-        <name>cost_based_optimizer</name>
-      </property>
       <property>
         <type>hive-site</type>
         <name>hive.cbo.enable</name>
@@ -1033,7 +1072,7 @@ limitations under the License.
   </property>
   <property>
     <name>hive.server2.logging.operation.log.location</name>
-    <value>${system:java.io.tmpdir}/${system:user.name}/operation_logs</value>
+    <value>/tmp/hive/operation_logs</value>
     <description>Top level directory where operation logs are stored if logging functionality is enabled</description>
   </property>
 
@@ -1057,7 +1096,14 @@ limitations under the License.
   <property>
     <name>hive.server2.thrift.port</name>
     <value>10000</value>
-    <description>Port number of HiveServer2 Thrift interface when hive.server2.transport.mode is 'binary'.</description>
+    <display-name>HiveServer2 Port</display-name>
+    <description>
+      TCP port number to listen on, default 10000.
+    </description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <type>int</type>
+    </value-attributes>
   </property>
   <property>
     <name>hive.server2.thrift.sasl.qop</name>
@@ -1355,6 +1401,9 @@ limitations under the License.
     <value>1024</value>
     <deleted>true</deleted>
     <description>Hive Java heap size</description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -1367,7 +1416,12 @@ limitations under the License.
   <property>
     <name>ambari.hive.db.schema.name</name>
     <value>hive</value>
+    <display-name>Database Name</display-name>
     <description>Database name used as the Hive Metastore</description>
+    <value-attributes>
+      <type>database</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -1604,9 +1658,9 @@ limitations under the License.
     <name>hive.exec.orc.encoding.strategy</name>
     <value>SPEED</value>
     <description>
-      Define the encoding strategy to use while writing data. Changing this 
-      will only affect the light weight encoding for integers. This flag will not change 
-      the compression level of higher level compression codec (like ZLIB). Possible 
+      Define the encoding strategy to use while writing data. Changing this
+      will only affect the light weight encoding for integers. This flag will not change
+      the compression level of higher level compression codec (like ZLIB). Possible
       options are SPEED and COMPRESSION.
     </description>
     <display-name>ORC Encoding Strategy</display-name>
@@ -1636,7 +1690,7 @@ limitations under the License.
     <name>hive.exec.orc.compression.strategy</name>
     <value>SPEED</value>
     <description>
-      Define the compression strategy to use while writing data. This changes the 
+      Define the compression strategy to use while writing data. This changes the
       compression level of higher level compression codec (like ZLIB).
     </description>
     <display-name>ORC Compression Strategy</display-name>
@@ -1666,7 +1720,7 @@ limitations under the License.
     <name>hive.vectorized.execution.reduce.enabled</name>
     <value>false</value>
     <description>
-      This flag should be set to true to enable vectorized mode of the reduce-side of 
+      This flag should be set to true to enable vectorized mode of the reduce-side of
       query execution.
     </description>
     <display-name>Enable Reduce Vectorization</display-name>
@@ -1689,6 +1743,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.ldap.url</name>
     <value> </value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1698,7 +1753,7 @@ limitations under the License.
   </property>
   <property>
     <name>hive.server2.authentication.ldap.baseDN</name>
-    <value></value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1709,6 +1764,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.kerberos.keytab</name>
     <value>/etc/security/keytabs/hive.service.keytab</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1719,6 +1775,7 @@ limitations under the License.
   <property>
     <name>hive.server2.authentication.kerberos.principal</name>
     <value>hive/_HOST@EXAMPLE.COM</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1728,7 +1785,7 @@ limitations under the License.
   </property>
   <property>
     <name>hive.server2.authentication.pam.services</name>
-    <value></value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1738,7 +1795,7 @@ limitations under the License.
   </property>
   <property>
     <name>hive.server2.custom.authentication.class</name>
-    <value></value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <depends-on>
       <property>
         <type>hive-site</type>
@@ -1747,4 +1804,12 @@ limitations under the License.
     </depends-on>
   </property>
 
+  <property>
+    <name>datanucleus.autoCreateSchema</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>datanucleus.fixedDatastore</name>
+    <value>true</value>
+  </property>
 </configuration>

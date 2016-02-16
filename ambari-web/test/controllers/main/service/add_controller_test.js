@@ -20,63 +20,12 @@ var App = require('app');
 require('controllers/wizard');
 require('controllers/main/service/add_controller');
 var addServiceController = null;
+var testHelpers = require('test/helpers');
 
 describe('App.AddServiceController', function() {
 
   beforeEach(function () {
     addServiceController = App.AddServiceController.create({});
-  });
-
-  describe('#installAdditionalClients', function() {
-
-    var t = {
-      additionalClients: {
-        componentName: "TEZ_CLIENT",
-        hostNames: ["hostName1", "hostName2"]
-      },
-      additionalClientsWithoutHosts: {
-        componentName: "TEZ_CLIENT",
-        hostNames: []
-      },
-      RequestInfo: {
-        "context": Em.I18n.t('requestInfo.installHostComponent') + ' ' + App.format.role("TEZ_CLIENT"),
-        "query": "HostRoles/component_name=TEZ_CLIENT&HostRoles/host_name.in(hostName1,hostName2)"
-      },
-      Body: {
-        HostRoles: {
-          state: 'INSTALLED'
-        }
-      }
-    };
-
-    beforeEach(function () {
-      sinon.spy($, 'ajax');
-      sinon.stub(App, 'get', function(k) {
-        if ('clusterName' === k) return 'tdk';
-        return Em.get(App, k);
-      });
-      addServiceController.set('installClietsQueue', App.ajaxQueue.create())
-    });
-
-    afterEach(function () {
-      $.ajax.restore();
-      App.get.restore();
-    });
-
-    it('send request to install client', function () {
-      addServiceController.set("content.additionalClients", [t.additionalClients]);
-      addServiceController.installAdditionalClients();
-      expect($.ajax.calledOnce).to.equal(true);
-
-      expect(JSON.parse($.ajax.args[0][0].data).Body).to.deep.eql(t.Body);
-      expect(JSON.parse($.ajax.args[0][0].data).RequestInfo).to.eql(t.RequestInfo);
-    });
-
-    it('should not send request to install client', function () {
-      addServiceController.set("content.additionalClients", [t.additionalClientsWithoutHosts]);
-      expect($.ajax.called).to.be.false;
-    });
-
   });
 
   describe('#generateDataForInstallServices', function() {
@@ -150,16 +99,31 @@ describe('App.AddServiceController', function() {
 
     var message = '{0} installed, {1} selected. Installed list should be {2} and selected - {3}';
     tests.forEach(function(test) {
+
       var installed = test.appService.mapProperty('serviceName');
       var selected = test.stepCtrlContent.get('content').filterProperty('isSelected', true)
         .filterProperty('isInstalled', false).mapProperty('serviceName');
-      it(message.format(installed, selected, test.e.installed, test.e.selected), function() {
-        sinon.stub(App.Service, 'find').returns(test.appService);
-        addServiceController.saveServices(test.stepCtrlContent);
-        App.Service.find.restore();
-        var savedServices = addServiceController.setDBProperty.withArgs('services').args[0][1];
-        expect(savedServices.selectedServices).to.have.members(test.e.selected);
-        expect(savedServices.installedServices).to.have.members(test.e.installed);
+
+      describe(message.format(installed, selected, test.e.installed, test.e.selected), function() {
+
+        beforeEach(function () {
+          sinon.stub(App.Service, 'find').returns(test.appService);
+          addServiceController.saveServices(test.stepCtrlContent);
+          this.savedServices = addServiceController.setDBProperty.withArgs('services').args[0][1];
+        });
+
+        afterEach(function () {
+          App.Service.find.restore();
+        });
+
+        it(JSON.stringify(test.e.selected) + ' are in the selectedServices', function () {
+          expect(this.savedServices.selectedServices).to.have.members(test.e.selected);
+        });
+
+        it(JSON.stringify(test.e.installed) + ' are in the installedServices', function () {
+          expect(this.savedServices.installedServices).to.have.members(test.e.installed);
+        });
+
       });
     });
   });
@@ -179,24 +143,22 @@ describe('App.AddServiceController', function() {
       }
     ];
 
-    beforeEach(function () {
-      sinon.stub(App.ajax, 'send', function () {
-        return {
-          promise: Em.K
-        };
-      });
-    });
-
     afterEach(function () {
       addServiceController.getDBProperty.restore();
-      App.ajax.send.restore();
     });
 
     cases.forEach(function (item) {
-      it(item.title, function () {
-        sinon.stub(addServiceController, 'getDBProperty').withArgs('hosts').returns(item.hosts);
-        addServiceController.loadHosts();
-        expect(App.ajax.send.calledOnce).to.equal(item.isAjaxRequestSent);
+      describe(item.title, function () {
+
+        beforeEach(function () {
+          sinon.stub(addServiceController, 'getDBProperty').withArgs('hosts').returns(item.hosts);
+          addServiceController.loadHosts();
+          this.args = testHelpers.findAjaxRequest('name', 'hosts.confirmed');
+        });
+
+        it('request is ' + (item.isAjaxRequestSent ? '' : 'not') + ' sent', function () {
+          expect(Em.isNone(this.args)).to.be.equal(!item.isAjaxRequestSent);
+        });
       });
     });
 
@@ -341,18 +303,24 @@ describe('App.AddServiceController', function() {
   });
 
   describe('#loadServices', function() {
+    var mock = {
+      db: {}
+    };
     beforeEach(function() {
       this.controller = App.AddServiceController.create({});
-      this.db = {};
-      sinon.stub(this.controller, 'getDBProperty');
+      this.mockGetDBProperty = sinon.stub(this.controller, 'getDBProperty');
       sinon.stub(this.controller, 'setDBProperty', function(key, value) {
-        this.db = value;
-      }.bind(this));
+        mock.db = value;
+      });
+      this.mockStackService = sinon.stub(App.StackService, 'find');
+      this.mockService = sinon.stub(App.Service, 'find');
     });
 
     afterEach(function() {
-      this.controller.getDBProperty.restore();
+      this.mockGetDBProperty.restore();
       this.controller.setDBProperty.restore();
+      this.mockStackService.restore();
+      this.mockService.restore();
     });
 
     var tests = [
@@ -401,24 +369,40 @@ describe('App.AddServiceController', function() {
     ];
 
     tests.forEach(function(test) {
-      it(test.m, function() {
-        sinon.stub(App.StackService, 'find').returns(test.appStackService);
-        sinon.stub(App.Service, 'find').returns(test.appService);
-        this.controller.getDBProperty.withArgs('services').returns(test.servicesFromDB);
-        this.controller.set('serviceToInstall', test.serviceToInstall);
-        this.controller.loadServices();
-        App.StackService.find.restore();
-        App.Service.find.restore();
-        if (!test.servicesFromDB) {
-          // verify saving to local db on first enter to the wizard
-          expect(this.db.selectedServices).to.be.eql(test.e.selectedServices);
-          expect(this.db.installedServices).to.be.eql(test.e.installedServices);
-        } else {
+      describe(test.m, function() {
+
+        beforeEach(function () {
+          this.mockStackService.returns(test.appStackService);
+          this.mockService.returns(test.appService);
+          this.mockGetDBProperty.withArgs('services').returns(test.servicesFromDB);
+          this.controller.set('serviceToInstall', test.serviceToInstall);
+          this.controller.loadServices();
+        });
+
+        if (test.servicesFromDB) {
           // verify values for App.StackService
-          expect(test.appStackService.filterProperty('isSelected', true).mapProperty('serviceName')).to.be.eql(test.e.selectedServices);
-          expect(test.appStackService.filterProperty('isInstalled', true).mapProperty('serviceName')).to.be.eql(test.e.installedServices);
+          it(JSON.stringify(test.e.selectedServices) + ' are selected', function () {
+            expect(test.appStackService.filterProperty('isSelected', true).mapProperty('serviceName')).to.be.eql(test.e.selectedServices);
+          });
+          it(JSON.stringify(test.e.installedServices) + ' are installed', function () {
+            expect(test.appStackService.filterProperty('isInstalled', true).mapProperty('serviceName')).to.be.eql(test.e.installedServices);
+          });
         }
-        expect(this.controller.get('serviceToInstall')).to.be.null;
+        else {
+          // verify saving to local db on first enter to the wizard
+          it('selectedServices are saced', function () {
+            expect(mock.db.selectedServices).to.be.eql(test.e.selectedServices);
+          });
+          it('installedServices are saved', function () {
+            expect(mock.db.installedServices).to.be.eql(test.e.installedServices);
+          });
+
+        }
+
+        it('serviceToInstall is null', function () {
+          expect(this.controller.get('serviceToInstall')).to.be.null;
+        });
+
       });
     }, this);
   });
@@ -457,11 +441,21 @@ describe('App.AddServiceController', function() {
     });
 
     cases.forEach(function (item) {
-      it(item.title, function () {
-        sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(item.securityEnabled);
-        addServiceController.checkSecurityStatus();
-        expect(addServiceController.get('skipConfigureIdentitiesStep')).to.equal(item.skipConfigureIdentitiesStep);
-        expect(addServiceController.get('isStepDisabled').findProperty('step', 5).get('value')).to.equal(item.isStep5Disabled);
+      describe(item.title, function () {
+
+        beforeEach(function () {
+          sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(item.securityEnabled);
+          addServiceController.checkSecurityStatus();
+        });
+
+        it('skipConfigureIdentitiesStep is ' + item.skipConfigureIdentitiesStep, function () {
+          expect(addServiceController.get('skipConfigureIdentitiesStep')).to.equal(item.skipConfigureIdentitiesStep);
+        });
+
+        it('step 5 is ' + (item.isStep5Disabled ? 'disabved' : 'enabled'), function () {
+          expect(addServiceController.get('isStepDisabled').findProperty('step', 5).get('value')).to.equal(item.isStep5Disabled);
+        });
+
       });
     });
 

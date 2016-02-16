@@ -21,32 +21,52 @@ package org.apache.ambari.view.hive.client;
 import org.apache.ambari.view.ViewContext;
 import org.apache.ambari.view.hive.utils.HiveClientFormattedException;
 import org.apache.ambari.view.hive.utils.ServiceFormattedException;
+import org.apache.ambari.view.utils.UserLocalFactory;
 import org.apache.ambari.view.utils.ambari.AmbariApi;
 import org.apache.ambari.view.utils.ambari.AmbariApiException;
+import org.apache.ambari.view.utils.hdfs.HdfsApi;
+import org.apache.ambari.view.utils.hdfs.HdfsUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ConnectionFactory implements IConnectionFactory {
+public class ConnectionFactory implements UserLocalFactory<Connection> {
   private final static Logger LOG =
       LoggerFactory.getLogger(ConnectionFactory.class);
   private ViewContext context;
+  private HiveAuthCredentials credentials;
   private AmbariApi ambariApi;
+  private HdfsApi hdfsApi = null;
 
-  public ConnectionFactory(ViewContext context) {
+  public ConnectionFactory(ViewContext context, HiveAuthCredentials credentials) {
     this.context = context;
+    this.credentials = credentials;
     this.ambariApi = new AmbariApi(context);
   }
 
+  /**
+   * Get HdfsApi instance
+   * @return HdfsApi business delegate
+   */
+  public synchronized HdfsApi getHDFSApi() {
+    if (hdfsApi == null) {
+      try {
+        hdfsApi = HdfsUtil.connectToHDFSApi(context);
+      } catch (Exception ex) {
+        throw new ServiceFormattedException("HdfsApi connection failed. Check \"webhdfs.url\" property", ex);
+      }
+    }
+    return hdfsApi;
+  }
+
   @Override
-  public Connection getHiveConnection() {
+  public Connection create() {
     try {
       return new Connection(getHiveHost(), Integer.valueOf(getHivePort()),
-          getHiveAuthParams(), context.getUsername());
+          getHiveAuthParams(), context.getUsername(), getCredentials().getPassword());
     } catch (HiveClientException e) {
       throw new HiveClientFormattedException(e);
     }
@@ -72,7 +92,14 @@ public class ConnectionFactory implements IConnectionFactory {
   }
 
   private String getHivePort() {
-    return context.getProperties().get("hive.port");
+    Boolean isHttpMode = context.getProperties().get("hive.transport.mode").equalsIgnoreCase("http");
+    String port;
+    if(isHttpMode){
+      port = context.getProperties().get("hive.http.port");
+    }else{
+      port = context.getProperties().get("hive.port");
+    }
+    return  port;
   }
 
   private Map<String, String> getHiveAuthParams() {
@@ -89,6 +116,16 @@ public class ConnectionFactory implements IConnectionFactory {
       }
       params.put(keyvalue[0], keyvalue[1]);
     }
+    params.put(Utils.HiveAuthenticationParams.TRANSPORT_MODE,context.getProperties().get("hive.transport.mode"));
+    params.put(Utils.HiveAuthenticationParams.HTTP_PATH,context.getProperties().get("hive.http.path"));
     return params;
+  }
+
+  public HiveAuthCredentials getCredentials() {
+    return credentials;
+  }
+
+  public void setCredentials(HiveAuthCredentials credentials) {
+    this.credentials = credentials;
   }
 }

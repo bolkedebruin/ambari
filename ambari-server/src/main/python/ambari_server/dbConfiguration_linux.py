@@ -26,6 +26,7 @@ import socket
 import subprocess
 import sys
 import time
+import pwd
 
 from ambari_commons import OSCheck, OSConst
 from ambari_commons.logging_utils import get_silent, get_verbose, print_error_msg, print_info_msg, print_warning_msg
@@ -117,7 +118,7 @@ class LinuxDBMSConfig(DBMSConfig):
           "followed by alphanumeric or _ or - characters",
           False
       )
-      self.database_password = LinuxDBMSConfig._configure_database_password(True)
+      self.database_password = LinuxDBMSConfig._configure_database_password(True, self.database_password)
 
     self._display_db_properties()
     return True
@@ -189,8 +190,8 @@ class LinuxDBMSConfig(DBMSConfig):
     return None
 
   @staticmethod
-  def _configure_database_password(showDefault=True):
-    passwordDefault = DEFAULT_PASSWORD
+  def _configure_database_password(showDefault=True, defaultPassword=DEFAULT_PASSWORD):
+    passwordDefault = defaultPassword
     if showDefault:
       passwordPrompt = 'Enter Database Password (' + passwordDefault + '): '
     else:
@@ -414,6 +415,27 @@ class PGConfig(LinuxDBMSConfig):
     print 'Default properties detected. Using built-in database.'
     self._store_local_properties(properties)
 
+  def _create_postgres_lock_directory(self):
+    postgres_user_uid = None
+    try:
+      postgres_user_uid = pwd.getpwnam("postgres").pw_uid
+    except KeyError:
+      print "WARNING: Unable to create /var/run/postgresql directory, because user [postgres] doesn't exist. Potentially," \
+            " postgresql service start can be failed."
+      return
+
+    try:
+      if not os.path.isdir("/var/run/postgresql"):
+        os.mkdir("/var/run/postgresql")
+    except Exception as e:
+      print "WARNING: Unable to create /var/run/postgresql directory. Potentially," \
+            " postgresql service start can be failed."
+      print "Unexpected error: " + str(e)
+      return
+
+    if postgres_user_uid:
+      os.chown("/var/run/postgresql", postgres_user_uid, -1)
+
   def _setup_local_database(self):
     print 'Checking PostgreSQL...'
     (pg_status, retcode, out, err) = PGConfig._check_postgre_up()
@@ -551,10 +573,14 @@ class PGConfig(LinuxDBMSConfig):
   @staticmethod
   def _get_postgre_status():
     retcode, out, err = run_os_command(PGConfig.PG_ST_CMD)
-    try:
-      pg_status = re.search('(stopped|running)', out, re.IGNORECASE).group(0).lower()
-    except AttributeError:
-      pg_status = None
+    # on RHEL and SUSE PG_ST_COMD returns RC 0 for running and 3 for stoppped
+    if retcode == 0:
+      pg_status = PGConfig.PG_STATUS_RUNNING
+    else:
+      if retcode == 3:
+        pg_status = "stopped"
+      else:
+        pg_status = None
     return pg_status, retcode, out, err
 
   @staticmethod
@@ -566,7 +592,7 @@ class PGConfig(LinuxDBMSConfig):
     else:
       # run initdb only on non ubuntu systems as ubuntu does not have initdb cmd.
       if not OSCheck.is_ubuntu_family():
-        print "Running initdb: This may take upto a minute."
+        print "Running initdb: This may take up to a minute."
         retcode, out, err = run_os_command(PGConfig.PG_INITDB_CMD)
         if retcode == 0:
           print out
@@ -777,6 +803,13 @@ class OracleConfig(LinuxDBMSConfig):
 
   def _is_jdbc_driver_installed(self, properties):
     return LinuxDBMSConfig._find_jdbc_driver("*ojdbc*.jar")
+
+  def _get_default_driver_path(self, properties):
+    drivers = LinuxDBMSConfig._find_jdbc_driver("*ojdbc*.jar")
+    if drivers == -1:
+      return os.path.join(configDefaults.JAVA_SHARE_PATH, self.driver_file_name)
+    else:
+      return os.pathsep.join(drivers)
 
   def _configure_database_name(self):
     if self.persistence_type != STORAGE_TYPE_LOCAL:

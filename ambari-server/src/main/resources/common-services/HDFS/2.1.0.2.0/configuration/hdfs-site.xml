@@ -28,11 +28,16 @@
     <name>dfs.namenode.name.dir</name>
     <!-- cluster variant -->
     <value>/hadoop/hdfs/namenode</value>
+    <display-name>NameNode directories</display-name>
     <description>Determines where on the local filesystem the DFS name node
       should store the name table.  If this is a comma-delimited list
       of directories then the name table is replicated in all of the
       directories, for redundancy. </description>
     <final>true</final>
+    <value-attributes>
+      <type>directories</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -45,8 +50,13 @@
   <property>
     <name>dfs.webhdfs.enabled</name>
     <value>true</value>
+    <display-name>WebHDFS enabled</display-name>
     <description>Whether to enable WebHDFS feature</description>
     <final>true</final>
+    <value-attributes>
+      <type>boolean</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -72,6 +82,7 @@
   <property>
     <name>dfs.datanode.data.dir</name>
     <value>/hadoop/hdfs/data</value>
+    <display-name>DataNode directories</display-name>
     <description>Determines where on the local filesystem an DFS data node
       should store its blocks.  If this is a comma-delimited
       list of directories, then data will be stored in all named
@@ -79,6 +90,9 @@
       Directories that do not exist are ignored.
     </description>
     <final>true</final>
+    <value-attributes>
+      <type>directories</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -104,11 +118,16 @@
   <property>
     <name>dfs.namenode.checkpoint.dir</name>
     <value>/hadoop/hdfs/namesecondary</value>
+    <display-name>SecondaryNameNode Checkpoint directories</display-name>
     <description>Determines where on the local filesystem the DFS secondary
       name node should store the temporary images to merge.
       If this is a comma-delimited list of directories then the image is
       replicated in all of the directories for redundancy.
     </description>
+    <value-attributes>
+      <type>directories</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -126,8 +145,12 @@
   <property>
     <name>dfs.namenode.checkpoint.period</name>
     <value>21600</value>
-    <description>The number of seconds between two periodic checkpoints.
-    </description>
+    <display-name>HDFS Maximum Checkpoint Delay</display-name>
+    <description>The number of seconds between two periodic checkpoints.</description>
+    <value-attributes>
+      <type>int</type>
+      <unit>seconds</unit>
+    </value-attributes>
   </property>
 
   <property>
@@ -149,14 +172,12 @@
   <property>
     <name>dfs.replication</name>
     <value>3</value>
+    <display-name>Block replication</display-name>
     <description>Default block replication.
     </description>
-  </property>
-
-  <property>
-    <name>dfs.heartbeat.interval</name>
-    <value>3</value>
-    <description>Determines datanode heartbeat interval in seconds.</description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -234,6 +255,7 @@
   <property>
     <name>dfs.namenode.http-address</name>
     <value>localhost:50070</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>The name of the default file system.  Either the
       literal string "local" or a host:port for HDFS.</description>
     <final>true</final>
@@ -242,6 +264,7 @@
   <property>
     <name>dfs.namenode.rpc-address</name>
     <value>localhost:8020</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>RPC address that handles all clients requests.</description>
   </property>
 
@@ -249,8 +272,19 @@
     <name>dfs.datanode.du.reserved</name>
     <!-- cluster variant -->
     <value>1073741824</value>
+    <display-name>Reserved space for HDFS</display-name>
     <description>Reserved space in bytes per volume. Always leave this much space free for non dfs use.
     </description>
+    <value-attributes>
+      <type>int</type>
+      <unit>bytes</unit>
+    </value-attributes>
+    <depends-on>
+      <property>
+        <type>hdfs-site</type>
+        <name>dfs.datanode.data.dir</name>
+      </property>
+    </depends-on>
   </property>
 
   <property>
@@ -333,6 +367,7 @@
     <!-- cluster variant -->
     <name>dfs.namenode.secondary.http-address</name>
     <value>localhost:50090</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>Address of secondary namenode web server</description>
   </property>
 
@@ -340,6 +375,7 @@
   <property>
     <name>dfs.namenode.https-address</name>
     <value>localhost:50470</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>The https address where namenode binds</description>
 
   </property>
@@ -347,19 +383,27 @@
   <property>
     <name>dfs.datanode.data.dir.perm</name>
     <value>750</value>
+    <display-name>DataNode directories permission</display-name>
     <description>The permissions that should be there on dfs.datanode.data.dir
       directories. The datanode will not come up if the permissions are
       different on existing dfs.datanode.data.dir directories. If the directories
       don't exist, they will be created with this permission.</description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>dfs.namenode.accesstime.precision</name>
     <value>0</value>
-    <description>The access time for HDFS file is precise upto this value.
+    <display-name>Access time precision</display-name>
+    <description>The access time for HDFS file is precise up to this value.
       The default value is 1 hour. Setting a value of 0 disables
       access times for HDFS.
     </description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -424,9 +468,13 @@
   <property>
     <name>dfs.client.read.shortcircuit</name>
     <value>true</value>
+    <display-name>HDFS Short-circuit read</display-name>
     <description>
       This configuration parameter turns on short-circuit local reads.
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>

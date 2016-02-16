@@ -32,6 +32,7 @@ import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostVersionEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
 
@@ -53,6 +54,11 @@ public interface Cluster {
    * Set the Cluster Name
    */
   void setClusterName(String clusterName);
+
+  /**
+   * Gets the Cluster's resource ID
+   */
+  Long getResourceId();
 
   /**
    * Add a service to a cluster
@@ -188,9 +194,8 @@ public interface Cluster {
    * {@link Cluster#mapHostVersions} is that it affects all hosts (not only
    * missing hosts).
    * <p/>
-   * Hosts that are in maintenance mode will not be included. These hosts have
-   * been explicitely marked as being in maintenance andd are not included in
-   * this operation.
+   * Hosts that are in maintenance mode will be transititioned directly into
+   * {@link RepositoryVersionState#OUT_OF_SYNC} instead.
    *
    * @param sourceClusterVersion
    *          cluster version to be queried for a stack name/version info and
@@ -301,14 +306,31 @@ public interface Cluster {
   Map<String, Config> getConfigsByType(String configType);
 
   /**
+   * Gets all properties types that mach the specified type.
+   * @param configType the config type to return
+   * @return properties types for given config type
+   */
+  Map<PropertyInfo.PropertyType, Set<String>> getConfigPropertiesTypes(String configType);
+
+  /**
    * Gets the specific config that matches the specified type and tag.  This not
    * necessarily a DESIRED configuration that applies to a cluster.
    * @param configType  the config type to find
-   * @param versionTag  the config version to find
+   * @param versionTag  the config version tag to find
    * @return  a {@link Config} object, or <code>null</code> if the specific type
    *          and version have not been set.
    */
   Config getConfig(String configType, String versionTag);
+
+  /**
+   * Gets the specific config that matches the specified type and version.  This not
+   * necessarily a DESIRED configuration that applies to a cluster.
+   * @param configType  the config type to find
+   * @param configVersion  the config version to find
+   * @return  a {@link Config} object, or <code>null</code> if the specific type
+   *          and version have not been set.
+   */
+  Config getConfigByVersion(String configType, Long configVersion);
 
   /**
    * Sets a specific config.  NOTE:  This is not a DESIRED configuration that
@@ -381,10 +403,22 @@ public interface Cluster {
   Config getDesiredConfigByType(String configType);
 
   /**
-   * Gets the desired configurations for the cluster.
+   * Check if config type exists in cluster.
+   * @param configType the type of configuration
+   * @return <code>true</code> if config type exists, else - <code>false</code>
+   */
+  boolean isConfigTypeExists(String configType);
+  /**
+   * Gets the active desired configurations for the cluster.
    * @return a map of type-to-configuration information.
    */
   Map<String, DesiredConfig> getDesiredConfigs();
+
+  /**
+   * Gets all versions of the desired configurations for the cluster.
+   * @return a map of type-to-configuration information.
+   */
+  Map<String, Set<DesiredConfig>> getAllDesiredConfigVersions();
 
 
   /**
@@ -476,7 +510,7 @@ public interface Cluster {
    * @param id
    * @throws AmbariException
    */
-  void deleteConfigGroup(Long id) throws AmbariException;
+  void deleteConfigGroup(Long id) throws AmbariException, AuthorizationException;
 
   /**
    * Find all config groups associated with the give hostname
@@ -585,4 +619,15 @@ public interface Cluster {
    *          {@code null}).
    */
   void removeConfigurations(StackId stackId);
+
+  /**
+   * Clear cluster caches and re-read data from database
+   */
+  void invalidateData();
+
+  /**
+   * Returns whether this cluster was provisioned by a Blueprint or not.
+   * @return true if the cluster was deployed with a Blueprint otherwise false.
+   */
+  boolean isBluePrintDeployed();
 }

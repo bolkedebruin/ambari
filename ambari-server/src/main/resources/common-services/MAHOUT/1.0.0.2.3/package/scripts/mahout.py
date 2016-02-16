@@ -26,9 +26,18 @@ def mahout():
   import params
 
   Directory( params.mahout_conf_dir,
-             recursive = True,
+             create_parents = True,
              owner = params.mahout_user,
              group = params.user_group
+  )
+
+  XmlConfig("yarn-site.xml",
+            conf_dir=params.hadoop_conf_dir,
+            configurations=params.config['configurations']['yarn-site'],
+            configuration_attributes=params.config['configuration_attributes']['yarn-site'],
+            owner=params.yarn_user,
+            group=params.user_group,
+            mode=0644
   )
 
   if not is_empty(params.log4j_props):

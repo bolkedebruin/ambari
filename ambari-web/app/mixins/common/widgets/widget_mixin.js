@@ -42,7 +42,7 @@ App.WidgetMixin = Ember.Mixin.create({
    * @type {RegExp}
    * @const
    */
-  VALUE_NAME_REGEX: /[\w\.\,\:\=\[\]]+/g,
+  VALUE_NAME_REGEX: /(\w+\s+\w+)?[\w\.\,\:\=\[\]]+/g,
 
   /**
    * @type {string}
@@ -81,9 +81,7 @@ App.WidgetMixin = Ember.Mixin.create({
    * color of content calculated by thresholds
    * @type {string}
    */
-  contentColor: function () {
-    return this.get('value') ? 'green' : 'grey';
-  }.property('value'),
+  contentColor: Em.computed.ifThenElse('value', 'green', 'grey'),
 
   beforeRender: function () {
     this.get('metrics').clear();
@@ -121,6 +119,7 @@ App.WidgetMixin = Ember.Mixin.create({
           context: this,
           startCallName: 'getHostComponentMetrics',
           successCallback: this.getHostComponentMetricsSuccessCallback,
+          errorCallback: this.getMetricsErrorCallback,
           completeCallback: function () {
             requestCounter--;
             if (requestCounter === 0) this.onMetricsLoaded();
@@ -132,6 +131,7 @@ App.WidgetMixin = Ember.Mixin.create({
           context: this,
           startCallName: 'getServiceComponentMetrics',
           successCallback: this.getMetricsSuccessCallback,
+          errorCallback: this.getMetricsErrorCallback,
           completeCallback: function () {
             requestCounter--;
             if (requestCounter === 0) this.onMetricsLoaded();
@@ -204,7 +204,9 @@ App.WidgetMixin = Ember.Mixin.create({
   },
 
   /**
-   *  aggregate all metric names in the query. Add time range and step to temporal queries
+   * aggregate all metric names in the query. Add time range and step to temporal queries
+   * @param {Array} metricPaths
+   * @returns {string}
    */
   prepareMetricPaths: function(metricPaths) {
     var temporalMetrics = metricPaths.filterProperty('metric_type', 'TEMPORAL');
@@ -225,15 +227,20 @@ App.WidgetMixin = Ember.Mixin.create({
    * @returns {$.ajax}
    */
   getHostComponentMetrics: function (request) {
-    return App.ajax.send({
-      name: 'widgets.hostComponent.metrics.get',
-      sender: this,
-      data: {
-        componentName: request.component_name,
-        metricPaths: this.prepareMetricPaths(request.metric_paths),
-        hostComponentCriteria: this.computeHostComponentCriteria(request)
-      }
-    });
+    var metricPaths = this.prepareMetricPaths(request.metric_paths);
+
+    if (metricPaths.length) {
+      return App.ajax.send({
+        name: 'widgets.hostComponent.metrics.get',
+        sender: this,
+        data: {
+          componentName: request.component_name,
+          metricPaths: this.prepareMetricPaths(request.metric_paths),
+          hostComponentCriteria: this.computeHostComponentCriteria(request)
+        }
+      });
+    }
+    return jQuery.Deferred().reject().promise();
   },
 
   getHostComponentMetricsSuccessCallback: function (data) {
@@ -273,8 +280,37 @@ App.WidgetMixin = Ember.Mixin.create({
         if (!Em.isNone(metric_data)) {
           _metric.data = metric_data;
           this.get('metrics').pushObject(_metric);
+        } else if (this.get('graphView')) {
+          var graph = this.get('childViews') && this.get('childViews').findProperty('_showMessage');
+          if (graph) {
+            graph.set('hasData', false);
+            this.set('isExportButtonHidden', true);
+            graph._showMessage('info', this.t('graphs.noData.title'), this.t('graphs.noDataAtTime.message'));
+            this.get('metrics').clear();
+          }
         }
       }, this);
+    }
+  },
+
+  /**
+   * error callback on getting aggregated metrics and host component metrics
+   * @param {object} xhr
+   * @param {string} textStatus
+   * @param {string} errorThrown
+   */
+  getMetricsErrorCallback: function (xhr, textStatus, errorThrown) {
+    if (this.get('graphView')) {
+      var graph = this.get('childViews') && this.get('childViews').findProperty('_showMessage');
+      if (graph) {
+        if (xhr.readyState == 4 && xhr.status) {
+          textStatus = xhr.status + " " + textStatus;
+        }
+        graph.set('hasData', false);
+        this.set('isExportButtonHidden', true);
+        graph._showMessage('warn', this.t('graphs.error.title'), this.t('graphs.error.message').format(textStatus, errorThrown));
+        this.get('metrics').clear();
+      }
     }
   },
 
@@ -374,9 +410,16 @@ App.WidgetMixin = Ember.Mixin.create({
       Em.run.next(function(){
         App.tooltip(self.$(".corner-icon > .icon-copy"), {title: Em.I18n.t('common.clone')});
         App.tooltip(self.$(".corner-icon > .icon-edit"), {title: Em.I18n.t('common.edit')});
+        App.tooltip(self.$(".corner-icon > .icon-save"), {title: Em.I18n.t('common.export')});
       });
     }
   }.observes('isLoaded'),
+
+  willDestroyElement: function() {
+    this.$(".corner-icon > .icon-copy").tooltip('destroy');
+    this.$(".corner-icon > .icon-edit").tooltip('destroy');
+    this.$(".corner-icon > .icon-save").tooltip('destroy');
+  },
 
   /**
    * calculate series datasets for graph widgets
@@ -410,6 +453,8 @@ App.WidgetMixin = Ember.Mixin.create({
       expressions = [],
       match;
 
+    if (Em.isNone(input)) return expressions;
+
     while (match = pattern.exec(input.value)) {
       expressions.push(match[1]);
     }
@@ -437,7 +482,6 @@ App.WidgetMixin = Ember.Mixin.create({
             return metrics.findProperty('name', match).data;
           } else {
             validExpression = false;
-            console.warn('Metrics with name "' + match + '" not found to compute expression');
           }
         } else {
           return match;
@@ -447,7 +491,6 @@ App.WidgetMixin = Ember.Mixin.create({
       //check for correct math expression
       if (!(validExpression && this.get('MATH_EXPRESSION_REGEX').test(beforeCompute))) {
         validExpression = false;
-        console.warn('Value for metric is not correct mathematical expression: ' + beforeCompute);
       }
 
       result['${' + _expression + '}'] = (validExpression) ? Number(window.eval(beforeCompute)).toString() : value;
@@ -666,6 +709,9 @@ App.WidgetLoadAggregator = Em.Object.create({
     this.get('requests').push(request);
     if (Em.isNone(this.get('timeoutId'))) {
       this.set('timeoutId', window.setTimeout(function () {
+        //clear requests that are belongs to destroyed views
+        self.set('requests', self.get('requests').filterProperty('context.state', 'inDOM'));
+
         self.runRequests(self.get('requests'));
         self.get('requests').clear();
         clearTimeout(self.get('timeoutId'));
@@ -696,6 +742,7 @@ App.WidgetLoadAggregator = Em.Object.create({
         bulks[id].subRequests = [{
           context: request.context,
           successCallback: request.successCallback,
+          errorCallback: request.errorCallback,
           completeCallback: request.completeCallback
         }];
       } else {
@@ -703,6 +750,7 @@ App.WidgetLoadAggregator = Em.Object.create({
         bulks[id].subRequests.push({
           context: request.context,
           successCallback: request.successCallback,
+          errorCallback: request.errorCallback,
           completeCallback: request.completeCallback
         });
       }
@@ -719,18 +767,22 @@ App.WidgetLoadAggregator = Em.Object.create({
     var self = this;
     for (var id in bulks) {
       (function (_request) {
-        if (_request.context.get('state') !== 'inDOM') return;
-
         _request.data.metric_paths = self.arrayUtils.uniqObjectsbyId(_request.data.metric_paths, "id");
         _request.context[_request.startCallName].call(_request.context, _request.data).done(function (response) {
           _request.subRequests.forEach(function (subRequest) {
             subRequest.successCallback.call(subRequest.context, response);
           }, this);
-        }).complete(function () {
-          _request.subRequests.forEach(function (subRequest) {
-            subRequest.completeCallback.call(subRequest.context);
-          }, this);
-        });
+        }).fail(function (xhr, textStatus, errorThrown) {
+            _request.subRequests.forEach(function (subRequest) {
+              if (subRequest.errorCallback) {
+                subRequest.errorCallback.call(subRequest.context, xhr, textStatus, errorThrown);
+              }
+            }, this);
+          }).always(function () {
+              _request.subRequests.forEach(function (subRequest) {
+                subRequest.completeCallback.call(subRequest.context);
+              }, this);
+            });
       })(bulks[id]);
     }
   }

@@ -29,6 +29,7 @@ import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.HostConfig;
 import org.apache.ambari.server.topology.Blueprint;
 import org.apache.ambari.server.topology.BlueprintImpl;
+import org.apache.ambari.server.topology.Component;
 import org.apache.ambari.server.topology.Configuration;
 import org.apache.ambari.server.topology.HostGroup;
 import org.apache.ambari.server.topology.HostGroupImpl;
@@ -59,6 +60,7 @@ public class ExportBlueprintRequest implements TopologyRequest {
   private static AmbariManagementController controller = AmbariServer.getController();
 
   private String clusterName;
+  private Long clusterId;
   private Blueprint blueprint;
   private Configuration configuration;
   //todo: Should this map be represented by a new class?
@@ -69,6 +71,8 @@ public class ExportBlueprintRequest implements TopologyRequest {
     Resource clusterResource = clusterNode.getObject();
     clusterName = String.valueOf(clusterResource.getPropertyValue(
         ClusterResourceProvider.CLUSTER_NAME_PROPERTY_ID));
+    clusterId = Long.valueOf(String.valueOf(clusterResource.getPropertyValue(
+            ClusterResourceProvider.CLUSTER_ID_PROPERTY_ID)));
 
 
     createConfiguration(clusterNode);
@@ -80,9 +84,13 @@ public class ExportBlueprintRequest implements TopologyRequest {
     createBlueprint(exportedHostGroups, parseStack(clusterResource));
   }
 
-  @Override
   public String getClusterName() {
     return clusterName;
+  }
+
+  @Override
+  public Long getClusterId() {
+    return clusterId;
   }
 
   @Override
@@ -123,10 +131,17 @@ public class ExportBlueprintRequest implements TopologyRequest {
 
     Collection<HostGroup> hostGroups = new ArrayList<HostGroup>();
     for (ExportedHostGroup exportedHostGroup : exportedHostGroups) {
-      hostGroups.add(new HostGroupImpl(exportedHostGroup.getName(), bpName, stack, exportedHostGroup.getComponents(),
+
+      // create Component using component name
+      List<Component> componentList = new ArrayList<Component>();
+      for (String component : exportedHostGroup.getComponents()) {
+        componentList.add(new Component(component));
+      }
+
+      hostGroups.add(new HostGroupImpl(exportedHostGroup.getName(), bpName, stack, componentList,
           exportedHostGroup.getConfiguration(), String.valueOf(exportedHostGroup.getCardinality())));
     }
-    blueprint = new BlueprintImpl(bpName, hostGroups, stack, configuration);
+    blueprint = new BlueprintImpl(bpName, hostGroups, stack, configuration, null);
   }
 
   private void createHostGroupInfo(Collection<ExportedHostGroup> exportedHostGroups) {

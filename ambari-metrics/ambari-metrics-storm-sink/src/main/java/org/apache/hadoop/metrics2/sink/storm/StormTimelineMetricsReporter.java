@@ -24,8 +24,8 @@ import backtype.storm.generated.TopologySummary;
 import backtype.storm.metric.IClusterReporter;
 import backtype.storm.utils.NimbusClient;
 import backtype.storm.utils.Utils;
-import org.apache.commons.lang.ClassUtils;
-import org.apache.commons.lang.Validate;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.Validate;
 import org.apache.hadoop.metrics2.sink.timeline.AbstractTimelineMetricsSink;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
@@ -71,6 +71,10 @@ public class StormTimelineMetricsReporter extends AbstractTimelineMetricsSink
     try {
       try {
         hostname = InetAddress.getLocalHost().getHostName();
+        //If not FQDN , call  DNS
+        if ((hostname == null) || (!hostname.contains("."))) {
+          hostname = InetAddress.getLocalHost().getCanonicalHostName();
+        }
       } catch (UnknownHostException e) {
         LOG.error("Could not identify hostname.");
         throw new RuntimeException("Could not identify hostname.", e);
@@ -149,8 +153,6 @@ public class StormTimelineMetricsReporter extends AbstractTimelineMetricsSink
     timelineMetric.setHostName(hostname);
     timelineMetric.setAppId(component);
     timelineMetric.setStartTime(currentTimeMillis);
-    timelineMetric.setType(ClassUtils.getShortCanonicalName(
-      attributeValue, "Number"));
     timelineMetric.getMetricValues().put(currentTimeMillis, Double.parseDouble(attributeValue));
     return timelineMetric;
   }

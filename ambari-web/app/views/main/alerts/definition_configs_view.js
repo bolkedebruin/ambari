@@ -32,6 +32,11 @@ App.AlertDefinitionConfigsView = Em.View.extend({
   canEdit: true,
 
   /**
+   * @type {string}
+   */
+  alertDefinitionType: '',
+
+  /**
    * List of classes applied to all inputs
    * @type {String}
    */
@@ -87,4 +92,14 @@ App.AlertConfigRadioButtonView = Em.Checkbox.extend({
   },
 
   classNameBindings: ['property.classNames']
+});
+
+App.AlertConfigParameterView = Em.View.extend({
+
+  templateName: require('templates/main/alerts/configs/alert_config_parameter'),
+
+  bigInput: Em.computed.equal('property.type', 'STRING'),
+
+  classNameBindings: ['property.classNames', 'parentView.basicClass']
+
 });

@@ -26,8 +26,10 @@ import re
 
 from resource_management.core.providers.package import PackageProvider
 from resource_management.core import shell
+from resource_management.core import sudo
 from resource_management.core.shell import string_cmd_from_args_list
 from resource_management.core.logger import Logger
+from resource_management.core.exceptions import Fail
 
 INSTALL_CMD_ENV = {'DEBIAN_FRONTEND':'noninteractive'}
 INSTALL_CMD = {
@@ -55,8 +57,8 @@ def replace_underscores(function_to_decorate):
 class AptProvider(PackageProvider):
 
   @replace_underscores
-  def install_package(self, name, use_repos=[], skip_repos=[]):
-    if use_repos or not self._check_existence(name):
+  def install_package(self, name, use_repos=[], skip_repos=[], is_upgrade=False):
+    if is_upgrade or use_repos or not self._check_existence(name):
       cmd = INSTALL_CMD[self.get_logoutput()]
       copied_sources_files = []
       is_tmp_dir_created = False
@@ -70,25 +72,29 @@ class AptProvider(PackageProvider):
           if repo != 'base':
             new_sources_file = os.path.join(apt_sources_list_tmp_dir, repo + '.list')
             Logger.info("Temporal sources file will be copied: %s" % new_sources_file)
-            shutil.copy(os.path.join(APT_SOURCES_LIST_DIR, repo + '.list'), new_sources_file)
+            sudo.copy(os.path.join(APT_SOURCES_LIST_DIR, repo + '.list'), new_sources_file)
             copied_sources_files.append(new_sources_file)
         cmd = cmd + ['-o', 'Dir::Etc::SourceParts=%s' % apt_sources_list_tmp_dir]
 
       cmd = cmd + [name]
       Logger.info("Installing package %s ('%s')" % (name, string_cmd_from_args_list(cmd)))
-      code, out = shell.call(cmd, sudo=True, env=INSTALL_CMD_ENV, logoutput=self.get_logoutput())
+      code, out = self.call_until_not_locked(cmd, sudo=True, env=INSTALL_CMD_ENV, logoutput=self.get_logoutput())
       
-      # apt-get update wasn't done too long
+      if self.is_locked_output(out):
+        err_msg = Logger.filter_text("Execution of '%s' returned %d. %s" % (cmd, code, out))
+        raise Fail(err_msg)
+      
+      # apt-get update wasn't done too long maybe?
       if code:
         Logger.info("Execution of '%s' returned %d. %s" % (cmd, code, out))
         Logger.info("Failed to install package %s. Executing `%s`" % (name, string_cmd_from_args_list(REPO_UPDATE_CMD)))
-        code, out = shell.call(REPO_UPDATE_CMD, sudo=True, logoutput=self.get_logoutput())
+        code, out = self.call_until_not_locked(REPO_UPDATE_CMD, sudo=True, logoutput=self.get_logoutput())
         
         if code:
           Logger.info("Execution of '%s' returned %d. %s" % (REPO_UPDATE_CMD, code, out))
           
         Logger.info("Retrying to install package %s" % (name))
-        shell.checked_call(cmd, sudo=True, logoutput=self.get_logoutput())
+        self.checked_call_until_not_locked(cmd, sudo=True, env=INSTALL_CMD_ENV, logoutput=self.get_logoutput())
 
       if is_tmp_dir_created:
         for temporal_sources_file in copied_sources_files:
@@ -98,17 +104,20 @@ class AptProvider(PackageProvider):
         os.rmdir(apt_sources_list_tmp_dir)
     else:
       Logger.info("Skipping installation of existing package %s" % (name))
+      
+  def is_locked_output(self, out):
+    return "Unable to lock the administration directory" in out
 
   @replace_underscores
-  def upgrade_package(self, name, use_repos=[], skip_repos=[]):
-    return self.install_package(name, use_repos, skip_repos)
+  def upgrade_package(self, name, use_repos=[], skip_repos=[], is_upgrade=True):
+    return self.install_package(name, use_repos, skip_repos, is_upgrade)
 
   @replace_underscores
   def remove_package(self, name):
     if self._check_existence(name):
       cmd = REMOVE_CMD[self.get_logoutput()] + [name]
       Logger.info("Removing package %s ('%s')" % (name, string_cmd_from_args_list(cmd)))
-      shell.checked_call(cmd, sudo=True, logoutput=self.get_logoutput())
+      self.checked_call_until_not_locked(cmd, sudo=True, logoutput=self.get_logoutput())
     else:
       Logger.info("Skipping removal of non-existing package %s" % (name))
 

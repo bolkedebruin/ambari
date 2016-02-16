@@ -22,41 +22,60 @@ require('views/main/alert_definitions_view');
 
 var view;
 
+function getView() {
+  return App.MainAlertDefinitionsView.create({});
+}
+
 describe('App.MainAlertDefinitionsView', function () {
 
   beforeEach(function () {
-    view = App.MainAlertDefinitionsView.create({});
+    view = getView();
+    sinon.stub(App.db, 'setFilterConditions', Em.K);
+    sinon.stub(App.db, 'getFilterConditions').returns([]);
+    sinon.stub(App.db, 'getDisplayLength', Em.K);
+    sinon.stub(App.db, 'setStartIndex', Em.K);
+    sinon.stub(view, 'initFilters', Em.K);
   });
+
+  afterEach(function () {
+    App.db.setFilterConditions.restore();
+    App.db.getFilterConditions.restore();
+    App.db.getDisplayLength.restore();
+    App.db.setStartIndex.restore();
+    view.initFilters.restore();
+  });
+
+  App.TestAliases.testAsComputedAlias(getView(), 'totalCount', 'content.length', 'number');
 
   describe('#serviceFilterView', function () {
     it('Add Ambari service to filters', function () {
       var serviceFilterClass = view.serviceFilterView;
       var content = serviceFilterClass.create({}).get('content');
-      expect(content[0].label==Em.I18n.t('common.all'));
-      expect(content[content.length-1].label==Em.I18n.t('app.name'));
+      expect(content[0].label === Em.I18n.t('common.all'));
+      expect(content[content.length - 1].label === Em.I18n.t('app.name'));
     });
   });
 
   describe('#willInsertElement', function () {
 
     beforeEach(function(){
-      sinon.stub(view, 'clearFilterCondition', Em.K);
+      sinon.stub(view, 'clearFilterConditionsFromLocalStorage', Em.K);
     });
 
     afterEach(function(){
-      view.clearFilterCondition.restore();
+      view.clearFilterConditionsFromLocalStorage.restore();
     });
 
     it('should call clearFilterCondition if controller.showFilterConditionsFirstLoad is false', function () {
       view.set('controller', {showFilterConditionsFirstLoad: false, content: []});
       view.willInsertElement();
-      expect(view.clearFilterCondition.calledOnce).to.be.true;
+      expect(view.clearFilterConditionsFromLocalStorage.calledOnce).to.be.true;
     });
 
     it('should not call clearFilterCondition if controller.showFilterConditionsFirstLoad is true', function () {
       view.set('controller', {showFilterConditionsFirstLoad: true, content: []});
       view.willInsertElement();
-      expect(view.clearFilterCondition.calledOnce).to.be.false;
+      expect(view.clearFilterConditionsFromLocalStorage.calledOnce).to.be.false;
     });
   });
 

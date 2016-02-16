@@ -172,7 +172,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
    * List of available SNMP versions
    * @type {Array}
    */
-  SNMPVersions: ['SNMPv1', 'SNMPv2c', 'SNMPv3'],
+  SNMPVersions: ['SNMPv1', 'SNMPv2c'],
 
   /**
    * List of all Alert Notifications
@@ -387,9 +387,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
           this.retypePasswordValidation();
         },
 
-        isEmailMethodSelected: function () {
-          return this.get('controller.inputFields.method.value') === 'EMAIL';
-        }.property('controller.inputFields.method.value'),
+        isEmailMethodSelected: Em.computed.equal('controller.inputFields.method.value', 'EMAIL'),
 
         methodObserver: function () {
           var currentMethod = this.get('controller.inputFields.method.value'),
@@ -512,12 +510,11 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
           }
         }.observes('controller.inputFields.retypeSMTPPassword.value', 'controller.inputFields.SMTPPassword.value'),
 
-        setParentErrors: function () {
-          var hasErrors = this.get('nameError') || this.get('emailToError') || this.get('emailFromError') ||
-            this.get('smtpPortError') || this.get('hostError') || this.get('portError') || this.get('passwordError');
-          this.set('parentView.hasErrors', hasErrors);
-        }.observes('nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'hostError', 'portError', 'passwordError'),
+        someErrorExists: Em.computed.or('nameError', 'emailToError', 'emailFromError', 'smtpPortError', 'hostError', 'portError', 'passwordError'),
 
+        setParentErrors: function () {
+          this.set('parentView.hasErrors', this.get('someErrorExists'));
+        }.observes('someErrorExists'),
 
         groupsSelectView: Em.Select.extend({
           attributeBindings: ['disabled'],
@@ -562,33 +559,25 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
          * Determines if all alert-groups are selected
          * @type {boolean}
          */
-        allGroupsSelected: function () {
-          return this.get('groupSelect.selection.length') === this.get('groupSelect.content.length');
-        }.property('groupSelect.selection.length', 'groupSelect.content.length', 'groupSelect.disabled'),
+        allGroupsSelected: Em.computed.equalProperties('groupSelect.selection.length', 'groupSelect.content.length'),
 
         /**
          * Determines if no one alert-group is selected
          * @type {boolean}
          */
-        noneGroupsSelected: function () {
-          return this.get('groupSelect.selection.length') === 0;
-        }.property('groupSelect.selection.length', 'groupSelect.content.length', 'groupSelect.disabled'),
+        noneGroupsSelected: Em.computed.empty('groupSelect.selection'),
 
         /**
          * Determines if all severities are selected
          * @type {boolean}
          */
-        allSeveritySelected: function () {
-          return this.get('severitySelect.selection.length') === this.get('severitySelect.content.length');
-        }.property('severitySelect.selection.length', 'severitySelect.content.length'),
+        allSeveritySelected: Em.computed.equalProperties('severitySelect.selection.length', 'severitySelect.content.length'),
 
         /**
          * Determines if no one severity is selected
          * @type {boolean}
          */
-        noneSeveritySelected: function () {
-          return this.get('severitySelect.selection.length') === 0;
-        }.property('severitySelect.selection.length', 'severitySelect.content.length'),
+        noneSeveritySelected: Em.computed.empty('severitySelect.selection'),
 
         /**
          * Select all severities
@@ -613,9 +602,7 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
 
       primary: Em.I18n.t('common.save'),
 
-      disablePrimary: function () {
-        return this.get('isSaving') || this.get('hasErrors');
-      }.property('isSaving', 'hasErrors'),
+      disablePrimary: Em.computed.or('isSaving', 'hasErrors'),
 
       onPrimary: function () {
         this.set('isSaving', true);
@@ -715,6 +702,13 @@ App.ManageAlertNotificationsController = Em.Controller.extend({
    * @method updateAlertNotification
    */
   updateAlertNotification: function (apiObject) {
+    if(apiObject!=null){
+      if(apiObject.AlertTarget.global == false){
+        this.get('selectedAlertNotification').set('global',false);
+      } else {
+        this.get('selectedAlertNotification').set('global',true);
+      }
+    }
     return App.ajax.send({
       name: 'alerts.update_alert_notification',
       sender: this,

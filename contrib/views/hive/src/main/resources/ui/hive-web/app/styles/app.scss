@@ -254,6 +254,7 @@ dropdown .fa-remove {
 .query-container {
   position: relative;
   padding-right: 0;
+  -moz-box-sizing: border-box;
 
   &.col-md-9 {
     @include animate-width(0.25s);
@@ -265,7 +266,7 @@ dropdown .fa-remove {
 }
 
 .main-content {
-  width: 100%;
+  width: 96%;
 }
 
 .queries-icon {
@@ -357,6 +358,7 @@ body {
 
 .CodeMirror-hints {
   min-width: 200px;
+  z-index: 100;
 }
 
 .spinner {
@@ -378,6 +380,13 @@ body {
   }
 }
 
+.ellipsis{
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  display:inline-block;
+}
+
 .databases {
   max-height: 500px;
   overflow-y: auto;
@@ -387,8 +396,30 @@ body {
 
     .columns {
       padding-left: 10px;
+      .column-name{
+        width: 10em;
+        font-weight: bold;
+        @extend .ellipsis;
+      }
     }
   }
+}
+
+@media only screen and (max-width : 992px) {
+  .databases {
+    .tables {
+      .columns {
+        .column-name{
+          width: 5em;
+        }
+      }
+    }
+  }
+}
+
+.collapsible-row {
+  width: 13em;
+  @extend .ellipsis;
 }
 
 .selectize-control.plugin-remove_button [data-value] {
@@ -548,11 +579,10 @@ tree-view ul li {
   margin: 0 0 10px;
 }
 
-#query-results {
+#query-results, #upload-table  {
   .table {
     display: inline-block;
     overflow: auto;
-    max-width: 830px;
   }
 
   .query-results-tools {
@@ -562,4 +592,29 @@ tree-view ul li {
   input {
     width: 300px;
   }
+}
+
+#visualization{
+    .max-rows {
+      float: right;
+    }
+}
+
+#visualization{
+    .max-rows {
+      float: right;
+    }
+}
+
+.mozBoxSizeFix {
+  -moz-box-sizing: border-box;
+}
+
+#isFirstRowHeader {
+  box-shadow: none;
+  width: inherit;
+}
+
+.widget-controls {
+  padding-right: 10px;
 }

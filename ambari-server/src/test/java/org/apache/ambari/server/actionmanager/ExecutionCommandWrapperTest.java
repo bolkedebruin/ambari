@@ -69,7 +69,6 @@ public class ExecutionCommandWrapperTest {
   private static final String SERVICE_SITE_VAL1 = "ssv1";
   private static final String SERVICE_SITE_VAL1_S = "ssv1_s";
   private static final String SERVICE_SITE_VAL2 = "ssv2";
-  private static final String SERVICE_SITE_VAL2_S = "ssv2_s";
   private static final String SERVICE_SITE_VAL2_H = "ssv2_h";
   private static final String SERVICE_SITE_VAL3 = "ssv3";
   private static final String SERVICE_SITE_VAL4 = "ssv4";
@@ -117,7 +116,6 @@ public class ExecutionCommandWrapperTest {
 
     SERVICE_SITE_SERVICE = new HashMap<String, String>();
     SERVICE_SITE_SERVICE.put(SERVICE_SITE_NAME1, SERVICE_SITE_VAL1_S);
-    SERVICE_SITE_SERVICE.put(SERVICE_SITE_NAME2, SERVICE_SITE_VAL2_S);
     SERVICE_SITE_SERVICE.put(SERVICE_SITE_NAME5, SERVICE_SITE_VAL5_S);
 
     SERVICE_SITE_HOST = new HashMap<String, String>();
@@ -163,7 +161,7 @@ public class ExecutionCommandWrapperTest {
     s.addHostRoleExecutionCommand(hostName, Role.NAMENODE,
         RoleCommand.START,
         new ServiceComponentHostStartEvent(Role.NAMENODE.toString(),
-            hostName, System.currentTimeMillis()), clusterName, "HDFS", false);
+            hostName, System.currentTimeMillis()), clusterName, "HDFS", false, false);
     List<Stage> stages = new ArrayList<Stage>();
     stages.add(s);
     Request request = new Request(stages, clusters);

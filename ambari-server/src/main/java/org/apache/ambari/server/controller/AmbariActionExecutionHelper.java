@@ -20,8 +20,11 @@ package org.apache.ambari.server.controller;
 
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMPONENT_CATEGORY;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.REPO_INFO;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.SCRIPT_TYPE;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.STACK_NAME;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.STACK_VERSION;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -43,6 +46,10 @@ import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.internal.RequestResourceFilter;
 import org.apache.ambari.server.customactions.ActionDefinition;
+import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
+import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
+import org.apache.ambari.server.orm.entities.OperatingSystemEntity;
+import org.apache.ambari.server.orm.entities.RepositoryEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.ComponentInfo;
@@ -50,11 +57,14 @@ import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostOpInProgressEvent;
+import org.apache.ambari.server.utils.SecretReference;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
@@ -66,6 +76,10 @@ public class AmbariActionExecutionHelper {
   private final static Logger LOG =
       LoggerFactory.getLogger(AmbariActionExecutionHelper.class);
   private static final String TYPE_PYTHON = "PYTHON";
+  private static final String ACTION_UPDATE_REPO = "update_repo";
+  private static final String SUCCESS_FACTOR_PARAMETER = "success_factor";
+
+  private static final float UPDATE_REPO_SUCCESS_FACTOR_DEFAULT = 0f;
 
   @Inject
   private Clusters clusters;
@@ -77,6 +91,8 @@ public class AmbariActionExecutionHelper {
   private MaintenanceStateHelper maintenanceStateHelper;
   @Inject
   private Configuration configs;
+  @Inject
+  private ClusterVersionDAO clusterVersionDAO;
 
   /**
    * Validates the request to execute an action.
@@ -195,13 +211,20 @@ public class AmbariActionExecutionHelper {
       }
     }
 
-    if (TargetHostType.SPECIFIC.equals(actionDef.getTargetType())
+    TargetHostType targetHostType = actionDef.getTargetType();
+
+    if (TargetHostType.SPECIFIC.equals(targetHostType)
       || (targetService.isEmpty() && targetComponent.isEmpty())) {
-      if (resourceFilter == null || resourceFilter.getHostNames().size() == 0) {
+      if ((resourceFilter == null || resourceFilter.getHostNames().size() == 0) && !isTargetHostTypeAllowsEmptyHosts(targetHostType)) {
         throw new AmbariException("Action " + actionRequest.getActionName() + " requires explicit target host(s)" +
           " that is not provided.");
       }
     }
+  }
+
+  private boolean isTargetHostTypeAllowsEmptyHosts(TargetHostType targetHostType) {
+    return targetHostType.equals(TargetHostType.ALL) || targetHostType.equals(TargetHostType.ANY)
+            || targetHostType.equals(TargetHostType.MAJORITY);
   }
 
 
@@ -210,12 +233,9 @@ public class AmbariActionExecutionHelper {
    *
    * @param actionContext  the context associated with the action
    * @param stage          stage into which tasks must be inserted
-   * @param retryAllowed   indicates whether retry is allowed on failure
-   *
    * @throws AmbariException if the task can not be added
    */
-  public void addExecutionCommandsToStage(
-      final ActionExecutionContext actionContext, Stage stage, boolean retryAllowed)
+  public void addExecutionCommandsToStage(final ActionExecutionContext actionContext, Stage stage)
       throws AmbariException {
 
     String actionName = actionContext.getActionName();
@@ -333,20 +353,29 @@ public class AmbariActionExecutionHelper {
       }
     }
 
+    setAdditionalParametersForStageAccordingToAction(stage, actionContext);
+
     // create tasks for each host
     for (String hostName : targetHosts) {
-      stage.addHostRoleExecutionCommand(hostName,
-        Role.valueOf(actionContext.getActionName()), RoleCommand.ACTIONEXECUTE,
-          new ServiceComponentHostOpInProgressEvent(actionContext.getActionName(),
-            hostName, System.currentTimeMillis()), clusterName,
-              serviceName, retryAllowed);
+      stage.addHostRoleExecutionCommand(hostName, Role.valueOf(actionContext.getActionName()),
+          RoleCommand.ACTIONEXECUTE,
+          new ServiceComponentHostOpInProgressEvent(actionContext.getActionName(), hostName,
+              System.currentTimeMillis()),
+          clusterName, serviceName, actionContext.isRetryAllowed(),
+          actionContext.isFailureAutoSkipped());
 
       Map<String, String> commandParams = new TreeMap<String, String>();
-      int maxTaskTimeout = Integer.parseInt(configs.getDefaultAgentTaskTimeout(false));
-      if(maxTaskTimeout < actionContext.getTimeout()) {
-        commandParams.put(COMMAND_TIMEOUT, Integer.toString(maxTaskTimeout));
-      } else {
+
+      int taskTimeout = Integer.parseInt(configs.getDefaultAgentTaskTimeout(false));
+
+      // use the biggest of all these:
+      // if the action context timeout is bigger than the default, use the context
+      // if the action context timeout is smaller than the default, use the default
+      // if the action context timeout is undefined, use the default
+      if (null != actionContext.getTimeout() && actionContext.getTimeout() > taskTimeout) {
         commandParams.put(COMMAND_TIMEOUT, actionContext.getTimeout().toString());
+      } else {
+        commandParams.put(COMMAND_TIMEOUT, Integer.toString(taskTimeout));
       }
 
       commandParams.put(SCRIPT, actionName + ".py");
@@ -374,12 +403,17 @@ public class AmbariActionExecutionHelper {
       execCmd.setComponentName(componentName == null || componentName.isEmpty() ?
         resourceFilter.getComponentName() : componentName);
 
+      addRepoInfoToHostLevelParams(cluster, execCmd.getHostLevelParams(), hostName);
+
       Map<String, String> roleParams = execCmd.getRoleParams();
       if (roleParams == null) {
         roleParams = new TreeMap<String, String>();
       }
 
       roleParams.putAll(actionContext.getParameters());
+
+      SecretReference.replaceReferencesWithPasswords(roleParams, cluster);
+
       if (componentInfo != null) {
         roleParams.put(COMPONENT_CATEGORY, componentInfo.getCategory());
       }
@@ -399,11 +433,74 @@ public class AmbariActionExecutionHelper {
         }
       }
 
-      // Generate cluster host info
       if (null != cluster) {
-        execCmd.setClusterHostInfo(
-          StageUtils.getClusterHostInfo(cluster));
+        // Generate localComponents
+        for (ServiceComponentHost sch : cluster.getServiceComponentHosts(hostName)) {
+          execCmd.getLocalComponents().add(sch.getServiceComponentName());
+        }
       }
     }
+  }
+
+  /*
+  * This method adds additional properties
+  * to action params. For example: success factor.
+  *
+  * */
+
+  private void setAdditionalParametersForStageAccordingToAction(Stage stage, ActionExecutionContext actionExecutionContext) throws AmbariException {
+    if (actionExecutionContext.getActionName().equals(ACTION_UPDATE_REPO)) {
+      Map<String, String> params = actionExecutionContext.getParameters();
+      float successFactor = UPDATE_REPO_SUCCESS_FACTOR_DEFAULT;
+      if (params != null && params.containsKey(SUCCESS_FACTOR_PARAMETER)) {
+        try{
+          successFactor = Float.valueOf(params.get(SUCCESS_FACTOR_PARAMETER));
+        } catch (Exception ex) {
+          throw new AmbariException("Failed to cast success_factor value to float!", ex.getCause());
+        }
+      }
+      stage.getSuccessFactors().put(Role.UPDATE_REPO, successFactor);
+    }
+  }
+
+  /*
+  * This method builds and adds repo info
+  * to hostLevelParams of action
+  *
+  * */
+
+  private void addRepoInfoToHostLevelParams(Cluster cluster, Map<String, String> hostLevelParams, String hostName) throws AmbariException {
+    if (null == cluster) {
+      return;
+    }
+
+    JsonObject rootJsonObject = new JsonObject();
+    JsonArray repositories = new JsonArray();
+    ClusterVersionEntity clusterVersionEntity = clusterVersionDAO.findByClusterAndStateCurrent(
+        cluster.getClusterName());
+    if (clusterVersionEntity != null && clusterVersionEntity.getRepositoryVersion() != null) {
+      String hostOsFamily = clusters.getHost(hostName).getOsFamily();
+      for (OperatingSystemEntity operatingSystemEntity : clusterVersionEntity.getRepositoryVersion().getOperatingSystems()) {
+        // ostype in OperatingSystemEntity it's os family. That should be fixed
+        // in OperatingSystemEntity.
+        if (operatingSystemEntity.getOsType().equals(hostOsFamily)) {
+          for (RepositoryEntity repositoryEntity : operatingSystemEntity.getRepositories()) {
+            JsonObject repositoryInfo = new JsonObject();
+            repositoryInfo.addProperty("base_url", repositoryEntity.getBaseUrl());
+            repositoryInfo.addProperty("repo_name", repositoryEntity.getName());
+            repositoryInfo.addProperty("repo_id", repositoryEntity.getRepositoryId());
+
+            repositories.add(repositoryInfo);
+          }
+          rootJsonObject.add("repositories", repositories);
+        }
+      }
+    }
+
+    hostLevelParams.put(REPO_INFO, rootJsonObject.toString());
+
+    StackId stackId = cluster.getCurrentStackVersion();
+    hostLevelParams.put(STACK_NAME, stackId.getStackName());
+    hostLevelParams.put(STACK_VERSION, stackId.getStackVersion());
   }
 }

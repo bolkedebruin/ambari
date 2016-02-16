@@ -45,9 +45,17 @@ def setup_ranger_admin():
           sudo=True)
 
   File(params.driver_curl_target, mode=0644)
-  
+
   ModifyPropertiesFile(format("{ranger_home}/install.properties"),
     properties = params.config['configurations']['admin-properties']
+  )
+
+  custom_config = dict()
+  custom_config['unix_user'] = params.unix_user
+  custom_config['unix_group'] = params.unix_group
+
+  ModifyPropertiesFile(format("{ranger_home}/install.properties"),
+    properties=custom_config
   )
 
   ##if db flavor == oracle - set oracle home env variable
@@ -71,11 +79,24 @@ def setup_ranger_admin():
     mode=0744
   )
 
+  Directory(params.admin_log_dir,
+    owner = params.unix_user,
+    group = params.unix_group
+  )
+
 def setup_usersync():
   import params
 
   PropertiesFile(format("{usersync_home}/install.properties"),
     properties = params.config['configurations']['usersync-properties'],
+  )
+
+  custom_config = dict()
+  custom_config['unix_user'] = params.unix_user
+  custom_config['unix_group'] = params.unix_group
+
+  ModifyPropertiesFile(format("{usersync_home}/install.properties"),
+    properties=custom_config
   )
 
   cmd = format("cd {usersync_home} && ") + as_sudo([format('{usersync_home}/setup.sh')])
@@ -88,6 +109,11 @@ def setup_usersync():
     mode = 0755,
   )
 
+  Directory(params.usersync_log_dir,
+    owner = params.unix_user,
+    group = params.unix_group
+  )
+
 def check_db_connnection():
   import params
 
@@ -96,7 +122,7 @@ def check_db_connnection():
   if params.db_flavor.lower() == 'mysql':
     cmd = format('{sql_command_invoker} -u {db_root_user} --password={db_root_password!p} -h {db_host}  -s -e "select version();"')
   elif params.db_flavor.lower() == 'oracle':
-    cmd = format('{sql_command_invoker} {db_root_user}/{db_root_password!p}@{db_host} AS SYSDBA')
+    cmd = format("{sql_command_invoker} '{db_root_user}/\"{db_root_password}\"@{db_host}' AS SYSDBA")
     env_dict = {'ORACLE_HOME':params.oracle_home, 'LD_LIBRARY_PATH':params.oracle_home}
   elif params.db_flavor.lower() == 'postgres':
     cmd = 'true'

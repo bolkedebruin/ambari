@@ -36,12 +36,12 @@ def post_upgrade_check():
 
   Logger.info('NodeManager executing "yarn node -list -states=RUNNING" to verify the node has rejoined the cluster...')
   if params.security_enabled and params.nodemanager_kinit_cmd:
-    Execute(params.nodemanager_kinit_cmd, user = params.yarn_user)
+    Execute(params.nodemanager_kinit_cmd, user=params.yarn_user)
 
   _check_nodemanager_startup()
 
 
-@retry(times=12, sleep_time=10, err_class=Fail)
+@retry(times=30, sleep_time=10, err_class=Fail)
 def _check_nodemanager_startup():
   '''
   Checks that a NodeManager is in a RUNNING state in the cluster via
@@ -51,21 +51,23 @@ def _check_nodemanager_startup():
   :return:
   '''
   import params
+  import socket
 
   command = 'yarn node -list -states=RUNNING'
 
   try:
     # 'su - yarn -c "yarn node -status c6401.ambari.apache.org:45454"'
-    return_code, yarn_output = shell.call(command, user=params.hdfs_user)
+    return_code, yarn_output = shell.call(command, user=params.yarn_user)
   except:
     raise Fail('Unable to determine if the NodeManager has started after upgrade.')
 
   if return_code == 0:
     hostname = params.hostname.lower()
+    hostname_ip = socket.gethostbyname(params.hostname.lower())
     nodemanager_address = params.nm_address.lower()
     yarn_output = yarn_output.lower()
 
-    if hostname in yarn_output or nodemanager_address in yarn_output:
+    if hostname in yarn_output or nodemanager_address in yarn_output or hostname_ip in yarn_output:
       Logger.info('NodeManager with ID {0} has rejoined the cluster.'.format(nodemanager_address))
       return
     else:

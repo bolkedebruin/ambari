@@ -32,9 +32,14 @@ from resource_management.libraries.script.script import Script
 from resource_management.core.resources.packaging import Package
 from resource_management.core.shell import as_user
 from resource_management.core.shell import as_sudo
+from resource_management.core import shell
+from resource_management.core.exceptions import Fail
+from resource_management.core.logger import Logger
+
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons import OSConst
 from ambari_commons.inet_utils import download_file
+
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
 def oozie(is_server=False):
@@ -57,7 +62,7 @@ def oozie(is_server=False):
 
   Directory(params.oozie_tmp_dir,
             owner=params.oozie_user,
-            recursive = True,
+            create_parents = True,
   )
 
   if is_server:
@@ -96,7 +101,7 @@ def oozie(is_server=False):
     )
     params.HdfsResource(None, action="execute")
   Directory(params.conf_dir,
-             recursive = True,
+             create_parents = True,
              owner = params.oozie_user,
              group = params.user_group
   )
@@ -110,7 +115,22 @@ def oozie(is_server=False):
   )
   File(format("{conf_dir}/oozie-env.sh"),
     owner=params.oozie_user,
-    content=InlineTemplate(params.oozie_env_sh_template)
+    content=InlineTemplate(params.oozie_env_sh_template),
+    group=params.user_group,
+  )
+
+  # On some OS this folder could be not exists, so we will create it before pushing there files
+  Directory(params.limits_conf_dir,
+            create_parents=True,
+            owner='root',
+            group='root'
+  )
+
+  File(os.path.join(params.limits_conf_dir, 'oozie.conf'),
+       owner='root',
+       group='root',
+       mode=0644,
+       content=Template("oozie.conf.j2")
   )
 
   if (params.log4j_props != None):
@@ -176,7 +196,59 @@ def oozie_ownership():
     owner = params.oozie_user,
     group = params.user_group
   )
-  
+
+
+def prepare_war():
+  """
+  Attempt to call prepare-war command if the marker file doesn't exist or its content doesn't equal the expected command.
+  The marker file is stored in /usr/hdp/current/oozie-server/.prepare_war_cmd
+  """
+  import params
+
+  prepare_war_cmd_file = format("{oozie_home}/.prepare_war_cmd")
+
+  # DON'T CHANGE THE VALUE SINCE IT'S USED TO DETERMINE WHETHER TO RUN THE COMMAND OR NOT BY READING THE MARKER FILE.
+  # Oozie tmp dir should be /var/tmp/oozie and is already created by a function above.
+  command = format("cd {oozie_tmp_dir} && {oozie_setup_sh} prepare-war {oozie_secure}")
+  command = command.strip()
+
+  run_prepare_war = False
+  if os.path.exists(prepare_war_cmd_file):
+    cmd = ""
+    with open(prepare_war_cmd_file, "r") as f:
+      cmd = f.readline().strip()
+
+    if command != cmd:
+      run_prepare_war = True
+      Logger.info(format("Will run prepare war cmd since marker file {prepare_war_cmd_file} has contents which differ.\n" \
+      "Expected: {command}.\nActual: {cmd}."))
+  else:
+    run_prepare_war = True
+    Logger.info(format("Will run prepare war cmd since marker file {prepare_war_cmd_file} is missing."))
+
+  if run_prepare_war:
+    # Time-consuming to run
+    Execute(command,
+            user=params.oozie_user
+    )
+
+    return_code, output = shell.call(command, user=params.oozie_user, logoutput=False, quiet=False)
+    if output is None:
+      output = ""
+
+    if return_code != 0 or "New Oozie WAR file with added".lower() not in output.lower():
+      message = "Unexpected Oozie WAR preparation output {0}".format(output)
+      Logger.error(message)
+      raise Fail(message)
+
+    # Generate marker file
+    File(prepare_war_cmd_file,
+         content=command,
+         mode=0644,
+    )
+  else:
+    Logger.info(format("No need to run prepare-war since marker file {prepare_war_cmd_file} already exists."))
+
 def oozie_server_specific():
   import params
   
@@ -192,12 +264,12 @@ def oozie_server_specific():
     owner = params.oozie_user,
     group = params.user_group,
     mode = 0755,
-    recursive = True,
+    create_parents = True,
     cd_access="a",
   )
   
   Directory(params.oozie_libext_dir,
-            recursive=True,
+            create_parents = True,
   )
   
   hashcode_file = format("{oozie_home}/.hashcode")
@@ -214,11 +286,17 @@ def oozie_server_specific():
   configure_cmds = []
   configure_cmds.append(('cp', params.ext_js_path, params.oozie_libext_dir))
   configure_cmds.append(('chown', format('{oozie_user}:{user_group}'), format('{oozie_libext_dir}/{ext_js_file}')))
-  configure_cmds.append(('chown', '-RL', format('{oozie_user}:{user_group}'), params.oozie_webapps_conf_dir))
   
   Execute( configure_cmds,
     not_if  = no_op_test,
     sudo = True,
+  )
+  
+  Directory(params.oozie_webapps_conf_dir,
+            owner = params.oozie_user,
+            group = params.user_group,
+            recursive_ownership = True,
+            recursion_follow_links = True,
   )
 
   # download the database JAR
@@ -238,27 +316,17 @@ def oozie_server_specific():
       not_if  = no_op_test,
     )
 
-  prepare_war_cmd_file = format("{oozie_home}/.prepare_war_cmd")
-  prepare_war_cmd = format("cd {oozie_tmp_dir} && {oozie_setup_sh} prepare-war {oozie_secure}")
-  skip_prepare_war_cmd = format("test -f {prepare_war_cmd_file} && [[ `cat {prepare_war_cmd_file}` == '{prepare_war_cmd}' ]]")
+  prepare_war()
 
-  Execute(prepare_war_cmd,    # time-expensive
-    user = params.oozie_user,
-    not_if  = format("{no_op_test} || {skip_recreate_sharelib} && {skip_prepare_war_cmd}")
-  )
   File(hashcode_file,
        content = hashcode,
-       mode = 0644,
-  )
-  File(prepare_war_cmd_file,
-       content = prepare_war_cmd,
        mode = 0644,
   )
 
   if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
     # Create hive-site and tez-site configs for oozie
     Directory(params.hive_conf_dir,
-        recursive = True,
+        create_parents = True,
         owner = params.oozie_user,
         group = params.user_group
     )
@@ -280,8 +348,10 @@ def oozie_server_specific():
         group = params.user_group,
         mode = 0664
     )
-  Execute(('chown', '-R', format("{oozie_user}:{user_group}"), params.oozie_server_dir), 
-          sudo=True
+  Directory(params.oozie_server_dir,
+    owner = params.oozie_user,
+    group = params.user_group,
+    recursive_ownership = True,  
   )
 
 def download_database_library_if_needed(target_directory = None):
@@ -310,27 +380,28 @@ def download_database_library_if_needed(target_directory = None):
     # create the full path using the supplied target directory and the JDBC JAR
     target_jar_with_directory = target_directory + os.path.sep + params.jdbc_driver_jar
 
-  File(params.downloaded_custom_connector,
-    content = DownloadSource(params.driver_curl_source))
+  if not os.path.exists(target_jar_with_directory):
+    File(params.downloaded_custom_connector,
+      content = DownloadSource(params.driver_curl_source))
 
-  if params.sqla_db_used:
-    untar_sqla_type2_driver = ('tar', '-xvf', params.downloaded_custom_connector, '-C', params.tmp_dir)
+    if params.sqla_db_used:
+      untar_sqla_type2_driver = ('tar', '-xvf', params.downloaded_custom_connector, '-C', params.tmp_dir)
 
-    Execute(untar_sqla_type2_driver, sudo = True)
+      Execute(untar_sqla_type2_driver, sudo = True)
 
-    Execute(as_sudo(['yes', '|', 'cp', params.jars_path_in_archive, params.oozie_libext_dir], auto_escape=False),
-            path=["/bin", "/usr/bin/"])
+      Execute(format("yes | {sudo} cp {jars_path_in_archive} {oozie_libext_dir}"))
 
-    Directory(params.jdbc_libs_dir,
-              recursive=True)
+      Directory(params.jdbc_libs_dir,
+                create_parents = True)
 
-    Execute(as_sudo(['yes', '|', 'cp', params.libs_path_in_archive, params.jdbc_libs_dir], auto_escape=False),
-            path=["/bin", "/usr/bin/"])
+      Execute(format("yes | {sudo} cp {libs_path_in_archive} {jdbc_libs_dir}"))
 
-  else:
-    Execute(('cp', '--remove-destination', params.downloaded_custom_connector, target_jar_with_directory),
-      path=["/bin", "/usr/bin/"],
-      sudo = True)
+      Execute(format("{sudo} chown -R {oozie_user}:{user_group} {oozie_libext_dir}/*"))
 
-  File(target_jar_with_directory, owner = params.oozie_user,
-    group = params.user_group)
+    else:
+      Execute(('cp', '--remove-destination', params.downloaded_custom_connector, target_jar_with_directory),
+        path=["/bin", "/usr/bin/"],
+        sudo = True)
+
+    File(target_jar_with_directory, owner = params.oozie_user,
+      group = params.user_group)

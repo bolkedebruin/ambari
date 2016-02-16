@@ -23,11 +23,11 @@ import status_params
 
 from setup_spark import *
 
-from resource_management import *
 import resource_management.libraries.functions
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions import format
+from resource_management.libraries.functions.get_hdp_version import get_hdp_version
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions import get_kinit_path
@@ -38,7 +38,8 @@ from resource_management.libraries.script.script import Script
 # for use with /usr/hdp/current/<component>
 SERVER_ROLE_DIRECTORY_MAP = {
   'SPARK_JOBHISTORYSERVER' : 'spark-historyserver',
-  'SPARK_CLIENT' : 'spark-client'
+  'SPARK_CLIENT' : 'spark-client',
+  'SPARK_THRIFTSERVER' : 'spark-thriftserver'
 }
 
 component_directory = Script.get_component_from_role(SERVER_ROLE_DIRECTORY_MAP, "SPARK_CLIENT")
@@ -51,7 +52,7 @@ stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
 host_sys_prepped = default("/hostLevelParams/host_sys_prepped", False)
 
-# New Cluster Stack Version that is defined during the RESTART of a Rolling Upgrade
+# New Cluster Stack Version that is defined during the RESTART of a Stack Upgrade
 version = default("/commandParams/version", None)
 
 # TODO! FIXME! Version check is not working as of today :
@@ -72,21 +73,30 @@ if Script.is_hdp_stack_greater_or_equal("2.2"):
   spark_pid_dir = status_params.spark_pid_dir
   spark_home = format("/usr/hdp/current/{component_directory}")
 
-
+spark_thrift_server_conf_file = spark_conf + "/spark-thrift-sparkconf.conf"
 java_home = config['hostLevelParams']['java_home']
 
 hdfs_user = config['configurations']['hadoop-env']['hdfs_user']
 hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name']
 hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
+user_group = config['configurations']['cluster-env']['user_group']
 
 spark_user = status_params.spark_user
+hive_user = status_params.hive_user
 spark_group = status_params.spark_group
 user_group = status_params.user_group
 spark_hdfs_user_dir = format("/user/{spark_user}")
+spark_history_dir = default('/configurations/spark-defaults/spark.history.fs.logDirectory', "hdfs:///spark-history")
+
 spark_history_server_pid_file = status_params.spark_history_server_pid_file
+spark_thrift_server_pid_file = status_params.spark_thrift_server_pid_file
 
 spark_history_server_start = format("{spark_home}/sbin/start-history-server.sh")
 spark_history_server_stop = format("{spark_home}/sbin/stop-history-server.sh")
+
+spark_thrift_server_start = format("{spark_home}/sbin/start-thriftserver.sh")
+spark_thrift_server_stop = format("{spark_home}/sbin/stop-thriftserver.sh")
+spark_logs_dir = format("{spark_home}/logs")
 
 spark_submit_cmd = format("{spark_home}/bin/spark-submit")
 spark_smoke_example = "org.apache.spark.examples.SparkPi"
@@ -101,7 +111,6 @@ else:
   spark_history_server_host = "localhost"
 
 # spark-defaults params
-spark_hive_sec_authorization_enabled = "false"
 spark_yarn_historyServer_address = default(spark_history_server_host, "localhost")
 
 spark_history_ui_port = config['configurations']['spark-defaults']['spark.history.ui.port']
@@ -109,37 +118,27 @@ spark_history_ui_port = config['configurations']['spark-defaults']['spark.histor
 spark_env_sh = config['configurations']['spark-env']['content']
 spark_log4j_properties = config['configurations']['spark-log4j-properties']['content']
 spark_metrics_properties = config['configurations']['spark-metrics-properties']['content']
-spark_javaopts_properties = config['configurations']['spark-javaopts-properties']['content']
 
 hive_server_host = default("/clusterHostInfo/hive_server_host", [])
 is_hive_installed = not len(hive_server_host) == 0
-
-hdp_full_version = functions.get_hdp_version('spark-client')
-
-spark_driver_extraJavaOptions = str(config['configurations']['spark-defaults']['spark.driver.extraJavaOptions'])
-if spark_driver_extraJavaOptions.find('-Dhdp.version') == -1:
-  spark_driver_extraJavaOptions = spark_driver_extraJavaOptions + ' -Dhdp.version=' + str(hdp_full_version)
-
-spark_yarn_am_extraJavaOptions = str(config['configurations']['spark-defaults']['spark.yarn.am.extraJavaOptions'])
-if spark_yarn_am_extraJavaOptions.find('-Dhdp.version') == -1:
-  spark_yarn_am_extraJavaOptions = spark_yarn_am_extraJavaOptions + ' -Dhdp.version=' + str(hdp_full_version)
-
-spark_javaopts_properties = str(spark_javaopts_properties)
-if spark_javaopts_properties.find('-Dhdp.version') == -1:
-  spark_javaopts_properties = spark_javaopts_properties+ ' -Dhdp.version=' + str(hdp_full_version)
 
 security_enabled = config['configurations']['cluster-env']['security_enabled']
 kinit_path_local = get_kinit_path(default('/configurations/kerberos-env/executable_search_paths', None))
 spark_kerberos_keytab =  config['configurations']['spark-defaults']['spark.history.kerberos.keytab']
 spark_kerberos_principal =  config['configurations']['spark-defaults']['spark.history.kerberos.principal']
 
+spark_thriftserver_hosts = default("/clusterHostInfo/spark_thriftserver_hosts", [])
+has_spark_thriftserver = not len(spark_thriftserver_hosts) == 0
+
+# hive-site params
 spark_hive_properties = {
   'hive.metastore.uris': config['configurations']['hive-site']['hive.metastore.uris']
 }
 
+# security settings
 if security_enabled:
   spark_principal = spark_kerberos_principal.replace('_HOST',spark_history_server_host.lower())
-  
+
   if is_hive_installed:
     spark_hive_properties.update({
       'hive.metastore.sasl.enabled': str(config['configurations']['hive-site']['hive.metastore.sasl.enabled']).lower(),
@@ -149,13 +148,39 @@ if security_enabled:
       'hive.metastore.kerberos.principal': config['configurations']['hive-site']['hive.metastore.kerberos.principal'],
       'hive.server2.authentication.kerberos.principal': config['configurations']['hive-site']['hive.server2.authentication.kerberos.principal'],
       'hive.server2.authentication.kerberos.keytab': config['configurations']['hive-site']['hive.server2.authentication.kerberos.keytab'],
-      'hive.security.authorization.enabled': spark_hive_sec_authorization_enabled,
-      'hive.server2.enable.doAs': str(config['configurations']['hive-site']['hive.server2.enable.doAs']).lower()
+      'hive.server2.authentication': config['configurations']['hive-site']['hive.server2.authentication'],
     })
-  
+
+    hive_kerberos_keytab = config['configurations']['hive-site']['hive.server2.authentication.kerberos.keytab']
+    hive_kerberos_principal = config['configurations']['hive-site']['hive.server2.authentication.kerberos.principal']
+
+# thrift server support - available on HDP 2.3 or higher
+spark_thrift_sparkconf = None
+spark_thrift_cmd_opts_properties = ''
+spark_thrift_fairscheduler_content = None
+spark_thrift_master = "yarn-client"
+if 'nm_hosts' in config['clusterHostInfo'] and len(config['clusterHostInfo']['nm_hosts']) == 1:
+  # use local mode when there's only one nodemanager
+  spark_thrift_master = "local[4]"
+
+if has_spark_thriftserver and 'spark-thrift-sparkconf' in config['configurations']:
+  spark_thrift_sparkconf = config['configurations']['spark-thrift-sparkconf']
+  spark_thrift_cmd_opts_properties = config['configurations']['spark-env']['spark_thrift_cmd_opts']
+  if is_hive_installed:
+    # update default metastore client properties (async wait for metastore component) it is useful in case of
+    # blueprint provisioning when hive-metastore and spark-thriftserver is not on the same host.
+    spark_hive_properties.update({
+      'hive.metastore.client.socket.timeout' : config['configurations']['hive-site']['hive.metastore.client.socket.timeout']
+    })
+    spark_hive_properties.update(config['configurations']['spark-hive-site-override'])
+
+  if 'spark-thrift-fairscheduler' in config['configurations'] and 'fairscheduler_content' in config['configurations']['spark-thrift-fairscheduler']:
+    spark_thrift_fairscheduler_content = config['configurations']['spark-thrift-fairscheduler']['fairscheduler_content']
+
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 hdfs_site = config['configurations']['hdfs-site']
 
+dfs_type = default("/commandParams/dfs_type", "")
 
 import functools
 #create partial functions with common arguments for every HdfsResource call
@@ -170,5 +195,6 @@ HdfsResource = functools.partial(
   hadoop_conf_dir = hadoop_conf_dir,
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
-  default_fs = default_fs
+  default_fs = default_fs,
+  dfs_type = dfs_type
  )

@@ -19,7 +19,7 @@
 var App = require('app');
 
 require('models/form');
-
+/*eslint-disable mocha-cleanup/no-assertions-outside-it */
 var form,
   field,
   formField,
@@ -75,6 +75,7 @@ var form,
     formField.validate();
     expect(formField.get('errorMessage')).to.equal(message);
   };
+/*eslint-enable mocha-cleanup/no-assertions-outside-it */
 
 describe('App.Form', function () {
 
@@ -193,6 +194,7 @@ describe('App.FormField', function () {
     });
   });
 
+  /*eslint-disable mocha-cleanup/asserts-limit */
   describe('#validate', function () {
     it('should return error message', function () {
       formField.set('isRequired', true);
@@ -205,6 +207,7 @@ describe('App.FormField', function () {
       expectError('');
     });
   });
+  /*eslint-enable mocha-cleanup/asserts-limit */
 
   describe('#isHiddenField', function () {
     hiddenCases.forEach(function (item) {

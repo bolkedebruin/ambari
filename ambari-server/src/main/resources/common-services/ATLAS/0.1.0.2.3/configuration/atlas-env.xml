@@ -18,12 +18,7 @@
  * limitations under the License.
  */
 -->
-<configuration>
-  <property require-input="false">
-    <name>metadata_port</name>
-    <value>21000</value>
-    <description>Listening port of the Atlas server.</description>
-  </property>
+<configuration supports_adding_forbidden="true">
   <property require-input="false">
     <name>metadata_log_dir</name>
     <value>/var/log/atlas</value>
@@ -36,13 +31,17 @@
   </property>
   <property>
     <name>metadata_user</name>
+    <display-name>Metadata User</display-name>
     <value>atlas</value>
     <property-type>USER</property-type>
     <description>Metadata User Name.</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>metadata_opts</name>
-    <value>-Xmx1024m</value>
+    <value>-Xmx1024m -Dlog4j.configuration=atlas-log4j.xml</value>
     <description>Metadata Server command line options.</description>
   </property>
   <property>
@@ -70,9 +69,13 @@
 export JAVA_HOME={{java64_home}}
 
 # any additional java opts you want to set. This will apply to both client and server operations
-export METADATA_OPTS={{metadata_opts}}
+{% if security_enabled %}
+export METADATA_OPTS="{{metadata_opts}} -Djava.security.auth.login.config={{atlas_jaas_file}}"
+{% else %}
+export METADATA_OPTS="{{metadata_opts}}"
+{% endif %}
 
-# metadata configuration directory 
+# metadata configuration directory
 export METADATA_CONF={{conf_dir}}
 
 # Where log files are stored. Defatult is logs directory under the base install location
@@ -87,8 +90,14 @@ export METADATA_DATA_DIR={{data_dir}}
 # pid dir
 export METADATA_PID_DIR={{pid_dir}}
 
+# hbase conf dir
+export HBASE_CONF_DIR=/etc/hbase/conf
+
 # Where do you want to expand the war file. By Default it is in /server/webapp dir under the base install dir.
 export METADATA_EXPANDED_WEBAPP_DIR={{expanded_war_dir}}
     </value>
-  </property>  
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
+  </property>
 </configuration>

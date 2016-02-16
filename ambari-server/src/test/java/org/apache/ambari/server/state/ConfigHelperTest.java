@@ -49,6 +49,7 @@ import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.security.SecurityHelper;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
 import org.apache.ambari.server.stack.StackManagerFactory;
 import org.apache.ambari.server.state.cluster.ClusterFactory;
 import org.apache.ambari.server.state.cluster.ClustersImpl;
@@ -61,35 +62,38 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
 import com.google.inject.persist.Transactional;
-
+import org.springframework.security.core.context.SecurityContextHolder;
 
 
 @RunWith(Enclosed.class)
 public class ConfigHelperTest {
   public static class RunWithInMemoryDefaultTestModule {
+    private final static Logger LOG = LoggerFactory.getLogger(ConfigHelperTest.class);
     private Clusters clusters;
-    private AmbariMetaInfo metaInfo;
     private Injector injector;
     private String clusterName;
     private Cluster cluster;
     private ConfigGroupFactory configGroupFactory;
-    private ConfigFactory configFactory;
     private ConfigHelper configHelper;
     private AmbariManagementController managementController;
 
     @Before
     public void setup() throws Exception {
+      // Set the authenticated user
+      // TODO: remove this or replace the authenticated user to test authorization rules
+      SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
+
       injector = Guice.createInjector(new InMemoryDefaultTestModule());
       injector.getInstance(GuiceJpaInitializer.class);
       clusters = injector.getInstance(Clusters.class);
-      metaInfo = injector.getInstance(AmbariMetaInfo.class);
-      configFactory = injector.getInstance(ConfigFactory.class);
       configGroupFactory = injector.getInstance(ConfigGroupFactory.class);
       configHelper = injector.getInstance(ConfigHelper.class);
       managementController = injector.getInstance(AmbariManagementController.class);
@@ -169,15 +173,38 @@ public class ConfigHelperTest {
       managementController.updateClusters(new HashSet<ClusterRequest>() {{
         add(clusterRequest3);
       }}, null);
+
+      // oozie-site
+      ConfigurationRequest cr4 = new ConfigurationRequest();
+      cr4.setClusterName(clusterName);
+      cr4.setType("oozie-site");
+      cr4.setVersionTag("version1");
+      cr4.setProperties(new HashMap<String, String>() {{
+        put("oozie.authentication.type", "simple");
+        put("oozie.service.HadoopAccessorService.kerberos.enabled", "false");
+      }});
+      cr4.setPropertiesAttributes(null);
+
+      final ClusterRequest clusterRequest4 =
+        new ClusterRequest(cluster.getClusterId(), clusterName,
+          cluster.getDesiredStackVersion().getStackVersion(), null);
+
+      clusterRequest4.setDesiredConfig(Collections.singletonList(cr4));
+      managementController.updateClusters(new HashSet<ClusterRequest>() {{
+        add(clusterRequest4);
+      }}, null);
     }
 
     @After
     public void tearDown() {
       injector.getInstance(PersistService.class).stop();
+
+      // Clear the authenticated user
+      SecurityContextHolder.getContext().setAuthentication(null);
     }
 
     @Transactional
-    private Long addConfigGroup(String name, String tag, List<String> hosts,
+    Long addConfigGroup(String name, String tag, List<String> hosts,
                                 List<Config> configs) throws AmbariException {
 
       Map<Long, Host> hostMap = new HashMap<Long, Host>();
@@ -196,6 +223,8 @@ public class ConfigHelperTest {
 
       ConfigGroup configGroup = configGroupFactory.createNew(cluster, name,
           tag, "", configMap, hostMap);
+      LOG.info("Config group created with tag " + tag);
+      configGroup.setTag(tag);
 
       configGroup.persist();
       cluster.addConfigGroup(configGroup);
@@ -309,7 +338,7 @@ public class ConfigHelperTest {
               configHelper.getEffectiveDesiredTags(cluster, "h1"));
 
       Assert.assertNotNull(effectiveAttributes);
-      Assert.assertEquals(3, effectiveAttributes.size());
+      Assert.assertEquals(4, effectiveAttributes.size());
 
       Assert.assertTrue(effectiveAttributes.containsKey("global"));
       Map<String, Map<String, String>> globalAttrs = effectiveAttributes.get("global");
@@ -600,6 +629,35 @@ public class ConfigHelperTest {
     }
 
     @Test
+    public void testUpdateConfigTypeNoPropertyAttributes() throws Exception {
+      Config currentConfig = cluster.getDesiredConfigByType("oozie-site");
+      Map<String, String> properties = currentConfig.getProperties();
+      // Config tag before update
+      Assert.assertEquals("version1", currentConfig.getTag());
+      // Properties before update
+      Assert.assertEquals("simple", properties.get("oozie.authentication.type"));
+      Assert.assertEquals("false", properties.get("oozie.service.HadoopAccessorService.kerberos.enabled"));
+
+      Map<String, String> updates = new HashMap<String, String>();
+      updates.put("oozie.authentication.type", "kerberos");
+      updates.put("oozie.service.HadoopAccessorService.kerberos.enabled", "true");
+
+      configHelper.updateConfigType(cluster, managementController, "oozie-site", updates, null, "admin", "Test " +
+        "note");
+
+      Config updatedConfig = cluster.getDesiredConfigByType("oozie-site");
+      // Config tag updated
+      Assert.assertFalse("version1".equals(updatedConfig.getTag()));
+      // Property added
+      properties = updatedConfig.getProperties();
+      Assert.assertTrue(properties.containsKey("oozie.authentication.type"));
+      Assert.assertEquals("kerberos", properties.get("oozie.authentication.type"));
+      // Property updated
+      Assert.assertTrue(properties.containsKey("oozie.service.HadoopAccessorService.kerberos.enabled"));
+      Assert.assertEquals("true", properties.get("oozie.service.HadoopAccessorService.kerberos.enabled"));
+    }
+
+    @Test
     public void testCalculateIsStaleConfigs() throws Exception {
 
       Map<String, HostConfig> schReturn = new HashMap<String, HostConfig>();
@@ -607,17 +665,19 @@ public class ConfigHelperTest {
       // Put a different version to check for change
       hc.setDefaultVersionTag("version2");
       schReturn.put("flume-conf", hc);
+
       // set up mocks
       ServiceComponentHost sch = createNiceMock(ServiceComponentHost.class);
       // set up expectations
-      expect(sch.getActualConfigs()).andReturn(schReturn).times(3);
-      expect(sch.getHostName()).andReturn("h1").times(6);
-      expect(sch.getClusterId()).andReturn(1l).times(3);
-      expect(sch.getServiceName()).andReturn("FLUME").times(3);
-      expect(sch.getServiceComponentName()).andReturn("FLUME_HANDLER").times(3);
+      expect(sch.getActualConfigs()).andReturn(schReturn).times(6);
+      expect(sch.getHostName()).andReturn("h1").anyTimes();
+      expect(sch.getClusterId()).andReturn(1l).anyTimes();
+      expect(sch.getServiceName()).andReturn("FLUME").anyTimes();
+      expect(sch.getServiceComponentName()).andReturn("FLUME_HANDLER").anyTimes();
       replay(sch);
       // Cluster level config changes
       Assert.assertTrue(configHelper.isStaleConfigs(sch));
+
       HostConfig hc2 = new HostConfig();
       hc2.setDefaultVersionTag("version1");
       schReturn.put("flume-conf", hc2);
@@ -625,13 +685,46 @@ public class ConfigHelperTest {
       configHelper.invalidateStaleConfigsCache();
       // Cluster level same configs
       Assert.assertFalse(configHelper.isStaleConfigs(sch));
+
       // Cluster level same configs but group specific configs for host have been updated
       List<String> hosts = new ArrayList<String>();
       hosts.add("h1");
       List<Config> configs = new ArrayList<Config>();
-      configs.add(new ConfigImpl("flume-conf"));
+      ConfigImpl configImpl = new ConfigImpl("flume-conf");
+      configImpl.setTag("FLUME1");
+      configs.add(configImpl);
       addConfigGroup("configGroup1", "FLUME", hosts, configs);
+
+      // config group added for host - expect staleness
       Assert.assertTrue(configHelper.isStaleConfigs(sch));
+
+      HostConfig hc3 = new HostConfig();
+      hc3.setDefaultVersionTag("version1");
+      hc3.getConfigGroupOverrides().put(1l, "FLUME1");
+      schReturn.put("flume-conf", hc3);
+      configHelper.invalidateStaleConfigsCache();
+
+      // version1 and FLUME1 - stale=false
+      Assert.assertFalse(configHelper.isStaleConfigs(sch));
+
+      HostConfig hc4 = new HostConfig();
+      hc4.setDefaultVersionTag("version1");
+      hc4.getConfigGroupOverrides().put(1l, "FLUME2");
+      schReturn.put("flume-conf", hc4);
+      configHelper.invalidateStaleConfigsCache();
+
+      // version1 and FLUME2 - stale=true
+      Assert.assertTrue(configHelper.isStaleConfigs(sch));
+
+      HostConfig hc5 = new HostConfig();
+      hc5.setDefaultVersionTag("version3");
+      hc5.getConfigGroupOverrides().put(1l, "FLUME1");
+      schReturn.put("flume-conf", hc5);
+      configHelper.invalidateStaleConfigsCache();
+
+      // version3 and FLUME1 - stale=true
+      Assert.assertTrue(configHelper.isStaleConfigs(sch));
+
       verify(sch);
     }
   }
@@ -664,6 +757,15 @@ public class ConfigHelperTest {
         }
       });
 
+      // Set the authenticated user
+      // TODO: remove this or replace the authenticated user to test authorization rules
+      SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
+    }
+
+    @After
+    public void teardown() {
+      // Clear the authenticated user
+      SecurityContextHolder.getContext().setAuthentication(null);
     }
 
     @Test

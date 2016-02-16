@@ -34,7 +34,7 @@
           <commandScript>
             <script>scripts/namenode.py</script>
             <scriptType>PYTHON</scriptType>
-            <timeout>1200</timeout>
+            <timeout>1800</timeout>
           </commandScript>
           <customCommands>
             <customCommand>
@@ -165,12 +165,13 @@
             <package>
               <name>hadoop-lzo</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_lzo</condition>
             </package>
           </packages>
         </osSpecific>
         
         <osSpecific>
-          <osFamily>redhat6,suse11</osFamily>
+          <osFamily>amazon2015,redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>snappy</name>
@@ -181,10 +182,12 @@
             <package>
               <name>lzo</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_lzo</condition>
             </package>
             <package>
               <name>hadoop-lzo-native</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_lzo</condition>
             </package>
             <package>
               <name>hadoop-libhdfs</name>
@@ -204,6 +207,7 @@
             <package>
               <name>liblzo2-2</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_lzo</condition>
             </package>
             <package>
               <name>hadoop-hdfs</name>

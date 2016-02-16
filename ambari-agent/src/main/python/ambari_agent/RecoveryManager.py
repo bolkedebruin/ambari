@@ -15,9 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import json
 import logging
 import copy
+import os
 import time
 import threading
 import pprint
@@ -56,11 +57,13 @@ class RecoveryManager:
   COMPONENT_UPDATE_KEY_FORMAT = "{0}_UPDATE_TIME"
   COMMAND_REFRESH_DELAY_SEC = 600 #10 minutes
 
+  FILENAME = "recovery.json"
+
   default_action_counter = {
     "lastAttempt": 0,
     "count": 0,
     "lastReset": 0,
-    "lifetimeCount" : 0,
+    "lifetimeCount": 0,
     "warnedLastAttempt": False,
     "warnedLastReset": False,
     "warnedThresholdReached": False
@@ -72,8 +75,7 @@ class RecoveryManager:
     "stale_config": False
   }
 
-
-  def __init__(self, recovery_enabled=False, auto_start_only=False):
+  def __init__(self, cache_dir, recovery_enabled=False, auto_start_only=False):
     self.recovery_enabled = recovery_enabled
     self.auto_start_only = auto_start_only
     self.max_count = 6
@@ -85,15 +87,26 @@ class RecoveryManager:
     self.id = int(time.time())
     self.allowed_desired_states = [self.STARTED, self.INSTALLED]
     self.allowed_current_states = [self.INIT, self.INSTALLED]
-    self.actions = {}
+    self.enabled_components = []
     self.statuses = {}
     self.__status_lock = threading.RLock()
     self.__command_lock = threading.RLock()
     self.__active_command_lock = threading.RLock()
+    self.__cache_lock = threading.RLock()
     self.active_command_count = 0
     self.paused = False
 
-    self.update_config(6, 60, 5, 12, recovery_enabled, auto_start_only)
+    if not os.path.exists(cache_dir):
+      try:
+        os.makedirs(cache_dir)
+      except:
+        logger.critical("[RecoveryManager] Could not create the cache directory {0}".format(cache_dir))
+
+    self.__actions_json_file = os.path.join(cache_dir, self.FILENAME)
+
+    self.actions = {}
+
+    self.update_config(6, 60, 5, 12, recovery_enabled, auto_start_only, "")
 
     pass
 
@@ -136,7 +149,9 @@ class RecoveryManager:
       self.__status_lock.acquire()
       try:
         if component not in self.statuses:
-          self.statuses[component] = copy.deepcopy(self.default_component_status)
+          component_status = copy.deepcopy(self.default_component_status)
+          component_status["stale_config"] = is_config_stale
+          self.statuses[component] = component_status
       finally:
         self.__status_lock.release()
       pass
@@ -155,11 +170,16 @@ class RecoveryManager:
       self.__status_lock.acquire()
       try:
         if component not in self.statuses:
-          self.statuses[component] = copy.deepcopy(self.default_component_status)
+          component_status = copy.deepcopy(self.default_component_status)
+          component_status["current"] = state
+          self.statuses[component] = component_status
+          logger.info("New status, current status is set to %s for %s", self.statuses[component]["current"], component)
       finally:
         self.__status_lock.release()
       pass
 
+    if self.statuses[component]["current"] != state:
+      logger.info("current status is set to %s for %s", state, component)
     self.statuses[component]["current"] = state
     if self.statuses[component]["current"] == self.statuses[component]["desired"] and \
             self.statuses[component]["stale_config"] == False:
@@ -175,17 +195,30 @@ class RecoveryManager:
       self.__status_lock.acquire()
       try:
         if component not in self.statuses:
-          self.statuses[component] = copy.deepcopy(self.default_component_status)
+          component_status = copy.deepcopy(self.default_component_status)
+          component_status["desired"] = state
+          self.statuses[component] = component_status
+          logger.info("New status, desired status is set to %s for %s", self.statuses[component]["desired"], component)
       finally:
         self.__status_lock.release()
       pass
 
+    if self.statuses[component]["desired"] != state:
+      logger.info("desired status is set to %s for %s", state, component)
     self.statuses[component]["desired"] = state
     if self.statuses[component]["current"] == self.statuses[component]["desired"] and \
             self.statuses[component]["stale_config"] == False:
       self.remove_command(component)
     pass
 
+  """
+  Whether specific components are enabled for recovery.
+  """
+  def configured_for_recovery(self, component):
+    if len(self.enabled_components) > 0 and component in self.enabled_components:
+      return True
+
+    return False
 
   def requires_recovery(self, component):
     """
@@ -197,24 +230,26 @@ class RecoveryManager:
     if not self.enabled():
       return False
 
+    if not self.configured_for_recovery(component):
+      return False
+
     if component not in self.statuses:
       return False
 
+    status = self.statuses[component]
     if self.auto_start_only:
-      status = self.statuses[component]
       if status["current"] == status["desired"]:
         return False
       if status["desired"] not in self.allowed_desired_states:
         return False
     else:
-      status = self.statuses[component]
       if status["current"] == status["desired"] and status['stale_config'] == False:
         return False
 
     if status["desired"] not in self.allowed_desired_states or status["current"] not in self.allowed_current_states:
       return False
 
-    logger.info("%s needs recovery.", component)
+    logger.info("%s needs recovery, desired = %s, and current = %s.", component, status["desired"], status["current"])
     return True
     pass
 
@@ -346,8 +381,14 @@ class RecoveryManager:
     """
     action_counter = self.actions[action_name]
     now = self._now_()
+    executed = False
     seconds_since_last_attempt = now - action_counter["lastAttempt"]
     if action_counter["lifetimeCount"] < self.max_lifetime_count:
+      #reset if window_in_sec seconds passed since last attempt
+      if seconds_since_last_attempt > self.window_in_sec:
+        action_counter["count"] = 0
+        action_counter["lastReset"] = now
+        action_counter["warnedLastReset"] = False
       if action_counter["count"] < self.max_count:
         if seconds_since_last_attempt > self.retry_gap_in_sec:
           action_counter["count"] += 1
@@ -357,7 +398,7 @@ class RecoveryManager:
           action_counter["warnedLastAttempt"] = False
           if action_counter["count"] == 1:
             action_counter["lastReset"] = now
-          return True
+          executed = True
         else:
           if action_counter["warnedLastAttempt"] == False:
             action_counter["warnedLastAttempt"] = True
@@ -378,7 +419,7 @@ class RecoveryManager:
             action_counter["lastAttempt"] = now
           action_counter["lastReset"] = now
           action_counter["warnedLastReset"] = False
-          return True
+          executed = True
         else:
           if action_counter["warnedLastReset"] == False:
             action_counter["warnedLastReset"] = True
@@ -395,11 +436,75 @@ class RecoveryManager:
                     "Will silently skip execution without warning till window is reset",
                     action_counter["lifetimeCount"], action_name)
       else:
-        logger.debug("%s occurrences in agent life time reached the limit for %s",
+        logger.error("%s occurrences in agent life time reached the limit for %s",
                      action_counter["lifetimeCount"], action_name)
-    return False
+    self._dump_actions()
+    return executed
     pass
 
+
+  def _dump_actions(self):
+    """
+    Dump recovery actions to FS
+    """
+    self.__cache_lock.acquire()
+    try:
+      with open(self.__actions_json_file, 'w') as f:
+        json.dump(self.actions, f, indent=2)
+    except Exception, exception:
+      logger.exception("Unable to dump actions to {0}".format(self.__actions_json_file))
+      return False
+    finally:
+      self.__cache_lock.release()
+
+    return True
+    pass
+
+
+  def _load_actions(self):
+    """
+    Loads recovery actions from FS
+    """
+    self.__cache_lock.acquire()
+
+    try:
+      if os.path.isfile(self.__actions_json_file):
+        with open(self.__actions_json_file, 'r') as fp:
+          return json.load(fp)
+    except Exception, exception:
+      logger.warning("Unable to load recovery actions from {0}.".format(self.__actions_json_file))
+    finally:
+      self.__cache_lock.release()
+
+    return {}
+    pass
+
+
+  def get_actions_copy(self):
+    """
+    :return:  recovery actions copy
+    """
+    self.__status_lock.acquire()
+    try:
+      return copy.deepcopy(self.actions)
+    finally:
+      self.__status_lock.release()
+    pass
+
+
+  def is_action_info_stale(self, action_name):
+    """
+    Checks if the action info is stale
+    :param action_name:
+    :return: if the action info for action_name: is stale
+    """
+    if action_name in self.actions:
+      action_counter = self.actions[action_name]
+      now = self._now_()
+      seconds_since_last_attempt = now - action_counter["lastAttempt"]
+      return seconds_since_last_attempt > self.window_in_sec
+    return False
+    pass
 
   def _execute_action_chk_only(self, action_name):
     """
@@ -433,7 +538,9 @@ class RecoveryManager:
       "type" : "DEFAULT|AUTO_START|FULL",
       "maxCount" : 10,
       "windowInMinutes" : 60,
-      "retryGap" : 0 }
+      "retryGap" : 0,
+      "components" : "a,b"
+      }
     """
 
     recovery_enabled = False
@@ -442,8 +549,11 @@ class RecoveryManager:
     window_in_min = 60
     retry_gap = 5
     max_lifetime_count = 12
+    enabled_components = ""
+
 
     if reg_resp and "recoveryConfig" in reg_resp:
+      logger.info("RecoverConfig = " + pprint.pformat(reg_resp["recoveryConfig"]))
       config = reg_resp["recoveryConfig"]
       if "type" in config:
         if config["type"] in ["AUTO_START", "FULL"]:
@@ -458,11 +568,17 @@ class RecoveryManager:
         retry_gap = self._read_int_(config["retryGap"], retry_gap)
       if 'maxLifetimeCount' in config:
         max_lifetime_count = self._read_int_(config['maxLifetimeCount'], max_lifetime_count)
-    self.update_config(max_count, window_in_min, retry_gap, max_lifetime_count, recovery_enabled, auto_start_only)
+
+      if 'components' in config:
+        enabled_components = config['components']
+
+    self.update_config(max_count, window_in_min, retry_gap, max_lifetime_count, recovery_enabled, auto_start_only,
+                       enabled_components)
     pass
 
 
-  def update_config(self, max_count, window_in_min, retry_gap, max_lifetime_count, recovery_enabled, auto_start_only):
+  def update_config(self, max_count, window_in_min, retry_gap, max_lifetime_count, recovery_enabled,
+                    auto_start_only, enabled_components):
     """
     Update recovery configuration, recovery is disabled if configuration values
     are not correct
@@ -493,6 +609,7 @@ class RecoveryManager:
     self.retry_gap_in_sec = retry_gap * 60
     self.auto_start_only = auto_start_only
     self.max_lifetime_count = max_lifetime_count
+    self.enabled_components = []
 
     self.allowed_desired_states = [self.STARTED, self.INSTALLED]
     self.allowed_current_states = [self.INIT, self.INSTALLED, self.STARTED]
@@ -501,11 +618,19 @@ class RecoveryManager:
       self.allowed_desired_states = [self.STARTED]
       self.allowed_current_states = [self.INSTALLED]
 
+    if enabled_components is not None and len(enabled_components) > 0:
+      components = enabled_components.split(",")
+      for component in components:
+        if len(component.strip()) > 0:
+          self.enabled_components.append(component.strip())
+
     self.recovery_enabled = recovery_enabled
     if self.recovery_enabled:
       logger.info(
-        "==> Auto recovery is enabled with maximum %s in %s minutes with gap of %s minutes between and lifetime max being %s.",
-        self.max_count, self.window_in_min, self.retry_gap, self.max_lifetime_count)
+        "==> Auto recovery is enabled with maximum %s in %s minutes with gap of %s minutes between and"
+        " lifetime max being %s. Enabled components - %s",
+        self.max_count, self.window_in_min, self.retry_gap, self.max_lifetime_count,
+        ', '.join(self.enabled_components))
     pass
 
 
@@ -536,16 +661,19 @@ class RecoveryManager:
       for command in commands:
         if self.COMMAND_TYPE in command and command[self.COMMAND_TYPE] == ActionQueue.EXECUTION_COMMAND:
           if self.ROLE in command:
-            if command[self.ROLE_COMMAND] in (ActionQueue.ROLE_COMMAND_INSTALL, ActionQueue.ROLE_COMMAND_STOP):
+            if command[self.ROLE_COMMAND] in (ActionQueue.ROLE_COMMAND_INSTALL, ActionQueue.ROLE_COMMAND_STOP) \
+                and self.configured_for_recovery(command[self.ROLE]):
               self.update_desired_status(command[self.ROLE], LiveStatus.DEAD_STATUS)
               logger.info("Received EXECUTION_COMMAND (STOP/INSTALL), desired state of " + command[self.ROLE] + " to " +
                            self.get_desired_status(command[self.ROLE]) )
-            elif command[self.ROLE_COMMAND] == ActionQueue.ROLE_COMMAND_START:
+            elif command[self.ROLE_COMMAND] == ActionQueue.ROLE_COMMAND_START \
+                and self.configured_for_recovery(command[self.ROLE]):
               self.update_desired_status(command[self.ROLE], LiveStatus.LIVE_STATUS)
               logger.info("Received EXECUTION_COMMAND (START), desired state of " + command[self.ROLE] + " to " +
                            self.get_desired_status(command[self.ROLE]) )
             elif command[self.HOST_LEVEL_PARAMS].has_key('custom_command') and \
-                    command[self.HOST_LEVEL_PARAMS]['custom_command'] == ActionQueue.CUSTOM_COMMAND_RESTART:
+                    command[self.HOST_LEVEL_PARAMS]['custom_command'] == ActionQueue.CUSTOM_COMMAND_RESTART \
+                    and self.configured_for_recovery(command[self.ROLE]):
               self.update_desired_status(command[self.ROLE], LiveStatus.LIVE_STATUS)
               logger.info("Received EXECUTION_COMMAND (RESTART), desired state of " + command[self.ROLE] + " to " +
                            self.get_desired_status(command[self.ROLE]) )
@@ -723,7 +851,7 @@ class RecoveryManager:
 
 
 def main(argv=None):
-  cmd_mgr = RecoveryManager()
+  cmd_mgr = RecoveryManager('/tmp')
   pass
 
 

@@ -44,18 +44,10 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
   lastDayAlertsCount: null,
 
   /**
-   * Define if let user leave the page
-   * @type {Boolean}
-   */
-  forceTransition: false,
-
-  /**
    * List of all group names related to alert definition
    * @type {Array}
    */
-  groupsList: function () {
-    return this.get('content.groups').mapProperty('displayName');
-  }.property('content.groups.@each'),
+  groupsList: Em.computed.mapBy('content.groups', 'displayName'),
 
   /**
    * Validation function to define if label field populated correctly
@@ -219,8 +211,6 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
    * @method deleteAlertDefinitionError
    */
   deleteAlertDefinitionError: function (xhr, textStatus, errorThrown, opt) {
-    console.log(textStatus);
-    console.log(errorThrown);
     xhr.responseText = "{\"message\": \"" + xhr.statusText + "\"}";
     App.ajax.defaultErrorHandler(xhr, opt.url, 'DELETE', xhr.status);
   },
@@ -267,16 +257,14 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
    * Define if label or configs are in edit mode
    * @type {Boolean}
    */
-  isEditing: function () {
-    return this.get('editing.label.isEditing') || App.router.get('mainAlertDefinitionConfigsController.canEdit');
-  }.property('editing.label.isEditing', 'App.router.mainAlertDefinitionConfigsController.canEdit'),
+  isEditing: Em.computed.or('editing.label.isEditing', 'App.router.mainAlertDefinitionConfigsController.canEdit'),
 
   /**
    * If some configs or label are changed and user navigates away, show this popup with propose to save changes
    * @param {String} path
    * @method showSavePopup
    */
-  showSavePopup: function (path) {
+  showSavePopup: function (callback) {
     var self = this;
     return App.ModalPopup.show({
       header: Em.I18n.t('common.warning'),
@@ -286,46 +274,20 @@ App.MainAlertDefinitionDetailsController = Em.Controller.extend({
       primary: Em.I18n.t('common.save'),
       secondary: Em.I18n.t('common.discard'),
       third: Em.I18n.t('common.cancel'),
-      disablePrimary: function () {
-        return App.router.get('mainAlertDefinitionDetailsController.editing.label.isError') || App.router.get('mainAlertDefinitionConfigsController.hasErrors');
-      }.property('App.router.mainAlertDefinitionDetailsController.editing.label.isError', 'App.router.mainAlertDefinitionConfigsController.hasErrors'),
+      disablePrimary: Em.computed.or('App.router.mainAlertDefinitionDetailsController.editing.label.isError', 'App.router.mainAlertDefinitionConfigsController.hasErrors'),
       onPrimary: function () {
         self.saveLabelAndConfigs();
-        self.set('forceTransition', true);
-        App.router.route(path);
+        callback();
         this.hide();
       },
       onSecondary: function () {
-        self.set('forceTransition', true);
-        App.router.route(path);
+        callback();
         this.hide();
       },
       onThird: function () {
         this.hide();
       }
     });
-  },
-
-  /**
-   * Router transition to service page
-   * @param event
-   */
-  goToService: function (event) {
-    if (event && event.context) {
-      App.router.transitionTo('main.services.service.summary', event.context);
-    }
-  },
-
-  /**
-   * Router transition to host level alerts page
-   * @param {object} event
-   * @method goToHostAlerts
-   */
-  goToHostAlerts: function (event) {
-    if (event && event.context) {
-      App.router.get('mainHostDetailsController').set('referer', App.router.location.lastSetURL);
-      App.router.transitionTo('main.hosts.hostDetails.alerts', event.context);
-    }
   }
 
 });

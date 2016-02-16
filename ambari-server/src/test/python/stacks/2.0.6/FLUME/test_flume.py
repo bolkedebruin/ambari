@@ -61,7 +61,7 @@ class TestFlumeHandler(RMFTestCase):
     self.assertTrue(set_desired_mock.call_args[0][0] == 'STARTED')
 
 
-    self.assertResourceCalled('Execute', "ambari-sudo.sh su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf -Dflume.monitoring.type=org.apache.hadoop.metrics2.sink.flume.FlumeTimelineMetricsSink -Dflume.monitoring.node=c6401.ambari.apache.org:6188 > /var/log/flume/a1.out 2>&1' &",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh su flume -l -s /bin/bash -c 'export  PATH=/bin JAVA_HOME=/usr/jdk64/jdk1.7.0_45 ; /usr/bin/flume-ng agent --name a1 --conf /etc/flume/conf/a1 --conf-file /etc/flume/conf/a1/flume.conf -Dflume.monitoring.type=org.apache.hadoop.metrics2.sink.flume.FlumeTimelineMetricsSink -Dflume.monitoring.node=c6402.ambari.apache.org:6189 > /var/log/flume/a1.out 2>&1' &",
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
         wait_for_finish = False,
     )
@@ -163,20 +163,18 @@ class TestFlumeHandler(RMFTestCase):
 
    self.assertFalse("version" in script.structuredOut)
 
-  @patch("resource_management.libraries.script.Script.logger", autospec = True)
-  def test_bad_struct_out(self, logger_mock):
+  def test_bad_struct_out(self):
       from resource_management.libraries.script import Script
-
-      logger_mock.warn = MagicMock()
+      from resource_management.core.logger import Logger
 
       configs_path = os.path.join(RMFTestCase.get_src_folder(),
                                   "test/python/stacks", self.STACK_VERSION, "configs")
 
+      Logger.initialize_logger()
       script = Script()
       script.stroutfile = os.path.join(configs_path, "structured-out-status-bad.json")
       script.load_structured_out()
 
-      self.assertTrue(logger_mock.warn.called)
       self.assertTrue(script.structuredOut == {})
 
   @patch("resource_management.libraries.script.Script.put_structured_out")
@@ -233,11 +231,14 @@ class TestFlumeHandler(RMFTestCase):
     self.assertResourceCalled('Directory',
                               '/etc/flume/conf',
                               owner='flume',
-                              recursive=True)
+                              create_parents = True)
 
     self.assertResourceCalled('Directory',
                               '/var/log/flume',
-                              owner = 'flume')
+                              owner = 'flume',
+                              cd_access = 'a', 
+                              mode=0755
+    )
 
     self.assertResourceCalled('Directory',
                               '/etc/flume/conf/a1',
@@ -278,9 +279,9 @@ class TestFlumeHandler(RMFTestCase):
     self.assertResourceCalled('Directory',
                               '/etc/flume/conf',
                               owner='flume',
-                              recursive=True)
+                              create_parents = True)
 
-    self.assertResourceCalled('Directory', '/var/log/flume', owner = 'flume')
+    self.assertResourceCalled('Directory', '/var/log/flume', owner = 'flume', cd_access = 'a', mode=0755)
 
     top = build_flume(self.getConfig()['configurations']['flume-conf']['content'])
 
@@ -441,11 +442,13 @@ class TestFlumeHandler(RMFTestCase):
     self.assertResourceCalled('Directory',
                               '/etc/flume/conf',
                               owner='flume',
-                              recursive=True)
+                              create_parents = True)
 
     self.assertResourceCalled('Directory',
                               '/var/log/flume',
-                              owner = 'flume')
+                              owner = 'flume',
+                              cd_access = 'a',
+                              mode=0755)
 
     self.assertResourceCalled('Directory',
                               '/etc/flume/conf/a1',
@@ -490,11 +493,13 @@ class TestFlumeHandler(RMFTestCase):
     self.assertResourceCalled('Directory',
                               '/usr/hdp/current/flume-server/conf',
                               owner='flume',
-                              recursive=True)
+                              create_parents = True)
 
     self.assertResourceCalled('Directory',
                               '/var/log/flume',
-                              owner = 'flume')
+                              owner = 'flume', 
+                              cd_access = 'a', 
+                              mode=0755)
 
     self.assertResourceCalled('Directory',
                               '/usr/hdp/current/flume-server/conf/a1',
@@ -528,15 +533,15 @@ class TestFlumeHandler(RMFTestCase):
                               owner="flume",
                               content=content)
 
-  def test_pre_rolling_restart(self):
+  def test_pre_upgrade_restart(self):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/flume_handler.py",
                        classname = "FlumeHandler",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_file="flume_22.json",
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'flume-server', '2.2.1.0-2067'), sudo=True)
+    self.assertResourceCalled("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'flume-server', '2.2.1.0-2067'), sudo=True)
 
 
 def build_flume(content):

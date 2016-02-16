@@ -32,12 +32,12 @@ from resource_management.core.exceptions import Fail
 from resource_management.libraries.functions.ranger_functions_v2 import RangeradminV2
 
 def setup_ranger_plugin(component_select_name, service_name,
-                        downloaded_custom_connector, driver_curl_source, 
+                        downloaded_custom_connector, driver_curl_source,
                         driver_curl_target, java_home,
                         repo_name, plugin_repo_dict, 
                         ranger_env_properties, plugin_properties,
                         policy_user, policymgr_mgr_url,
-                        plugin_enabled,api_version=None, **kwargs):
+                        plugin_enabled, component_user, component_group, api_version=None, skip_if_rangeradmin_down = True, **kwargs):
   File(downloaded_custom_connector,
       content = DownloadSource(driver_curl_source),
       mode = 0644
@@ -60,12 +60,17 @@ def setup_ranger_plugin(component_select_name, service_name,
     properties = plugin_properties
   )
 
+  custom_plugin_properties = dict()
+  custom_plugin_properties['CUSTOM_USER'] = component_user
+  custom_plugin_properties['CUSTOM_GROUP'] = component_group
+  ModifyPropertiesFile(file_path,properties = custom_plugin_properties)
+
   if plugin_enabled:
     cmd = (format('enable-{service_name}-plugin.sh'),)
     if api_version == 'v2' and api_version is not None:
-      ranger_adm_obj = RangeradminV2(url=policymgr_mgr_url)
+      ranger_adm_obj = RangeradminV2(url=policymgr_mgr_url, skip_if_rangeradmin_down = skip_if_rangeradmin_down)
     else:
-      ranger_adm_obj = Rangeradmin(url=policymgr_mgr_url)
+      ranger_adm_obj = Rangeradmin(url=policymgr_mgr_url, skip_if_rangeradmin_down = skip_if_rangeradmin_down)
 
     ranger_adm_obj.create_ranger_repository(service_name, repo_name, plugin_repo_dict,
                                             ranger_env_properties['ranger_admin_username'], ranger_env_properties['ranger_admin_password'], 

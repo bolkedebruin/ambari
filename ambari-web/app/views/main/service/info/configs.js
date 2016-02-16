@@ -28,10 +28,18 @@ App.MainServiceInfoConfigsView = Em.View.extend({
     App.router.get('mainController').isLoading.call(App.router.get('clusterController'), 'isConfigsPropertiesLoaded').done(function () {
       self.get('controller').loadStep();
     });
+    this.resetConfigTabSelection();
   },
 
   willDestroyElement: function() {
     this.get('controller').clearStep();
+  },
+
+  /**
+   * reset selection flag of tabs on entering Configs page
+   */
+  resetConfigTabSelection: function() {
+    App.Tab.find().filterProperty('serviceName', this.get('controller.content.serviceName')).setEach('isActive', false);
   },
 
   /**
@@ -91,7 +99,7 @@ App.MainServiceInfoConfigsView = Em.View.extend({
       Em.run.next(function () {
         $(".dependencies-info-bar-wrapper").stick_in_parent({parent: '#serviceConfig', offset_top: 60});
         Em.run.next(function () {
-          $(window).scrollTop(window.scrollY + 1); // '.dependencies-info-bar-wrapper' position should be recalculated
+          $(".dependencies-info-bar-wrapper").trigger("sticky_kit:recalc"); // '.dependencies-info-bar-wrapper' position should be recalculated
         });
       });
     }

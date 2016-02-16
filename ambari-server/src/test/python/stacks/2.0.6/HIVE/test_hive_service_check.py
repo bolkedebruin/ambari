@@ -62,11 +62,8 @@ class TestServiceCheck(RMFTestCase):
         try_sleep = 5,
     )
     self.assertResourceCalled('ExecuteHadoop', 'fs -test -e /apps/hive/warehouse/hcatsmoke',
-        security_enabled = False,
-        keytab = UnknownConfigurationMock(),
         conf_dir = '/etc/hadoop/conf',
         logoutput = True,
-        kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
         bin_dir = '/bin:/usr/lib/hive/bin:/usr/bin',
     )
@@ -99,6 +96,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'missing_principal',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -114,6 +112,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'missing_principal',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -128,6 +127,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'missing_principal',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'],
         hadoop_conf_dir = '/etc/hadoop/conf',
     )
@@ -169,15 +169,14 @@ class TestServiceCheck(RMFTestCase):
         user = 'ambari-qa',
         try_sleep = 5,
     )
+    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/hdfs.headless.keytab hdfs',
+        user = 'hdfs',
+    )
     self.assertResourceCalled('ExecuteHadoop', 'fs -test -e /apps/hive/warehouse/hcatsmoke',
-        security_enabled = True,
-        keytab = '/etc/security/keytabs/hdfs.headless.keytab',
         conf_dir = '/etc/hadoop/conf',
         logoutput = True,
-        kinit_path_local = '/usr/bin/kinit',
         user = 'hdfs',
         bin_dir = '/bin:/usr/lib/hive/bin:/usr/bin',
-        principal = 'hdfs',
     )
     self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM;  /tmp/hcatSmoke.sh hcatsmoke cleanup false',
         logoutput = True,
@@ -209,6 +208,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -224,6 +224,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/etc/hadoop/conf',
         type = 'file',
@@ -238,6 +239,7 @@ class TestServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'],
         hadoop_conf_dir = '/etc/hadoop/conf',
     )

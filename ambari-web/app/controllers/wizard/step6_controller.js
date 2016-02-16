@@ -36,6 +36,8 @@ var validationUtils = require('utils/validator');
  */
 App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
 
+  name: 'wizardStep6Controller',
+
   /**
    * List of hosts
    * @type {object[]}
@@ -69,23 +71,31 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
    * Define state for submit button
    * @type {bool}
    */
-  submitDisabled: false,
+  submitDisabled: Em.computed.alias('validationInProgress'),
+
+  /**
+   * timer for validation request
+   */
+  timer: null,
+
+  /**
+   * true if request for validation is in progress
+   *
+   * @type {bool}
+   */
+  validationInProgress: false,
 
   /**
    * Check if <code>addHostWizard</code> used
    * @type {bool}
    */
-  isAddHostWizard: function () {
-    return this.get('content.controllerName') === 'addHostController';
-  }.property('content.controllerName'),
+  isAddHostWizard: Em.computed.equal('content.controllerName', 'addHostController'),
 
   /**
    * Check if <code>installerWizard</code> used
    * @type {bool}
    */
-  isInstallerWizard: function () {
-    return this.get('content.controllerName') === 'installerController';
-  }.property('content.controllerName'),
+  isInstallerWizard: Em.computed.equal('content.controllerName', 'installerController'),
 
   isAllCheckboxesEmpty: function() {
     var hosts = this.get('hosts');
@@ -104,9 +114,7 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
    * Check if <code>addServiceWizard</code> used
    * @type {bool}
    */
-  isAddServiceWizard: function () {
-    return this.get('content.controllerName') === 'addServiceController';
-  }.property('content.controllerName'),
+  isAddServiceWizard: Em.computed.equal('content.controllerName', 'addServiceController'),
 
   installedServiceNames: function () {
     return this.get('content.services').filterProperty('isInstalled').mapProperty('serviceName');
@@ -125,39 +133,35 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
   /**
    * true if validation has any general (which is not related with concrete host) error message
    */
-  anyGeneralErrors: function() {
-    var messages = this.get('generalErrorMessages');
-    return this.get('errorMessage') || (messages && messages.length > 0);
-  }.property('generalErrorMessages', 'generalErrorMessages.@each', 'errorMessage'),
+  anyGeneralErrors: Em.computed.or('errorMessage','generalErrorMessages.length'),
 
   /**
    * true if validation has any general (which is not related with concrete host) warning message
    */
-  anyGeneralWarnings: function() {
-    var messages = this.get('generalWarningMessages');
-    return messages && messages.length > 0;
-  }.property('generalWarningMessages', 'generalWarningMessages.@each'),
+  anyGeneralWarnings: Em.computed.gt('generalWarningMessages.length', 0),
 
   /**
    * true if validation has any general (which is not related with concrete host) error or warning message
    */
-  anyGeneralIssues: function () {
-    return this.get('anyGeneralErrors') || this.get('anyGeneralWarnings');
-  }.property('anyGeneralErrors', 'anyGeneralWarnings'),
+  anyGeneralIssues: Em.computed.or('anyGeneralErrors', 'anyGeneralWarnings'),
+
+  anyHostErrors: function () {
+    return this.get('hosts').some(function(h) { return h.errorMessages.length > 0; });
+  }.property('hosts.@each.errorMessages'),
 
   /**
    * true if validation has any error message (general or host specific)
    */
-  anyErrors: function() {
-    return this.get('anyGeneralErrors') || this.get('hosts').some(function(h) { return h.errorMessages.length > 0; });
-  }.property('anyGeneralErrors', 'hosts.@each.errorMessages'),
+  anyErrors: Em.computed.or('anyGeneralErrors', 'anyHostErrors'),
+
+  anyHostWarnings: function () {
+    return this.get('hosts').some(function(h) { return h.warnMessages.length > 0; });
+  }.property('hosts.@each.warnMessages'),
 
   /**
    * true if validation has any warning message (general or host specific)
    */
-  anyWarnings: function() {
-    return this.get('anyGeneralWarnings') || this.get('hosts').some(function(h) { return h.warnMessages.length > 0; });
-  }.property('anyGeneralWarnings', 'hosts.@each.warnMessages'),
+  anyWarnings: Em.computed.or('anyGeneralWarnings', 'anyHostWarnings'),
 
   openSlavesAndClientsIssues: function () {
     App.ModalPopup.show({
@@ -180,11 +184,8 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
     var err = false;
     var hosts = this.get('hosts');
     var headers = this.get('headers');
-    var headersMap = {};
+    var headersMap = headers.toWickMapByProperty('name');
 
-    headers.forEach(function (header) {
-      headersMap[header.name] = true;
-    });
     hosts.forEach(function (host) {
       host.checkboxes.forEach(function (checkbox) {
         if (headersMap[checkbox.component]) {
@@ -299,8 +300,6 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
    * @method loadStep
    */
   loadStep: function () {
-
-    console.log("WizardStep6Controller: Loading step6: Assign Slaves");
     this.clearStep();
     var selectedServices = App.StackService.find().filterProperty('isSelected');
     var installedServices = App.StackService.find().filterProperty('isInstalled');
@@ -319,7 +318,9 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
             allChecked: false,
             isRequired: serviceComponent.get('isRequired'),
             noChecked: true,
-            isDisabled: installedServices.someProperty('serviceName', stackService.get('serviceName')) && this.get('isAddServiceWizard')
+            isDisabled: installedServices.someProperty('serviceName', stackService.get('serviceName')) && this.get('isAddServiceWizard'),
+            allId: 'all-' + serviceComponent.get('componentName'),
+            noneId: 'none-' + serviceComponent.get('componentName')
           }));
         }
       }, this);
@@ -330,7 +331,9 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
         label: App.format.role('CLIENT'),
         allChecked: false,
         noChecked: true,
-        isDisabled: false
+        isDisabled: false,
+        allId: 'all-CLIENT',
+        noneId: 'none-CLIENT'
       }));
     }
     this.get('headers').pushObjects(headers);
@@ -375,10 +378,7 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
       masterHosts = [],
       headers = this.get('headers'),
       masterHostNames = this.get('content.masterComponentHosts').mapProperty('hostName').uniq(),
-      masterHostNamesMap = {};
-    masterHostNames.forEach(function(hostName) {
-      masterHostNamesMap[hostName] = true;
-    });
+      masterHostNamesMap = masterHostNames.toWickMap();
 
     this.getHostNames().forEach(function (_hostName) {
       var hasMaster = masterHostNamesMap[_hostName];
@@ -420,70 +420,97 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
    * @method renderSlaves
    */
   renderSlaves: function (hostsObj) {
-    var headers = this.get('headers');
-    var clientHeaders = headers.findProperty('name', 'CLIENT');
     var slaveComponents = this.get('content.slaveComponentHosts');
-    if (!slaveComponents) { // we are at this page for the first time
-      var recommendations = this.get('content.recommendations');
-      // Get all host-component pairs from recommendations
-      var componentHostPairs = recommendations.blueprint.host_groups.map(function (group) {
-        return group.components.map(function (component) {
-          return recommendations.blueprint_cluster_binding.host_groups.findProperty('name', group.name).hosts.map(function (host) {
-            return { component: component.name, host: host.fqdn};
-          });
-        });
-      });
 
-      // Flatten results twice because of two map() call before
-      componentHostPairs = [].concat.apply([], componentHostPairs);
-      componentHostPairs = [].concat.apply([], componentHostPairs);
-
-      var clientComponents = App.get('components.clients');
-
-      hostsObj.forEach(function (host) {
-        var checkboxes = host.checkboxes;
-        checkboxes.forEach(function (checkbox) {
-          var recommended = componentHostPairs.some(function (pair) {
-            var componentMatch = pair.component === checkbox.component;
-            if (checkbox.component === 'CLIENT' && !componentMatch) {
-              componentMatch = clientComponents.contains(pair.component);
-            }
-            return pair.host === host.hostName && componentMatch;
-          });
-          checkbox.checked = recommended;
-        });
-      });
+    if (Em.isNone(slaveComponents)) { // we are at this page for the first time
+      this.selectRecommendedComponents(hostsObj);
+      this.setInstalledComponents(hostsObj);
     } else {
-
-      var slaveComponentsMap = {};
-      slaveComponents.forEach(function(slave) {
-        slaveComponentsMap[Em.get(slave, 'componentName')] = slave;
-      });
-      var hostsObjMap = {};
-      hostsObj.forEach(function(host) {
-        hostsObjMap[Em.get(host, 'hostName')] = host;
-      });
-
-      this.get('headers').forEach(function (header) {
-        var nodes = slaveComponentsMap[header.get('name')];
-        if (nodes) {
-          nodes.hosts.forEach(function (_node) {
-            var node = hostsObjMap[_node.hostName];
-            if (node) {
-              Em.set(node.checkboxes.findProperty('title', header.get('label')), 'checked', true);
-              Em.set(node.checkboxes.findProperty('title', header.get('label')), 'isInstalled', _node.isInstalled);
-            }
-          });
-        }
-      });
+     this.restoreComponentsSelection(hostsObj, slaveComponents);
     }
     this.selectClientHost(hostsObj);
     return hostsObj;
   },
 
+  /**
+   * set installed flag of host-components
+   * @param {Array} hostsObj
+   * @returns {boolean}
+   */
+  setInstalledComponents: function(hostsObj) {
+    if (Em.isNone(this.get('content.installedHosts'))) return false;
+    var hosts = this.get('content.installedHosts');
+
+    hostsObj.forEach(function(host) {
+      var installedHost = hosts[host.hostName];
+      var installedComponents = (installedHost) ?
+                                installedHost.hostComponents.mapProperty('HostRoles.component_name') : [];
+
+      host.checkboxes.forEach(function(checkbox) {
+        checkbox.isInstalled = installedComponents.contains(checkbox.component);
+      });
+    });
+  },
 
   /**
-   *
+   * restore previous component selection
+   * @param {Array} hostsObj
+   * @param {Array} slaveComponents
+   */
+  restoreComponentsSelection: function(hostsObj, slaveComponents) {
+    var slaveComponentsMap = slaveComponents.toMapByProperty('componentName');
+    var hostsObjMap = hostsObj.toMapByProperty('hostName');
+
+    this.get('headers').forEach(function (header) {
+      var slaveComponent = slaveComponentsMap[header.get('name')];
+      if (slaveComponent) {
+        slaveComponent.hosts.forEach(function (_node) {
+          var node = hostsObjMap[_node.hostName];
+          if (node) {
+            Em.set(node.checkboxes.findProperty('title', header.get('label')), 'checked', true);
+            Em.set(node.checkboxes.findProperty('title', header.get('label')), 'isInstalled', _node.isInstalled);
+          }
+        });
+      }
+    });
+  },
+
+  /**
+   * select component which should be checked according to recommendations
+   * @param hostsObj
+   */
+  selectRecommendedComponents: function(hostsObj) {
+    var recommendations = this.get('content.recommendations'),
+        recommendedMap = {},
+        clientComponentsMap = App.get('components.clients').toWickMap();
+
+    recommendations.blueprint.host_groups.forEach(function(hostGroup) {
+      var group = recommendations.blueprint_cluster_binding.host_groups.findProperty('name', hostGroup.name);
+      var hosts = group.hosts || [];
+
+      hosts.forEach(function (host) {
+        recommendedMap[host.fqdn] = hostGroup.components.mapProperty('name');
+      });
+    });
+
+    hostsObj.forEach(function (host) {
+      var checkboxes = host.checkboxes;
+      var hostComponents = recommendedMap[host.hostName] || [];
+      checkboxes.forEach(function (checkbox) {
+        var checked = hostComponents.contains(checkbox.component);
+
+        if (checkbox.component === 'CLIENT' && !checked) {
+          checked = hostComponents.some(function(componentName) {
+            return clientComponentsMap[componentName];
+          });
+        }
+        checkbox.checked = checked;
+      });
+    });
+  },
+
+  /**
+   * For clients - select first non-master host, if all has masters then last host
    * @param hostsObj
    */
   selectClientHost: function (hostsObj) {
@@ -507,7 +534,6 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
    */
   selectMasterComponents: function (hostsObj) {
     var masterComponentHosts = this.get('content.masterComponentHosts');
-    console.log('Master components selected on:', masterComponentHosts.mapProperty('hostName').uniq().join(", "));
 
     if (masterComponentHosts) {
       masterComponentHosts.forEach(function (item) {
@@ -534,15 +560,24 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
   },
 
   callValidation: function (successCallback) {
-    this.callServerSideValidation(successCallback);
+    var self = this;
+    clearTimeout(this.get('timer'));
+    if (this.get('validationInProgress')) {
+      this.set('timer', setTimeout(function () {
+        self.callValidation(successCallback);
+      }, 700));
+    } else {
+      this.callServerSideValidation(successCallback);
+    }
   },
 
   /**
    * Update submit button status
-   * @metohd callServerSideValidation
+   * @method callServerSideValidation
    */
   callServerSideValidation: function (successCallback) {
     var self = this;
+    this.set('validationInProgress', true);
 
     var selectedServices = App.StackService.find().filterProperty('isSelected').mapProperty('serviceName');
     var installedServices = App.StackService.find().filterProperty('isInstalled').mapProperty('serviceName');
@@ -601,6 +636,7 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
       error: 'updateValidationsErrorCallback'
     }).
       then(function () {
+        self.set('validationInProgress', false);
         if (!self.get('submitDisabled') && successCallback) {
           successCallback();
         }
@@ -706,8 +742,6 @@ App.WizardStep6Controller = Em.Controller.extend(App.BlueprintMixin, {
    * @method updateValidationsErrorCallback
    */
   updateValidationsErrorCallback: function (jqXHR, ajaxOptions, error, opt) {
-    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
-    console.log('Load validations failed');
   },
 
   /**

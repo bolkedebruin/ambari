@@ -23,6 +23,7 @@ export default Ember.Controller.extend({
     save: function () {
       this.send('closeModal');
       this.defer.resolve(this.get('text'));
+      this.defer.resolve(this.get('type'));
     },
 
     close: function () {

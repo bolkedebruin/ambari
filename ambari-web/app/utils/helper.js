@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 var stringUtils = require('utils/string_utils');
+var timezoneUtils = require('utils/date/timezone');
 
 /**
  * Remove spaces at beginning and ending of line.
@@ -232,6 +233,95 @@ Array.prototype.sortPropertyLight = function (path) {
   });
   return this;
 };
+
+/**
+ * Create map from array with executing provided callback for each array's item
+ * Example:
+ * <pre>
+ *   var array = [{a: 1, b: 3}, {a: 2, b: 2}, {a: 3, b: 1}];
+ *   var map = array.toMapByCallback('a', function (item) {
+ *    return Em.get(item, 'b');
+ *   });
+ *   console.log(map); // {1: 3, 2: 2, 3: 1}
+ * </pre>
+ * <code>map[1]</code> is much more faster than <code>array.findProperty('a', 1).get('b')</code>
+ *
+ * @param {string} property
+ * @param {Function} callback
+ * @returns {object}
+ * @method toMapByCallback
+ */
+Array.prototype.toMapByCallback = function (property, callback) {
+  var ret = {};
+  Em.assert('`property` can\'t be empty string', property.length);
+  Em.assert('`callback` should be a function', 'function' === Em.typeOf(callback));
+  this.forEach(function (item) {
+    var key = Em.get(item, property);
+    ret[key] = callback(item, property);
+  });
+  return ret;
+};
+
+/**
+ * Create map from array
+ * Example:
+ * <pre>
+ *   var array = [{a: 1}, {a: 2}, {a: 3}];
+ *   var map = array.toMapByProperty('a'); // {1: {a: 1}, 2: {a: 2}, 3: {a: 3}}
+ * </pre>
+ * <code>map[1]</code> is much more faster than <code>array.findProperty('a', 1)</code>
+ *
+ * @param {string} property
+ * @return {object}
+ * @method toMapByProperty
+ * @see toMapByCallback
+ */
+Array.prototype.toMapByProperty = function (property) {
+  return this.toMapByCallback(property, function (item) {
+    return item;
+  });
+};
+
+/**
+ * Create wick map from array
+ * Example:
+ * <pre>
+ *   var array = [{a: 1}, {a: 2}, {a: 3}];
+ *   var map = array.toWickMapByProperty('a'); // {1: true, 2: true, 3: true}
+ * </pre>
+ * <code>map[1]</code> works faster than <code>array.someProperty('a', 1)</code>
+ *
+ * @param {string} property
+ * @return {object}
+ * @method toWickMapByProperty
+ * @see toMapByCallback
+ */
+Array.prototype.toWickMapByProperty = function (property) {
+  return this.toMapByCallback(property, function () {
+    return true;
+  });
+};
+
+/**
+ * Create wick map from array of primitives
+ * Example:
+ * <pre>
+ *   var array = [1, 2, 3];
+ *   var map = array.toWickMap(); // {1: true, 2: true, 3: true}
+ * </pre>
+ * <code>map[1]</code> works faster than <code>array.contains(1)</code>
+ *
+ * @returns {object}
+ * @method toWickMap
+ */
+Array.prototype.toWickMap = function () {
+  var ret = {};
+  this.forEach(function (item) {
+    ret[item] = true;
+  });
+  return ret;
+};
+
 /** @namespace Em **/
 Em.CoreObject.reopen({
   t:function (key, attrs) {
@@ -270,10 +360,28 @@ Em.Handlebars.registerHelper('highlight', function (property, words, fn) {
   return new Em.Handlebars.SafeString(property);
 });
 
-Em.Handlebars.registerHelper('isAccessible', function (context, options) {
-  if (App.isAccessible(context)) {
-    return options.fn(this);
-  }
+Em.Handlebars.registerHelper('isAuthorized', function (property, options) {
+  var permission = Ember.Object.create({
+    isAuthorized: function() {
+      return App.isAuthorized(property);
+    }.property('App.router.wizardWatcherController.isWizardRunning')
+  });
+
+  // wipe out contexts so boundIf uses `this` (the permission) as the context
+  options.contexts = null;
+  return Ember.Handlebars.helpers.boundIf.call(permission, "isAuthorized", options);
+});
+
+Em.Handlebars.registerHelper('isNotAuthorized', function (property, options) {
+  var permission = Ember.Object.create({
+    isNotAuthorized: function() {
+      return !App.isAuthorized(property);
+    }.property('App.router.wizardWatcherController.isWizardRunning')
+  });
+
+  // wipe out contexts so boundIf uses `this` (the permission) as the context
+  options.contexts = null;
+  return Ember.Handlebars.helpers.boundIf.call(permission, "isNotAuthorized", options);
 });
 
 /**
@@ -447,6 +555,34 @@ App.format = {
   /**
    * Try to format non predefined names to readable format.
    *
+   * @method normalizeNameBySeparator
+   * @param name {String} - name to format
+   * @param separators {String} - token use to split the string
+   * @return {String}
+   */
+  normalizeNameBySeparators: function(name, separators) {
+    if (!name || typeof name != 'string') return '';
+    name = name.toLowerCase();
+    if (!separators || separators.length == 0) {
+      console.debug("No separators specified. Use default separator '_' instead");
+      separators = ["_"];
+    }
+
+    for (var i = 0; i < separators.length; i++){
+      var separator = separators[i];
+      if (new RegExp(separator, 'g').test(name)) {
+        name = name.split(separator).map(function(singleName) {
+          return this.normalizeName(singleName.toUpperCase());
+        }, this).join(' ');
+      }
+    }
+    return name.capitalize();
+  },
+
+
+  /**
+   * Try to format non predefined names to readable format.
+   *
    * @method normalizeName
    * @param name {String} - name to format
    * @return {String}
@@ -600,7 +736,7 @@ App.popover = function (self, options) {
  * @param {object} options
  */
 App.tooltip = function (self, options) {
-  if (!self) return;
+  if (!self || !self.tooltip) return;
   self.tooltip(options);
   /* istanbul ignore next */
   self.on("remove", function () {
@@ -618,6 +754,43 @@ App.tooltip = function (self, options) {
  */
 App.dateTime = function() {
   return new Date().getTime() + App.clockDistance;
+};
+
+/**
+ *
+ * @param {number} [x] timestamp
+ * @returns {number}
+ */
+App.dateTimeWithTimeZone = function (x) {
+  var timezone = App.router.get('userSettingsController.userSettings.timezone');
+  if (timezone) {
+    var tz = Em.getWithDefault(timezone, 'zones.0.value', '');
+    return moment(moment.tz(x ? new Date(x) : new Date(), tz).toArray()).toDate().getTime();
+  }
+  return x || new Date().getTime();
+};
+
+App.formatDateTimeWithTimeZone = function (timeStamp, format) {
+  var timezone = App.router.get('userSettingsController.userSettings.timezone'),
+    time;
+  if (timezone) {
+    var tz = Em.getWithDefault(timezone, 'zones.0.value', '');
+    time = moment.tz(timeStamp, tz);
+  } else {
+    time = moment(timeStamp);
+  }
+  return moment(time).format(format);
+};
+
+App.getTimeStampFromLocalTime = function (time) {
+  var timezone = App.router.get('userSettingsController.userSettings.timezone'),
+    offsetString = '',
+    date = moment(time).format('YYYY-MM-DD HH:mm:ss');
+  if (timezone) {
+    var offset = timezone.utcOffset;
+    offsetString = moment().utcOffset(offset).format('Z');
+  }
+  return moment(date + offsetString).toDate().getTime();
 };
 
 /**
@@ -809,10 +982,12 @@ App.registerBoundHelper('statusIcon', Em.View.extend({
     'WARNING': 'icon-warning-sign',
     'FAILED': 'icon-exclamation-sign failed',
     'HOLDING_FAILED': 'icon-exclamation-sign failed',
+    'SKIPPED_FAILED': 'icon-share-alt failed',
     'PENDING': 'icon-cog pending',
     'QUEUED': 'icon-cog queued',
     'IN_PROGRESS': 'icon-cogs in_progress',
     'HOLDING': 'icon-pause',
+    'SUSPENDED': 'icon-pause',
     'ABORTED': 'icon-minus aborted',
     'TIMEDOUT': 'icon-time timedout',
     'HOLDING_TIMEDOUT': 'icon-time timedout',
@@ -820,6 +995,16 @@ App.registerBoundHelper('statusIcon', Em.View.extend({
   },
 
   classNameBindings: ['iconClass'],
+  attributeBindings: ['data-original-title'],
+
+  didInsertElement: function () {
+    App.tooltip($(this.get('element')));
+  },
+
+  'data-original-title': function() {
+    return this.get('content').toCapital();
+  }.property('content'),
+
   /**
    * @type {string}
    */

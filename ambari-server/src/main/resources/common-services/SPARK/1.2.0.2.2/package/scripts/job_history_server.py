@@ -41,24 +41,24 @@ class JobHistoryServer(Script):
     
     self.install_packages(env)
     
-  def configure(self, env):
+  def configure(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     
-    setup_spark(env, 'server', action = 'config')
+    setup_spark(env, 'server', upgrade_type=upgrade_type, action = 'config')
     
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     
     self.configure(env)
-    spark_service(action='start')
+    spark_service('jobhistoryserver', upgrade_type=upgrade_type, action='start')
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     
-    spark_service(action='stop')
+    spark_service('jobhistoryserver', upgrade_type=upgrade_type, action='stop')
 
   def status(self, env):
     import status_params
@@ -70,11 +70,12 @@ class JobHistoryServer(Script):
   def get_stack_to_component(self):
      return {"HDP": "spark-historyserver"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
 
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+      Logger.info("Executing Spark Job History Server Stack Upgrade pre-restart")
       conf_select.select(params.stack_name, "spark", params.version)
       hdp_select.select("spark-historyserver", params.version)
 
@@ -82,7 +83,11 @@ class JobHistoryServer(Script):
       # need to copy the tarball, otherwise, copy it.
 
       if params.version and compare_versions(format_hdp_stack_version(params.version), '2.3.0.0') < 0:
-        resource_created = copy_to_hdfs("tez", params.user_group, params.hdfs_user)
+        resource_created = copy_to_hdfs(
+          "tez",
+          params.user_group,
+          params.hdfs_user,
+          host_sys_prepped=params.host_sys_prepped)
         if resource_created:
           params.HdfsResource(None, action="execute")
 

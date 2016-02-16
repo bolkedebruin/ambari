@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <!-- hadoop-env.cmd -->
   <property>
     <name>content</name>
@@ -91,10 +91,13 @@ set HADOOP_SECURITY_LOGGER=INFO,RFAS
 if not defined HDFS_AUDIT_LOGGER (
 set HDFS_AUDIT_LOGGER=INFO,NullAppender
 )
+if not defined NAMENODE_METRICS_LOGGER (
+set NAMENODE_METRICS_LOGGER=INFO,NullAppender
+)
 
-set HADOOP_NAMENODE_OPTS=-Dhadoop.security.logger=%HADOOP_SECURITY_LOGGER% -Dhdfs.audit.logger=%HDFS_AUDIT_LOGGER% %HADOOP_NAMENODE_OPTS%
+set HADOOP_NAMENODE_OPTS=-Dhadoop.security.logger=%HADOOP_SECURITY_LOGGER% -Dhdfs.audit.logger=%HDFS_AUDIT_LOGGER% -Dnamenode.metrics.logger=%NAMENODE_METRICS_LOGGER% %HADOOP_NAMENODE_OPTS%
 set HADOOP_DATANODE_OPTS=-Dhadoop.security.logger=ERROR,RFAS %HADOOP_DATANODE_OPTS%
-set HADOOP_SECONDARYNAMENODE_OPTS=-Dhadoop.security.logger=%HADOOP_SECURITY_LOGGER% -Dhdfs.audit.logger=%HDFS_AUDIT_LOGGER% %HADOOP_SECONDARYNAMENODE_OPTS%
+set HADOOP_SECONDARYNAMENODE_OPTS=-Dhadoop.security.logger=%HADOOP_SECURITY_LOGGER% -Dhdfs.audit.logger=%HDFS_AUDIT_LOGGER% -Dnamenode.metrics.logger=%NAMENODE_METRICS_LOGGER% %HADOOP_SECONDARYNAMENODE_OPTS%
 
 @rem The following applies to multiple commands (fs, dfs, fsck, distcp etc)
 set HADOOP_CLIENT_OPTS=-Xmx512m %HADOOP_CLIENT_OPTS%
@@ -120,6 +123,9 @@ set HADOOP_SECURE_DN_PID_DIR=%HADOOP_PID_DIR%
 set HADOOP_IDENT_STRING=%USERNAME%
 set HADOOP_NAMENODE_OPTS=-Xloggc:%HADOOP_LOG_DIR%/gc-namenode.log -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps %HADOOP_NAMENODE_OPTS%
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
   
 </configuration>

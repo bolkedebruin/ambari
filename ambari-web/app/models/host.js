@@ -38,6 +38,7 @@ App.Host = DS.Model.extend({
   rack: DS.attr('string'),
   healthStatus: DS.attr('string'),
   lastHeartBeatTime: DS.attr('number'),
+  rawLastHeartBeatTime: DS.attr('number'),
   osType: DS.attr("string"),
   diskInfo: DS.attr('object'),
   loadOne:DS.attr('number'),
@@ -90,29 +91,21 @@ App.Host = DS.Model.extend({
   /**
    * @type {number}
    */
-  componentsInPassiveStateCount: function() {
-    return this.get('componentsInPassiveState').length;
-  }.property('componentsInPassiveState.length'),
+  componentsInPassiveStateCount: Em.computed.alias('componentsInPassiveState.length'),
 
   /**
    * Get count of host components with stale configs
    * @returns {Number}
    */
-  componentsWithStaleConfigsCount: function() {
-    return this.get('componentsWithStaleConfigs.length');
-  }.property('componentsWithStaleConfigs.length'),
+  componentsWithStaleConfigsCount: Em.computed.alias('componentsWithStaleConfigs.length'),
 
   /**
    * Count of mounted on host disks
    * @returns {Number}
    */
-  disksMounted: function() {
-    return this.get('diskInfo.length');
-  }.property('diskInfo.length'),
+  disksMounted: Em.computed.alias('diskInfo.length'),
 
-  coresFormatted: function() {
-    return this.get('cpu') + ' (' + this.get('cpuPhysical') + ')';
-  }.property('cpu', 'cpuPhysical'),
+  coresFormatted: Em.computed.format('{0} ({1})', 'cpu', 'cpuPhysical'),
 
   /**
    * API return diskTotal and diskFree. Need to save their different
@@ -142,9 +135,7 @@ App.Host = DS.Model.extend({
    * Percent value of used disk space
    * @returns {Number}
    */
-  diskUsage: function() {
-    return (this.get('diskUsed')) / this.get('diskTotal') * 100;
-  }.property('diskUsed', 'diskTotal'),
+  diskUsage: Em.computed.percents('diskUsed', 'diskTotal', 2),
 
   /**
    * Format diskUsage to float with 2 digits

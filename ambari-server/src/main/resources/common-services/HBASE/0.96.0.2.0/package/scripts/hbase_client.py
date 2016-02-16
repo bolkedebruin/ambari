@@ -29,6 +29,8 @@ from ambari_commons.os_family_impl import OsFamilyImpl
 
 class HbaseClient(Script):
   def install(self, env):
+    import params
+    env.set_params(params)
     self.install_packages(env)
     self.configure(env)
 
@@ -51,7 +53,7 @@ class HbaseClientDefault(HbaseClient):
   def get_stack_to_component(self):
     return {"HDP": "hbase-client"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
     env.set_params(params)
 

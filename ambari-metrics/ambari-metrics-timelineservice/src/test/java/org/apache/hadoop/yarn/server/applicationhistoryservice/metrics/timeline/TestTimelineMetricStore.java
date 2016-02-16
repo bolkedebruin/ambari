@@ -17,14 +17,20 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetricMetadata;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.yarn.api.records.timeline.TimelinePutResponse;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 public class TestTimelineMetricStore implements TimelineMetricStore {
   @Override
@@ -44,7 +50,7 @@ public class TestTimelineMetricStore implements TimelineMetricStore {
     metric1.setInstanceId(null);
     metric1.setHostName("c6401");
     metric1.setStartTime(1407949812L);
-    metric1.setMetricValues(new HashMap<Long, Double>() {{
+    metric1.setMetricValues(new TreeMap<Long, Double>() {{
       put(1407949812L, 1.0d);
       put(1407949912L, 1.8d);
       put(1407950002L, 0.7d);
@@ -55,7 +61,7 @@ public class TestTimelineMetricStore implements TimelineMetricStore {
     metric2.setInstanceId("3");
     metric2.setHostName("c6401");
     metric2.setStartTime(1407949812L);
-    metric2.setMetricValues(new HashMap<Long, Double>() {{
+    metric2.setMetricValues(new TreeMap<Long, Double>() {{
       put(1407949812L, 2.5d);
       put(1407949912L, 3.0d);
       put(1407950002L, 0.9d);
@@ -77,5 +83,15 @@ public class TestTimelineMetricStore implements TimelineMetricStore {
       throws SQLException, IOException {
 
     return new TimelinePutResponse();
+  }
+
+  @Override
+  public Map<String, List<TimelineMetricMetadata>> getTimelineMetricMetadata() throws SQLException, IOException {
+    return null;
+  }
+
+  @Override
+  public Map<String, Set<String>> getHostAppsMetadata() throws SQLException, IOException {
+    return Collections.emptyMap();
   }
 }

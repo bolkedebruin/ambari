@@ -18,6 +18,7 @@
 
 import Ember from 'ember';
 import constants from 'hive/utils/constants';
+import ENV from '../config/environment';
 
 export default Ember.Controller.extend({
   databaseService: Ember.inject.service(constants.namingConventions.database),
@@ -92,6 +93,8 @@ export default Ember.Controller.extend({
   selectedDatabaseChanged: function () {
     var self = this;
 
+    this.resetSearch();
+
     this.set('isLoading', true);
 
     this.get('databaseService').getAllTables().then(function () {
@@ -147,20 +150,117 @@ export default Ember.Controller.extend({
 
   getDatabases: function () {
     var self = this;
-    var selectedDatabase = this.get('selectedDatabase');
+    var selectedDatabase = this.get('selectedDatabase.name');
 
     this.set('isLoading', true);
 
     this.get('databaseService').getDatabases().then(function (databases) {
       self.set('isLoading');
+      self.get('databaseService').setDatabaseByName(selectedDatabase);
     }).catch(function (error) {
       self._handleError(error);
+
+      if(error.status == 401) {
+         self.send('passwordLDAPDB');
+      }
+
+
     });
   }.on('init'),
+
+  syncDatabases: function() {
+    var oldDatabaseNames = this.store.all('database').mapBy('name');
+    var self = this;
+    return this.get('databaseService').getDatabasesFromServer().then(function(data) {
+      // Remove the databases from store which are not in server
+      data.forEach(function(dbName) {
+        if(!oldDatabaseNames.contains(dbName)) {
+          self.store.createRecord('database', {
+            id: dbName,
+            name: dbName
+          });
+        }
+      });
+      // Add the databases in store which are new in server
+      oldDatabaseNames.forEach(function(dbName) {
+        if(!data.contains(dbName)) {
+          self.store.find('database', dbName).then(function(db) {
+            self.store.unloadRecord(db);
+          });
+        }
+      });
+    });
+  },
+
+  initiateDatabaseSync: function() {
+    // This was required so that the unit test would not stall
+    if(ENV.environment !== "test") {
+      Ember.run.later(this, function() {
+        this.syncDatabases();
+        this.initiateDatabaseSync();
+      }, 15000);
+    }
+  }.on('init'),
+
+  resetSearch: function() {
+    var resultsTab = this.get('tabs').findBy('view', constants.namingConventions.databaseSearch);
+    var databaseExplorerTab = this.get('tabs').findBy('view', constants.namingConventions.databaseTree);
+    var tableSearchResults = this.get('tableSearchResults');
+    resultsTab.set('visible', false);
+    this.set('selectedTab', databaseExplorerTab);
+    this.set('tableSearchTerm', '');
+    this.set('columnSearchTerm', '');
+    tableSearchResults.set('tables', undefined);
+    tableSearchResults.set('hasNext', undefined);
+  },
+
 
   actions: {
     refreshDatabaseExplorer: function () {
       this.getDatabases();
+      this.resetSearch();
+    },
+
+    passwordLDAPDB: function(){
+      var self = this,
+          defer = Ember.RSVP.defer();
+
+      self.getDatabases = this.getDatabases;
+
+      this.send('openModal', 'modal-save', {
+        heading: "modals.authenticationLDAP.heading",
+        text:"",
+        type: "password",
+        defer: defer
+      });
+
+      defer.promise.then(function (text) {
+        // make a post call with the given ldap password.
+        var password = text;
+        var pathName = window.location.pathname;
+        var pathNameArray = pathName.split("/");
+        var hiveViewVersion = pathNameArray[3];
+        var hiveViewName = pathNameArray[4];
+        var ldapAuthURL = "/api/v1/views/HIVE/versions/"+ hiveViewVersion + "/instances/" + hiveViewName + "/jobs/auth";
+
+        $.ajax({
+          url: ldapAuthURL,
+          dataType: "json",
+          type: 'post',
+          headers: {'X-Requested-With': 'XMLHttpRequest', 'X-Requested-By': 'ambari'},
+          contentType: 'application/json',
+          data: JSON.stringify({ "password" : password}),
+          success: function( data, textStatus, jQxhr ){
+            console.log( "LDAP done: " + data );
+            self.getDatabases();
+          },
+          error: function( jqXhr, textStatus, errorThrown ){
+            console.log( "LDAP fail: " + errorThrown );
+            self.get('notifyService').error( "Wrong Credentials." );
+          }
+        });
+
+      });
     },
 
     loadSampleData: function (tableName, database) {

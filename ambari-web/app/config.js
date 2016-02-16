@@ -41,7 +41,8 @@ App.hostStatusCountersUpdateInterval = 10000;
 App.alertDefinitionsUpdateInterval = 10000;
 App.alertInstancesUpdateInterval = 10000;
 App.alertGroupsUpdateInterval = 10000;
-App.pageReloadTime=3600000;
+App.pageReloadTime = 3600000;
+App.nnCheckpointAgeAlertThreshold = 12; // in hours
 App.singleNodeInstall = false;
 App.singleNodeAlias = document.location.hostname;
 App.minDiskSpace = 2.0; // minimum disk space required for '/' for each host before install, unit GB
@@ -55,6 +56,7 @@ App.isStormMetricsSupported = true;
 App.healthStatusRed = '#ff0000';
 App.healthStatusGreen = '#5AB400';
 App.healthStatusOrange = '#FF8E00';
+App.inactivityRemainTime = 60; // in seconds
 
 App.stackVersionsAvailable = true;
 
@@ -73,7 +75,14 @@ App.supports = {
   opsDuringRollingUpgrade: false,
   customizedWidgetLayout: false,
   enhancedConfigs: true,
-  showPageLoadTime: false
+  showPageLoadTime: false,
+  skipComponentStartAfterInstall: false,
+  storeKDCCredentials: true,
+  preInstallChecks: false,
+  hostComboSearchBox: false,
+  serviceAutoStart: false,
+  logSearch: false,
+  redhatSatellite: false
 };
 
 if (App.enableExperimental) {

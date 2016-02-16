@@ -20,6 +20,7 @@ limitations under the License.
 from resource_management import *
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
+import os
 
 @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
 def check_service_status(name):
@@ -28,9 +29,16 @@ def check_service_status(name):
     check_process_status(pid_file)
     pid_file = format("{hbase_pid_dir}/hbase-{hbase_user}-master.pid")
     check_process_status(pid_file)
+    if os.path.exists(format("{hbase_pid_dir}/distributed_mode")):
+      pid_file = format("{hbase_pid_dir}/hbase-{hbase_user}-regionserver.pid")
+      check_process_status(pid_file)
 
   elif name == 'monitor':
     pid_file = format("{ams_monitor_pid_dir}/ambari-metrics-monitor.pid")
+    check_process_status(pid_file)
+
+  elif name == 'grafana':
+    pid_file = format("{ams_grafana_pid_dir}/grafana-server.pid")
     check_process_status(pid_file)
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)

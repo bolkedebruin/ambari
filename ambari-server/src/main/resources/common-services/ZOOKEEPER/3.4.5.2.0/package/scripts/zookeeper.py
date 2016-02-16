@@ -24,23 +24,25 @@ import sys
 from resource_management import *
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
 @OsFamilyFuncImpl(os_family=OsFamilyImpl.DEFAULT)
-def zookeeper(type = None, rolling_restart = False):
+def zookeeper(type = None, upgrade_type=None):
   import params
 
   if type == 'server':
     # This path may be missing after Ambari upgrade. We need to create it. We need to do this before any configs will
     # be applied.
-    if not rolling_restart and not os.path.exists("/usr/hdp/current/zookeeper-server") and params.current_version:
+    if upgrade_type is None and not os.path.exists("/usr/hdp/current/zookeeper-server") and params.current_version\
+      and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
       conf_select.select(params.stack_name, "zookeeper", params.current_version)
       hdp_select.select("zookeeper-server", params.version)
 
   Directory(params.config_dir,
             owner=params.zk_user,
-            recursive=True,
+            create_parents = True,
             group=params.user_group
   )
 
@@ -56,21 +58,24 @@ def zookeeper(type = None, rolling_restart = False):
 
   Directory(params.zk_pid_dir,
             owner=params.zk_user,
-            recursive=True,
-            group=params.user_group
+            create_parents = True,
+            group=params.user_group,
+            mode=0755,
   )
 
   Directory(params.zk_log_dir,
             owner=params.zk_user,
-            recursive=True,
-            group=params.user_group
+            create_parents = True,
+            group=params.user_group,
+            mode=0755,
   )
 
   Directory(params.zk_data_dir,
             owner=params.zk_user,
-            recursive=True,
+            create_parents = True,
             cd_access="a",
-            group=params.user_group
+            group=params.user_group,
+            mode=0755,
   )
 
   if type == 'server':
@@ -108,7 +113,7 @@ def zookeeper(type = None, rolling_restart = False):
   )
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
-def zookeeper(type = None, rolling_restart = False):
+def zookeeper(type = None, upgrade_type=None):
   import params
   configFile("zoo.cfg", template_name="zoo.cfg.j2", mode="f")
   configFile("configuration.xsl", template_name="configuration.xsl.j2", mode="f")
@@ -122,7 +127,7 @@ def zookeeper(type = None, rolling_restart = False):
   Directory(params.zk_data_dir,
             owner=params.zk_user,
             mode="(OI)(CI)F",
-            recursive=True
+            create_parents = True
   )
   if (params.log4j_props != None):
     File(os.path.join(params.config_dir, "log4j.properties"),

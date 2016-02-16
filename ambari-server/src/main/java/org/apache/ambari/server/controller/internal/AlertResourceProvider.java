@@ -21,10 +21,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.controller.AlertCurrentRequest;
 import org.apache.ambari.server.controller.AmbariManagementController;
@@ -37,10 +39,12 @@ import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
+import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
 import org.apache.ambari.server.orm.dao.AlertsDAO;
 import org.apache.ambari.server.orm.entities.AlertCurrentEntity;
 import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.orm.entities.AlertHistoryEntity;
+import org.apache.commons.lang.StringUtils;
 
 import com.google.inject.Inject;
 
@@ -74,6 +78,9 @@ public class AlertResourceProvider extends ReadOnlyResourceProvider implements
 
   @Inject
   private static AlertsDAO alertsDAO;
+
+  @Inject
+  private static AlertDefinitionDAO alertDefinitionDAO = null;
 
   /**
    * The property ids for an alert defintion resource.
@@ -144,7 +151,8 @@ public class AlertResourceProvider extends ReadOnlyResourceProvider implements
 
     Set<String> requestPropertyIds = getRequestPropertyIds(request, predicate);
 
-    Set<Resource> results = new HashSet<Resource>();
+    // use a collection which preserves order since JPA sorts the results
+    Set<Resource> results = new LinkedHashSet<Resource>();
 
     for (Map<String, Object> propertyMap : getPropertyMaps(predicate)) {
 
@@ -159,17 +167,46 @@ public class AlertResourceProvider extends ReadOnlyResourceProvider implements
         AlertCurrentEntity entity = alertsDAO.findCurrentById(Long.parseLong(id));
 
         if (null != entity) {
+          AlertResourceProviderUtils.verifyViewAuthorization(entity);
           results.add(toResource(false, clusterName, entity, requestPropertyIds));
         }
 
       } else {
-        List<AlertCurrentEntity> entities = null;
-          AlertCurrentRequest alertCurrentRequest = new AlertCurrentRequest();
-          alertCurrentRequest.Predicate = predicate;
-          alertCurrentRequest.Pagination = request.getPageRequest();
-          alertCurrentRequest.Sort = request.getSortRequest();
+        // Verify authorization to retrieve the requested data
+        try {
+          Long clusterId = (StringUtils.isEmpty(clusterName)) ? null : getClusterId(clusterName);
+          String definitionName = (String) propertyMap.get(ALERT_DEFINITION_NAME);
+          String definitionId = (String) propertyMap.get(ALERT_DEFINITION_ID);
 
-          entities = alertsDAO.findAll(alertCurrentRequest);
+          if(clusterId == null)  {
+            // Make sure the user has administrative access by using -1 as the cluster id
+            AlertResourceProviderUtils.verifyViewAuthorization("", -1L);
+          }
+          else if(!StringUtils.isEmpty(definitionName)) {
+            // Make sure the user has access to the alert
+            AlertDefinitionEntity alertDefinition = alertDefinitionDAO.findByName(clusterId, definitionName);
+            AlertResourceProviderUtils.verifyViewAuthorization(alertDefinition);
+          }
+          else if(StringUtils.isNumeric(definitionId)) {
+            // Make sure the user has access to the alert
+            AlertDefinitionEntity alertDefinition = alertDefinitionDAO.findById(Long.valueOf(definitionId));
+            AlertResourceProviderUtils.verifyViewAuthorization(alertDefinition);
+          }
+          else {
+            // Make sure the user has the ability to view cluster-level alerts
+            AlertResourceProviderUtils.verifyViewAuthorization("", getClusterResourceId(clusterName));
+          }
+        } catch (AmbariException e) {
+          throw new SystemException(e.getMessage(), e);
+        }
+
+        List<AlertCurrentEntity> entities = null;
+        AlertCurrentRequest alertCurrentRequest = new AlertCurrentRequest();
+        alertCurrentRequest.Predicate = predicate;
+        alertCurrentRequest.Pagination = request.getPageRequest();
+        alertCurrentRequest.Sort = request.getSortRequest();
+
+        entities = alertsDAO.findAll(alertCurrentRequest);
 
         if (null == entities) {
           entities = Collections.emptyList();

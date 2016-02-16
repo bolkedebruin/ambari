@@ -18,18 +18,25 @@ limitations under the License.
 
 """
 
+import os
 import sys
+import re
 from resource_management.core.logger import Logger
 from resource_management.core.exceptions import Fail
 from resource_management.core.resources.system import Execute
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.get_hdp_version import get_hdp_version
+from resource_management.libraries.functions.format import format
 from resource_management.libraries.script.script import Script
 from resource_management.core.shell import call
 from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.version_select_util import get_versions_from_stack_root
+
+HDP_SELECT = '/usr/bin/hdp-select'
+HDP_SELECT_PREFIX = ('ambari-python-wrap', HDP_SELECT)
 
 # hdp-select set oozie-server 2.2.0.0-1234
-TEMPLATE = ('hdp-select', 'set')
+TEMPLATE = HDP_SELECT_PREFIX + ('set',)
 
 # a mapping of Ambari server role to hdp-select component name for all
 # non-clients
@@ -58,13 +65,18 @@ SERVER_ROLE_DIRECTORY_MAP = {
   'RANGER_ADMIN' : 'ranger-admin',
   'RANGER_USERSYNC' : 'ranger-usersync',
   'SPARK_JOBHISTORYSERVER' : 'spark-historyserver',
+  'SPARK_THRIFTSERVER' : 'spark-thriftserver',
   'NIMBUS' : 'storm-nimbus',
   'SUPERVISOR' : 'storm-supervisor',
   'HISTORYSERVER' : 'hadoop-mapreduce-historyserver',
   'APP_TIMELINE_SERVER' : 'hadoop-yarn-timelineserver',
   'NODEMANAGER' : 'hadoop-yarn-nodemanager',
   'RESOURCEMANAGER' : 'hadoop-yarn-resourcemanager',
-  'ZOOKEEPER_SERVER' : 'zookeeper-server'
+  'ZOOKEEPER_SERVER' : 'zookeeper-server',
+
+  # ZKFC is tied to NN since it doesn't have its own componnet in hdp-select and there is
+  # a requirement that the ZKFC is installed on each NN
+  'ZKFC' : 'hadoop-hdfs-namenode'
 }
 
 # mapping of service check to hdp-select component
@@ -93,6 +105,26 @@ HADOOP_DIR_DEFAULTS = {
   "lib": "/usr/lib/hadoop/lib"
 }
 
+def select_all(version_to_select):
+  """
+  Executes hdp-select on every component for the specified version. If the value passed in is a
+  stack version such as "2.3", then this will find the latest installed version which
+  could be "2.3.0.0-9999". If a version is specified instead, such as 2.3.0.0-1234, it will use
+  that exact version.
+  :param version_to_select: the version to hdp-select on, such as "2.3" or "2.3.0.0-1234"
+  """
+  # it's an error, but it shouldn't really stop anything from working
+  if version_to_select is None:
+    Logger.error("Unable to execute hdp-select after installing because there was no version specified")
+    return
+
+  Logger.info("Executing hdp-select set all on {0}".format(version_to_select))
+
+  command = format('{sudo} /usr/bin/hdp-select set all `ambari-python-wrap /usr/bin/hdp-select versions | grep ^{version_to_select} | tail -1`')
+  only_if_command = format('ls -d /usr/hdp/{version_to_select}*')
+  Execute(command, only_if = only_if_command)
+
+
 def select(component, version):
   """
   Executes hdp-select on the specific component and version. Some global
@@ -102,7 +134,8 @@ def select(component, version):
   recalculated is to call reload(...) on each module that has global parameters.
   After invoking hdp-select, this function will also reload params, status_params,
   and params_linux.
-  :param component: the hdp-select component, such as oozie-server
+  :param component: the hdp-select component, such as oozie-server. If "all", then all components
+  will be updated.
   :param version: the version to set the component to, such as 2.2.0.0-1234
   """
   command = TEMPLATE + (component, version)
@@ -118,7 +151,7 @@ def select(component, version):
     if moduleName in modules:
       module = modules.get(moduleName)
       reload(module)
-      Logger.info("After hdp-select {0}, reloaded module {1}".format(component, moduleName))
+      Logger.info("After {0}, reloaded module {1}".format(command, moduleName))
 
 
 def get_role_component_current_hdp_version():
@@ -238,12 +271,37 @@ def _get_upgrade_stack():
   return None
 
 
-def get_hdp_versions():
-  code, out = call("hdp-select versions")
+def get_hdp_versions(stack_root):
+  """
+  Gets list of stack versions installed on the host.
+  Be default a call to hdp-select versions is made to get the list of installed stack versions.
+  As a fallback list of installed versions is collected from stack version directories in stack install root.
+  :param stack_root: Stack install root
+  :return: Returns list of installed stack versions.
+  """
+  code, out = call(HDP_SELECT_PREFIX + ('versions',))
+  versions = []
   if 0 == code:
-    versions = []
     for line in out.splitlines():
       versions.append(line.rstrip('\n'))
-    return versions
+  if not versions:
+    versions = get_versions_from_stack_root(stack_root)
+  return versions
+
+def get_hdp_version_before_install(component_name):
+  """
+  Works in the similar way to 'hdp-select status component', 
+  but also works for not yet installed packages.
+  
+  Note: won't work if doing initial install.
+  """
+  component_dir = HADOOP_HOME_DIR_TEMPLATE.format("current", component_name)
+  if os.path.islink(component_dir):
+    hdp_version = os.path.basename(os.path.dirname(os.readlink(component_dir)))
+    match = re.match('[0-9]+.[0-9]+.[0-9]+.[0-9]+-[0-9]+', hdp_version)
+    if match is None:
+      Logger.info('Failed to get extracted version with hdp-select in method get_hdp_version_before_install')
+      return None # lazy fail
+    return hdp_version
   else:
-    return []
+    return None

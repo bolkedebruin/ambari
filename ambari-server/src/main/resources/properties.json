@@ -165,6 +165,7 @@
         "Users/password",
         "Users/old_password",
         "Users/ldap_user",
+        "Users/user_type",
         "Users/active",
         "Users/groups",
         "Users/admin",
@@ -208,6 +209,7 @@
         "StackServices/service_check_supported",
         "StackServices/custom_commands",
         "StackServices/required_services",
+        "StackServices/properties",
         "_"
     ],
     "StackConfiguration":[
@@ -347,6 +349,7 @@
         "Blueprints/blueprint_name",
         "Blueprints/stack_name",
         "Blueprints/stack_version",
+        "Blueprints/security",
         "host_groups",
         "host_groups/components",
         "host_groups/cardinality",
@@ -437,6 +440,7 @@
         "StackLevelConfigurations/stack_version",
         "StackLevelConfigurations/property_name",
         "StackLevelConfigurations/property_value",
+        "StackLevelConfigurations/property_display_name",
         "StackLevelConfigurations/property_value_attributes",
         "StackLevelConfigurations/property_depends_on",
         "StackLevelConfigurations/property_description",
@@ -453,5 +457,11 @@
         "StackConfigurationDependency/dependency_type",
         "StackConfigurationDependency/dependency_name",
         "_"
-    ]
+    ],
+  "KerberosDescriptor":[
+    "KerberosDescriptors/kerberos_descriptor_name",
+    "KerberosDescriptors/kerberos_descriptor_text",
+    "_"
+  ]
+
 }

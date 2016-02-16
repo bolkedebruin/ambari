@@ -30,16 +30,35 @@ limitations under the License. Kerberos, LDAP, Custom. Binary/Htt
   </parameter>
   <parameter>
     <name>yarn.resourcemanager.url</name>
-    <description>The URL to the YARN ResourceManager, used to provide YARN Application data. Typically this is the yarn.resourcemanager.webapp.address property in the yarn-site.xml configuration. Url must be accessible from Ambari server.</description>
+    <description>The URL to the YARN ResourceManager, used to provide YARN Application data. If YARN ResourceManager HA is enabled, provide a comma separated list of URLs for all the Resource Managers.</description>
     <label>YARN ResourceManager URL</label>
     <placeholder>yarn.resourcemanager.hostname:8088</placeholder>
     <cluster-config>yarn-site/yarn.resourcemanager.webapp.address</cluster-config>
+  </parameter>
+  <parameter>
+    <name>hdfs.auth_to_local</name>
+    <description>Auth to Local Configuration</description>
+    <label>Auth To Local</label>
+    <required>false</required>
+    <cluster-config>core-site/hadoop.security.auth_to_local</cluster-config>
   </parameter>
 
   <!-- The status resource exists to show the subset of properties that any user is allowed to see, not just an admin user. -->
   <resource>
     <name>status</name>
     <service-class>org.apache.ambari.view.tez.rest.ViewStatusResource</service-class>
+  </resource>
+  <resource>
+    <name>rmredirect</name>
+    <service-class>org.apache.ambari.view.tez.rest.RMRedirectResource</service-class>
+  </resource>
+  <resource>
+    <name>rmproxy</name>
+    <service-class>org.apache.ambari.view.tez.rest.RMProxyResource</service-class>
+  </resource>
+  <resource>
+    <name>atsproxy</name>
+    <service-class>org.apache.ambari.view.tez.rest.AtsProxyResource</service-class>
   </resource>
   <resource>
     <name>configurations</name>

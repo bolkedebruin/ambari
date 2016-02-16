@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
 
   <property>
     <name>audit_log_level</name>
@@ -107,6 +107,10 @@ log4j.appender.A1.layout.ConversionPattern=%d{ISO8601} [%-8c{2}] %-5p: %m%n
 log4j.appender.A1.layout=org.apache.log4j.PatternLayout
 
     </value>
+    <value-attributes>
+      <type>content</type>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 
 </configuration>

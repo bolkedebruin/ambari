@@ -16,8 +16,9 @@
  */
 
 var App = require('app');
-var date = require('utils/date');
+var date = require('utils/date/date');
 var sort = require('views/common/sort_view');
+require('views/main/service/info/metrics/flume/flume_agent_metrics_section');
 
 App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServiceViewWrapper, {
   templateName: require('templates/main/service/services/flume'),
@@ -59,12 +60,9 @@ App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServic
     return this.t("dashboard.services.flume.summary.title").format(hostCount, (hostCount > 1 ? "s" : ""), agentCount,  (agentCount > 1 ? "s" : ""));
   }.property('service.agents', 'service.hostComponents.length'),
 
-  flumeHandlerComponent: function () {
-    return Em.Object.create({
-      componentName: 'FLUME_HANDLER'
-    });
-    //return App.HostComponent.find().findProperty('componentName', 'FLUME_HANDLER');
-  }.property(),
+  flumeHandlerComponent: Em.Object.create({
+    componentName: 'FLUME_HANDLER'
+  }),
 
   agentView: Em.View.extend({
     content: null,
@@ -148,45 +146,32 @@ App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServic
    * @method setFlumeAgentMetric
    * @param {object} agent - DS.model of agent
    */
-  setAgentMetrics: function(host) {
-    var getMetricTitle = function(metricTypeKey, hostName) {
-      var metricType = Em.I18n.t('services.service.info.metrics.flume.' + metricTypeKey).format(Em.I18n.t('common.metrics'));
-      return  metricType + ' - ' + hostName;
-    };
-    var gangliaUrlTpl = App.router.get('clusterController.gangliaUrl') + '/?r=hour&cs=&ce=&m=load_one&s=by+name&c=HDPFlumeServer&h={0}&host_regex=&max_graphs=0&tab=m&vn=&sh=1&z=small&hc=4';
-    var agentHostMock = host.get('hostName');
+  setAgentMetrics: function (host) {
     var mockMetricData = [
       {
         header: 'channelName',
-        metricView: App.MainServiceInfoFlumeGraphsView.extend(),
-        metricViewData: {
-          agent: host,
-          metricType: 'CHANNEL'
-        }
+        metricType: 'CHANNEL'
       },
       {
         header: 'sinkName',
-        metricView: App.MainServiceInfoFlumeGraphsView.extend(),
-        metricViewData: {
-          agent: host,
-          metricType: 'SINK'
-        }
+        metricType: 'SINK'
       },
       {
         header: 'sourceName',
+        metricType: 'SOURCE'
+      }
+    ];
+    var metricViews = mockMetricData.map(function (mockData, index) {
+      return App.FlumeAgentMetricsSectionView.extend({
+        index: index,
+        metricTypeKey: mockData.header,
         metricView: App.MainServiceInfoFlumeGraphsView.extend(),
         metricViewData: {
           agent: host,
-          metricType: 'SOURCE'
+          metricType: mockData.metricType
         }
-      }
-    ];
-    mockMetricData.forEach(function(mockData, index) {
-      mockData.header = getMetricTitle(mockData.header, agentHostMock);
-      mockData.url = gangliaUrlTpl.format(agentHostMock);
-      mockData.id = 'metric' + index;
-      mockData.toggleIndex = '#' + mockData.id;
+      });
     });
-    this.set('parentView.parentView.collapsedSections', mockMetricData);
+    this.set('parentView.collapsedSections', metricViews);
   }
 });

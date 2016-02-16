@@ -28,11 +28,13 @@ import os.path
 import ambari_simplejson as json  # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 
 from resource_management import *
+import resource_management
 from resource_management.libraries.functions.list_ambari_managed_repos import list_ambari_managed_repos
 from ambari_commons.os_check import OSCheck, OSConst
 from resource_management.libraries.functions.packages_analyzer import allInstalledPackages
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions.hdp_select import get_hdp_versions
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.repo_version_history \
   import read_actual_version_from_history_file, write_actual_version_to_history_file, REPO_VERSION_HISTORY_FILE
 
@@ -78,6 +80,13 @@ class InstallPackages(Script):
       package_list = json.loads(config['commandParams']['package_list'])
       stack_id = config['commandParams']['stack_id']
 
+    # current stack information
+    self.current_hdp_stack_version = None
+    if 'stack_version' in config['hostLevelParams']:
+      current_stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+      self.current_hdp_stack_version = format_hdp_stack_version(current_stack_version_unformatted)
+
+
     stack_name = None
     self.stack_root_folder = None
     if stack_id and "-" in stack_id:
@@ -88,8 +97,11 @@ class InstallPackages(Script):
           self.stack_root_folder = self.STACK_TO_ROOT_FOLDER[stack_name]
     if self.stack_root_folder is None:
       raise Fail("Cannot determine the stack's root directory by parsing the stack_id property, {0}".format(str(stack_id)))
+    if self.repository_version is None:
+      raise Fail("Cannot determine the repository version to install")
 
     self.repository_version = self.repository_version.strip()
+
 
     # Install/update repositories
     installed_repositories = []
@@ -130,9 +142,77 @@ class InstallPackages(Script):
     if num_errors > 0:
       raise Fail("Failed to distribute repositories/install packages")
 
+    # Initial list of versions, used to compute the new version installed
+    self.old_versions = get_hdp_versions(self.stack_root_folder)
+
+    try:
+      is_package_install_successful = False
+      ret_code = self.install_packages(package_list)
+      if ret_code == 0:
+        self.structured_output['package_installation_result'] = 'SUCCESS'
+        self.put_structured_out(self.structured_output)
+        is_package_install_successful = True
+      else:
+        num_errors += 1
+    except Exception, err:
+      num_errors += 1
+      Logger.logger.exception("Could not install packages. Error: {0}".format(str(err)))
+
+    # Provide correct exit code
+    if num_errors > 0:
+      raise Fail("Failed to distribute repositories/install packages")
+
+    # if installing a version of HDP that needs some symlink love, then create them
+    if is_package_install_successful and 'actual_version' in self.structured_output:
+      self._create_config_links_if_necessary(stack_id, self.structured_output['actual_version'])
+
+
+  def _create_config_links_if_necessary(self, stack_id, stack_version):
+    """
+    Sets up the required structure for /etc/<component>/conf symlinks and /usr/hdp/current
+    configuration symlinks IFF the current stack is < HDP 2.3+ and the new stack is >= HDP 2.3
+
+    stack_id:  stack id, ie HDP-2.3
+    stack_version:  version to set, ie 2.3.0.0-1234
+    """
+    if stack_id is None:
+      Logger.info("Cannot create config links when stack_id is not defined")
+      return
+
+    args = stack_id.upper().split('-')
+    if len(args) != 2:
+      Logger.info("Unrecognized stack id {0}, cannot create config links".format(stack_id))
+      return
+
+    if args[0] != "HDP":
+      Logger.info("Unrecognized stack name {0}, cannot create config links".format(args[0]))
+
+    if compare_versions(format_hdp_stack_version(args[1]), "2.3.0.0") < 0:
+      Logger.info("Configuration symlinks are not needed for {0}, only HDP-2.3+".format(stack_version))
+      return
+
+    for package_name, directories in conf_select.PACKAGE_DIRS.iteritems():
+      # if already on HDP 2.3, then we should skip making conf.backup folders
+      if self.current_hdp_stack_version and compare_versions(self.current_hdp_stack_version, '2.3') >= 0:
+        Logger.info("The current cluster stack of {0} does not require backing up configurations; "
+                    "only conf-select versioned config directories will be created.".format(stack_version))
+        # only link configs for all known packages
+        conf_select.link_component_conf_to_versioned_config(package_name, stack_version)
+      else:
+        # link configs and create conf.backup folders for all known packages
+        conf_select.convert_conf_directories_to_symlinks(package_name, stack_version, directories,
+          skip_existing_links = False, link_to = "backup")
+
+
+  def compute_actual_version(self):
+    """
+    After packages are installed, determine what the new actual version is.
+    """
+
     # If the repo contains a build number, optimistically assume it to be the actual_version. It will get changed
     # to correct value if it is not
     self.actual_version = None
+    self.repo_version_with_build_number = None
     if self.repository_version:
       m = re.search("[\d\.]+-\d+", self.repository_version)
       if m:
@@ -140,46 +220,17 @@ class InstallPackages(Script):
         self.repo_version_with_build_number = self.repository_version
         self.structured_output['actual_version'] = self.repo_version_with_build_number  # This is the best value known so far.
         self.put_structured_out(self.structured_output)
-      else:
-        self.repo_version_with_build_number = None
 
-    # Initial list of versions, used to compute the new version installed
-    self.old_versions = get_hdp_versions()
-
-    try:
-      # It's possible for the process to receive a SIGTERM while installing the packages
-      ret_code = self.install_packages(package_list)
-      if ret_code == 0:
-        self.structured_output['package_installation_result'] = 'SUCCESS'
-        self.put_structured_out(self.structured_output)
-      else:
-        num_errors += 1
-    except Exception, err:
-      Logger.logger.exception("Could not install packages. Error: {0}".format(str(err)))
-
-    # Provide correct exit code
-    if num_errors > 0:
-      raise Fail("Failed to distribute repositories/install packages")
-
-    if 'package_installation_result' in self.structured_output and \
-      'actual_version' in self.structured_output and \
-      self.structured_output['package_installation_result'] == 'SUCCESS':
-      conf_select.create_config_links(stack_id, self.structured_output['actual_version'])
-
-  def compute_actual_version(self):
-    """
-    After packages are installed, determine what the new actual version is, in order to save it.
-    """
     Logger.info("Attempting to determine actual version with build number.")
     Logger.info("Old versions: {0}".format(self.old_versions))
 
-    new_versions = get_hdp_versions()
+    new_versions = get_hdp_versions(self.stack_root_folder)
     Logger.info("New versions: {0}".format(new_versions))
 
     deltas = set(new_versions) - set(self.old_versions)
     Logger.info("Deltas: {0}".format(deltas))
 
-    # Get HDP version without build number
+    # Get version without build number
     normalized_repo_version = self.repository_version.split('-')[0]
 
     if 1 == len(deltas):
@@ -187,20 +238,91 @@ class InstallPackages(Script):
       self.structured_output['actual_version'] = self.actual_version
       self.put_structured_out(self.structured_output)
       write_actual_version_to_history_file(normalized_repo_version, self.actual_version)
+      Logger.info(
+        "Found actual version {0} by checking the delta between versions before and after installing packages".format(
+          self.actual_version))
     else:
-      Logger.info("Cannot determine a new actual version installed by using the delta method.")
       # If the first install attempt does a partial install and is unable to report this to the server,
-      # then a subsequent attempt will report an empty delta. For this reason, it is important to search the
-      # repo version history file to determine if we previously did write an actual_version.
-      self.actual_version = read_actual_version_from_history_file(normalized_repo_version)
+      # then a subsequent attempt will report an empty delta. For this reason, we search for a best fit version for the repo version
+      Logger.info("Cannot determine actual version installed by checking the delta between versions "
+                  "before and after installing package")
+      Logger.info("Will try to find for the actual version by searching for best possible match in the list of versions installed")
+      self.actual_version = self.find_best_fit_version(new_versions, self.repository_version)
       if self.actual_version is not None:
         self.actual_version = self.actual_version.strip()
         self.structured_output['actual_version'] = self.actual_version
         self.put_structured_out(self.structured_output)
-        Logger.info("Found actual version {0} by parsing file {1}".format(self.actual_version, REPO_VERSION_HISTORY_FILE))
-      elif self.repo_version_with_build_number is None:
+        Logger.info("Found actual version {0} by searching for best possible match".format(self.actual_version))
+      else:
         msg = "Could not determine actual version installed. Try reinstalling packages again."
         raise Fail(msg)
+
+  def check_partial_install(self):
+    """
+    If an installation did not complete successfully, check if installation was partially complete and
+    log the partially completed version to REPO_VERSION_HISTORY_FILE.
+    :return:
+    """
+    Logger.info("Installation of packages failed. Checking if installation was partially complete")
+    Logger.info("Old versions: {0}".format(self.old_versions))
+
+    new_versions = get_hdp_versions(self.stack_root_folder)
+    Logger.info("New versions: {0}".format(new_versions))
+
+    deltas = set(new_versions) - set(self.old_versions)
+    Logger.info("Deltas: {0}".format(deltas))
+
+    # Get version without build number
+    normalized_repo_version = self.repository_version.split('-')[0]
+
+    if 1 == len(deltas):
+      # Some packages were installed successfully. Log this version to REPO_VERSION_HISTORY_FILE
+      partial_install_version = next(iter(deltas)).strip()
+      write_actual_version_to_history_file(normalized_repo_version, partial_install_version)
+      Logger.info("Version {0} was partially installed. ".format(partial_install_version))
+
+  def find_best_fit_version(self, versions, repo_version):
+    """
+    Given a list of installed versions and a repo version, search for a version that best fits the repo version
+    If the repo version is found in the list of installed versions, return the repo version itself.
+    If the repo version is not found in the list of installed versions
+    normalize the repo version and use the REPO_VERSION_HISTORY_FILE file to search the list.
+
+    :param versions: List of versions installed
+    :param repo_version: Repo version to search
+    :return: Matching version, None if no match was found.
+    """
+    if versions is None or repo_version is None:
+      return None
+
+    build_num_match = re.search("[\d\.]+-\d+", repo_version)
+    if build_num_match and repo_version in versions:
+      # If repo version has build number and is found in the list of versions, return it as the matching version
+      Logger.info("Best Fit Version: Resolved from repo version with valid build number: {0}".format(repo_version))
+      return repo_version
+
+    # Get version without build number
+    normalized_repo_version = repo_version.split('-')[0]
+
+    # Find all versions that match the normalized repo version
+    match_versions = filter(lambda x: x.startswith(normalized_repo_version), versions)
+    if match_versions:
+
+      if len(match_versions) == 1:
+        # Resolved without conflicts
+        Logger.info("Best Fit Version: Resolved from normalized repo version without conflicts: {0}".format(match_versions[0]))
+        return match_versions[0]
+
+      # Resolve conflicts using REPO_VERSION_HISTORY_FILE
+      history_version = read_actual_version_from_history_file(normalized_repo_version)
+
+      # Validate history version retrieved is valid
+      if history_version in match_versions:
+        Logger.info("Best Fit Version: Resolved from normalized repo version using {0}: {1}".format(REPO_VERSION_HISTORY_FILE, history_version))
+        return history_version
+
+    # No matching version
+    return None
 
 
   def install_packages(self, package_list):
@@ -213,15 +335,20 @@ class InstallPackages(Script):
     # Install packages
     packages_were_checked = False
     try:
+      Package("hdp-select", 
+              action="upgrade",
+      )
+      
       packages_installed_before = []
       allInstalledPackages(packages_installed_before)
       packages_installed_before = [package[0] for package in packages_installed_before]
       packages_were_checked = True
-      for package in package_list:
-        name = self.format_package_name(package['name'], self.repository_version)
+      filtered_package_list = self.filter_package_list(package_list)
+      for package in filtered_package_list:
+        name = self.format_package_name(package['name'])
         Package(name,
-                use_repos=list(self.current_repo_files) if OSCheck.is_ubuntu_family() else self.current_repositories,
-                skip_repos=[self.REPO_FILE_NAME_PREFIX + "*"] if OSCheck.is_redhat_family() else [])
+          action="upgrade" # this enables upgrading non-versioned packages, despite the fact they exist. Needed by 'mahout' which is non-version but have to be updated     
+        )
     except Exception, err:
       ret_code = 1
       Logger.logger.exception("Package Manager failed to install packages. Error: {0}".format(str(err)))
@@ -244,7 +371,10 @@ class InstallPackages(Script):
             Package(package, action="remove")
     # Compute the actual version in order to save it in structured out
     try:
-      self.compute_actual_version()
+      if ret_code == 0:
+         self.compute_actual_version()
+      else:
+        self.check_partial_install()
     except Fail, err:
       ret_code = 1
       Logger.logger.exception("Failure while computing actual version. Error: {0}".format(str(err)))
@@ -280,23 +410,24 @@ class InstallPackages(Script):
     )
     return repo['repoName'], file_name
 
-  def format_package_name(self, package_name, repo_id):
-    """
-    This method overcomes problems at SLES SP3. Zypper here behaves differently
-    than at SP1, and refuses to install packages by mask if there is any installed package that
-    matches this mask.
-    So we preppend concrete HDP version to mask under Suse
-    """
-    if OSCheck.is_suse_family() and '*' in package_name:
-      mask_version = re.search(r'((_\d+)*(_)?\*)', package_name).group(0)
-      formatted_version = '_' + repo_id.replace('.', '_').replace('-', '_') + '*'
-      return package_name.replace(mask_version, formatted_version)
-    else:
-      return package_name
-
   def abort_handler(self, signum, frame):
     Logger.error("Caught signal {0}, will handle it gracefully. Compute the actual version if possible before exiting.".format(signum))
-    self.compute_actual_version()
+    self.check_partial_install()
+    
+  def filter_package_list(self, package_list):
+    """
+    Note: that we have skipUpgrade option in metainfo.xml to filter packages,
+    as well as condition option to filter them conditionally,
+    so use this method only if, for some reason the metainfo option cannot be used.
+  
+    :param package_list: original list
+    :return: filtered package_list
+    """
+    filtered_package_list = []
+    for package in package_list:
+      if Script.check_package_condition(package):
+        filtered_package_list.append(package)
+    return filtered_package_list
 
 
 if __name__ == "__main__":

@@ -18,12 +18,13 @@
 
 [default]
 debug_level = INFO
-metrics_server = {{ams_collector_host_single}}:{{metric_collector_port}}
+metrics_server = {{metric_collector_host}}:{{metric_collector_port}}
+hostname = {{hostname}}
 enable_time_threshold = false
 enable_value_threshold = false
 
 [emitter]
-send_interval = 60
+send_interval = {{metrics_report_interval}}
 
 [collector]
 collector_sleep_interval = 5

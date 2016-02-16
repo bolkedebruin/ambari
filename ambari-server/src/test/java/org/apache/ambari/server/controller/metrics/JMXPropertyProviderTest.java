@@ -18,6 +18,10 @@
 
 package org.apache.ambari.server.controller.metrics;
 
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.controller.AmbariServer;
 import org.apache.ambari.server.controller.internal.ResourceImpl;
 import org.apache.ambari.server.controller.jmx.JMXHostProvider;
 import org.apache.ambari.server.controller.jmx.JMXPropertyProvider;
@@ -27,58 +31,161 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.TemporalInfo;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
+import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+
 import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
 
 /**
  * JMX property provider tests.
  */
 public class JMXPropertyProviderTest {
+  protected static final String CLUSTER_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "cluster_name");
   protected static final String HOST_COMPONENT_HOST_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "host_name");
   protected static final String HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "component_name");
   protected static final String HOST_COMPONENT_STATE_PROPERTY_ID = PropertyHelper.getPropertyId("HostRoles", "state");
 
   public static final int NUMBER_OF_RESOURCES = 400;
 
+  @BeforeClass
+  public static void setupClass() {
+    Injector injector = Guice.createInjector(new InMemoryDefaultTestModule());
+    JMXPropertyProvider.init(injector.getInstance(Configuration.class));
+  }
+
+  @Before
+  public void setUpCommonMocks() throws AmbariException, NoSuchFieldException, IllegalAccessException {
+    AmbariManagementController amc = createNiceMock(AmbariManagementController.class);
+    Field field = AmbariServer.class.getDeclaredField("clusterController");
+    field.setAccessible(true);
+    field.set(null, amc);
+    Clusters clusters = createNiceMock(Clusters.class);
+    Cluster cluster = createNiceMock(Cluster.class);
+    expect(amc.getClusters()).andReturn(clusters).anyTimes();
+    expect(clusters.getCluster(CLUSTER_NAME_PROPERTY_ID)).andReturn(cluster).anyTimes();
+    expect(cluster.getResourceId()).andReturn(2L).anyTimes();
+
+    try {
+      expect(clusters.getCluster(anyObject(String.class))).andReturn(cluster).anyTimes();
+    } catch (AmbariException e) {
+      e.printStackTrace();
+    }
+
+    replay(amc, clusters, cluster);
+  }
+
+  @After
+  public void clearAuthentication() {
+    SecurityContextHolder.getContext().setAuthentication(null);
+  }
+
   @Test
+  public void testJMXPropertyProviderAsClusterAdministrator() throws Exception {
+    //Setup user with Role 'ClusterAdministrator'.
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createClusterAdministrator("ClusterAdmin", 2L));
+    testPopulateResources();
+    testPopulateResources_singleProperty();
+    testPopulateResources_category();
+    testPopulateResourcesWithUnknownPort();
+    testPopulateResourcesUnhealthyResource();
+    testPopulateResourcesMany();
+    testPopulateResourcesTimeout();
+  }
+
+  @Test
+  public void testJMXPropertyProviderAsAdministrator() throws Exception {
+    //Setup user with Role 'Administrator'
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("Admin"));
+    testPopulateResources();
+    testPopulateResources_singleProperty();
+    testPopulateResources_category();
+    testPopulateResourcesWithUnknownPort();
+    testPopulateResourcesUnhealthyResource();
+    testPopulateResourcesMany();
+    testPopulateResourcesTimeout();
+  }
+
+  @Test
+  public void testJMXPropertyProviderAsServiceAdministrator() throws Exception {
+    //Setup user with 'ServiceAdministrator'
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createServiceAdministrator("ServiceAdmin", 2L));
+    testPopulateResources();
+    testPopulateResources_singleProperty();
+    testPopulateResources_category();
+    testPopulateResourcesWithUnknownPort();
+    testPopulateResourcesUnhealthyResource();
+    testPopulateResourcesMany();
+    testPopulateResourcesTimeout();
+  }
+
+  @Test(expected = AuthorizationException.class)
+  public void testJMXPropertyProviderAsViewUser() throws Exception {
+    // Setup user with 'ViewUser'
+    // ViewUser doesn't have the 'CLUSTER_VIEW_METRICS', 'HOST_VIEW_METRICS' and 'SERVICE_VIEW_METRICS', thus
+    // can't retrieve the Metrics.
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createViewUser("ViewUser", 2L));
+    testPopulateResources();
+    testPopulateResources_singleProperty();
+    testPopulateResources_category();
+    testPopulateResourcesWithUnknownPort();
+    testPopulateResourcesUnhealthyResource();
+    testPopulateResourcesMany();
+    testPopulateResourcesTimeout();
+  }
+
   public void testPopulateResources() throws Exception {
-    TestStreamProvider  streamProvider = new TestStreamProvider();
+    TestStreamProvider streamProvider = new TestStreamProvider();
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(false);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
-
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-        PropertyHelper.getPropertyId("HostRoles", "host_name"),
-        PropertyHelper.getPropertyId("HostRoles", "component_name"),
-        PropertyHelper.getPropertyId("HostRoles", "state"));
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
+      PropertyHelper.getPropertyId("HostRoles", "host_name"),
+      PropertyHelper.getPropertyId("HostRoles", "component_name"),
+      PropertyHelper.getPropertyId("HostRoles", "state"));
 
     // namenode
     Resource resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-0e-34-e1.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "NAMENODE");
     resource.setProperty(HOST_COMPONENT_STATE_PROPERTY_ID, "STARTED");
 
     // request with an empty set should get all supported properties
     Request request = PropertyHelper.getReadRequest(Collections.<String>emptySet());
-
     Assert.assertEquals(1, propertyProvider.populateResources(Collections.singleton(resource), request, null).size());
 
     Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-0e-34-e1.compute-1.internal", "50070", "/jmx"), streamProvider.getLastSpec());
 
     // see test/resources/hdfs_namenode_jmx.json for values
-    Assert.assertEquals(13670605,  resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
-    Assert.assertEquals(28,      resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/dfs/namenode", "CreateFileOps")));
+    Assert.assertEquals(13670605, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
+    Assert.assertEquals(28, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/dfs/namenode", "CreateFileOps")));
     Assert.assertEquals(1006632960, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
     Assert.assertEquals(473433016, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
     Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
@@ -90,7 +197,7 @@ public class JMXPropertyProviderTest {
 
     // datanode
     resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-14-ee-b3.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "DATANODE");
 
@@ -102,110 +209,19 @@ public class JMXPropertyProviderTest {
     Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-14-ee-b3.compute-1.internal", "50075", "/jmx"), streamProvider.getLastSpec());
 
     // see test/resources/hdfs_datanode_jmx.json for values
-    Assert.assertEquals(856,  resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
+    Assert.assertEquals(856, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
     Assert.assertEquals(954466304, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
     Assert.assertEquals(9772616, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
     Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
     Assert.assertEquals(21933376, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryUsed")));
 
 
-    // jobtracker
-    resource = new ResourceImpl(Resource.Type.HostComponent);
-
-    resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-14-ee-b3.compute-1.internal");
-    resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "JOBTRACKER");
-
     // only ask for specific properties
     Set<String> properties = new HashSet<String>();
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "threadsWaiting"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryUsed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "jobs_submitted"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "jobs_completed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "jobs_failed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "maps_launched"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "maps_completed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "maps_failed"));
-
-    request = PropertyHelper.getReadRequest(properties);
-
-    propertyProvider.populateResources(Collections.singleton(resource), request, null);
-
-    Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-14-ee-b3.compute-1.internal", "50030", "/jmx"), streamProvider.getLastSpec());
-
-    // see test/resources/mapreduce_jobtracker_jmx.json for values
-    Assert.assertEquals(13, PropertyHelper.getProperties(resource).size());
-    Assert.assertEquals(59, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "threadsWaiting")));
-    Assert.assertEquals(1052770304, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
-    Assert.assertEquals(43580400, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
-    Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
-    Assert.assertEquals(29602888, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryUsed")));
-    Assert.assertEquals(2, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "jobs_submitted")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "jobs_completed")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "jobs_failed")));
-    Assert.assertEquals(2, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "maps_launched")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "maps_completed")));
-    Assert.assertEquals(0, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/jobtracker", "maps_failed")));
-
-    Assert.assertNull(resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "gcCount")));
-
-    // tasktracker
-    resource = new ResourceImpl(Resource.Type.HostComponent);
-
-    resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-14-ee-b3.compute-1.internal");
-    resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "TASKTRACKER");
-
-    // only ask for specific properties
-    properties = new HashSet<String>();
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax"));
-    properties.add(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryUsed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_exceptions_caught"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_failed_outputs"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_output_bytes"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_success_outputs"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "maps_running"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "reduces_running"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "mapTaskSlots"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "reduceTaskSlots"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "failedDirs"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "tasks_completed"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "tasks_failed_timeout"));
-    properties.add(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "tasks_failed_ping"));
-
-    request = PropertyHelper.getReadRequest(properties);
-
-    propertyProvider.populateResources(Collections.singleton(resource), request, null);
-
-    Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-14-ee-b3.compute-1.internal", "50060", "/jmx"), streamProvider.getLastSpec());
-
-    Assert.assertEquals(18, PropertyHelper.getProperties(resource).size());
-    Assert.assertEquals(954466304, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
-    Assert.assertEquals(18330984, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
-    Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
-    Assert.assertEquals(24235104, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryUsed")));
-    Assert.assertEquals(0, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_exceptions_caught")));
-    Assert.assertEquals(0, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_failed_outputs")));
-    Assert.assertEquals(1841, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_output_bytes")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/shuffleOutput", "shuffle_success_outputs")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "maps_running")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "reduces_running")));
-    Assert.assertEquals(4, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "mapTaskSlots")));
-    Assert.assertEquals(2, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "reduceTaskSlots")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "failedDirs")));
-    Assert.assertEquals(4, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "tasks_completed")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "tasks_failed_timeout")));
-    Assert.assertEquals(1, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/mapred/tasktracker", "tasks_failed_ping")));
-
-
-    Assert.assertNull(resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "gcCount")));
 
     // hbase master
     resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-14-ee-b3.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "HBASE_MASTER");
     resource.setProperty(HOST_COMPONENT_STATE_PROPERTY_ID, "STARTED");
@@ -223,7 +239,7 @@ public class JMXPropertyProviderTest {
 
     Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-14-ee-b3.compute-1.internal", "60010", "/jmx"), streamProvider.getLastSpec());
 
-    Assert.assertEquals(8, PropertyHelper.getProperties(resource).size());
+    Assert.assertEquals(9, PropertyHelper.getProperties(resource).size());
     Assert.assertEquals(1069416448, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
     Assert.assertEquals(4806976, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
     Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
@@ -233,61 +249,59 @@ public class JMXPropertyProviderTest {
     Assert.assertNull(resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "gcCount")));
   }
 
-  @Test
   public void testPopulateResources_singleProperty() throws Exception {
-    TestStreamProvider  streamProvider = new TestStreamProvider();
+    TestStreamProvider streamProvider = new TestStreamProvider();
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(false);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
 
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-        PropertyHelper.getPropertyId("HostRoles", "host_name"),
-        PropertyHelper.getPropertyId("HostRoles", "component_name"),
-        PropertyHelper.getPropertyId("HostRoles", "state"));
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
+      PropertyHelper.getPropertyId("HostRoles", "host_name"),
+      PropertyHelper.getPropertyId("HostRoles", "component_name"),
+      PropertyHelper.getPropertyId("HostRoles", "state"));
 
     // namenode
     Resource resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-0e-34-e1.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "NAMENODE");
     resource.setProperty(HOST_COMPONENT_STATE_PROPERTY_ID, "STARTED");
 
     // only ask for one property
     Map<String, TemporalInfo> temporalInfoMap = new HashMap<String, TemporalInfo>();
-    Request  request = PropertyHelper.getReadRequest(Collections.singleton("metrics/rpc/ReceivedBytes"), temporalInfoMap);
+    Request request = PropertyHelper.getReadRequest(Collections.singleton("metrics/rpc/ReceivedBytes"), temporalInfoMap);
 
     Assert.assertEquals(1, propertyProvider.populateResources(Collections.singleton(resource), request, null).size());
 
     Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-0e-34-e1.compute-1.internal", "50070", "/jmx"), streamProvider.getLastSpec());
 
     // see test/resources/hdfs_namenode_jmx.json for values
-    Assert.assertEquals(13670605,  resource.getPropertyValue("metrics/rpc/ReceivedBytes"));
+    Assert.assertEquals(13670605, resource.getPropertyValue("metrics/rpc/ReceivedBytes"));
     Assert.assertNull(resource.getPropertyValue("metrics/dfs/namenode/CreateFileOps"));
   }
 
-  @Test
   public void testPopulateResources_category() throws Exception {
-    TestStreamProvider  streamProvider = new TestStreamProvider();
+    TestStreamProvider streamProvider = new TestStreamProvider();
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(false);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
 
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-        PropertyHelper.getPropertyId("HostRoles", "host_name"),
-        PropertyHelper.getPropertyId("HostRoles", "component_name"),
-        PropertyHelper.getPropertyId("HostRoles", "state"));
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
+      PropertyHelper.getPropertyId("HostRoles", "host_name"),
+      PropertyHelper.getPropertyId("HostRoles", "component_name"),
+      PropertyHelper.getPropertyId("HostRoles", "state"));
 
     // namenode
     Resource resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-0e-34-e1.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "NAMENODE");
     resource.setProperty(HOST_COMPONENT_STATE_PROPERTY_ID, "STARTED");
@@ -295,37 +309,36 @@ public class JMXPropertyProviderTest {
     // request with an empty set should get all supported properties
     // only ask for one property
     Map<String, TemporalInfo> temporalInfoMap = new HashMap<String, TemporalInfo>();
-    Request  request = PropertyHelper.getReadRequest(Collections.singleton("metrics/dfs"), temporalInfoMap);
+    Request request = PropertyHelper.getReadRequest(Collections.singleton("metrics/dfs"), temporalInfoMap);
 
     Assert.assertEquals(1, propertyProvider.populateResources(Collections.singleton(resource), request, null).size());
 
-    Assert.assertEquals(propertyProvider.getSpec("http","domu-12-31-39-0e-34-e1.compute-1.internal", "50070","/jmx"), streamProvider.getLastSpec());
+    Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-0e-34-e1.compute-1.internal", "50070", "/jmx"), streamProvider.getLastSpec());
 
     // see test/resources/hdfs_namenode_jmx.json for values
-    Assert.assertEquals(184320,  resource.getPropertyValue("metrics/dfs/FSNamesystem/CapacityUsed"));
-    Assert.assertEquals(21,  resource.getPropertyValue("metrics/dfs/FSNamesystem/UnderReplicatedBlocks"));
+    Assert.assertEquals(184320, resource.getPropertyValue("metrics/dfs/FSNamesystem/CapacityUsed"));
+    Assert.assertEquals(21, resource.getPropertyValue("metrics/dfs/FSNamesystem/UnderReplicatedBlocks"));
     Assert.assertNull(resource.getPropertyValue("metrics/rpc/ReceivedBytes"));
   }
 
-  @Test
   public void testPopulateResourcesWithUnknownPort() throws Exception {
-    TestStreamProvider  streamProvider = new TestStreamProvider();
+    TestStreamProvider streamProvider = new TestStreamProvider();
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(true);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
 
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-        PropertyHelper.getPropertyId("HostRoles", "host_name"),
-        PropertyHelper.getPropertyId("HostRoles", "component_name"),
-        PropertyHelper.getPropertyId("HostRoles", "state"));
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
+      PropertyHelper.getPropertyId("HostRoles", "host_name"),
+      PropertyHelper.getPropertyId("HostRoles", "component_name"),
+      PropertyHelper.getPropertyId("HostRoles", "state"));
 
     // namenode
     Resource resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-0e-34-e1.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "NAMENODE");
 
@@ -334,32 +347,31 @@ public class JMXPropertyProviderTest {
 
     Assert.assertEquals(1, propertyProvider.populateResources(Collections.singleton(resource), request, null).size());
 
-    Assert.assertEquals(propertyProvider.getSpec("http","domu-12-31-39-0e-34-e1.compute-1.internal", "50070","/jmx"), streamProvider.getLastSpec());
+    Assert.assertEquals(propertyProvider.getSpec("http", "domu-12-31-39-0e-34-e1.compute-1.internal", "50070", "/jmx"), streamProvider.getLastSpec());
 
     // see test/resources/hdfs_namenode_jmx.json for values
-    Assert.assertEquals(13670605,  resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
-    Assert.assertEquals(28,      resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/dfs/namenode", "CreateFileOps")));
+    Assert.assertEquals(13670605, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
+    Assert.assertEquals(28, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/dfs/namenode", "CreateFileOps")));
     Assert.assertEquals(1006632960, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
     Assert.assertEquals(473433016, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
     Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
     Assert.assertEquals(23634400, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryUsed")));
   }
 
-  @Test
   public void testPopulateResourcesUnhealthyResource() throws Exception {
-    TestStreamProvider  streamProvider = new TestStreamProvider();
+    TestStreamProvider streamProvider = new TestStreamProvider();
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(true);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
 
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-        PropertyHelper.getPropertyId("HostRoles", "host_name"),
-        PropertyHelper.getPropertyId("HostRoles", "component_name"),
-        PropertyHelper.getPropertyId("HostRoles", "state"));
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
+      PropertyHelper.getPropertyId("HostRoles", "host_name"),
+      PropertyHelper.getPropertyId("HostRoles", "component_name"),
+      PropertyHelper.getPropertyId("HostRoles", "state"));
 
     // namenode
     Resource resource = new ResourceImpl(Resource.Type.HostComponent);
@@ -377,45 +389,42 @@ public class JMXPropertyProviderTest {
     Assert.assertNull(streamProvider.getLastSpec());
   }
 
-  @Test
   public void testPopulateResourcesMany() throws Exception {
     // Set the provider to take 50 millis to return the JMX values
-    TestStreamProvider  streamProvider = new TestStreamProvider(50L);
+    TestStreamProvider streamProvider = new TestStreamProvider(50L);
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(true);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
     Set<Resource> resources = new HashSet<Resource>();
 
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
-        PropertyHelper.getPropertyId("HostRoles", "host_name"),
-        PropertyHelper.getPropertyId("HostRoles", "component_name"),
-        PropertyHelper.getPropertyId("HostRoles", "state"));
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      PropertyHelper.getPropertyId("HostRoles", "cluster_name"),
+      PropertyHelper.getPropertyId("HostRoles", "host_name"),
+      PropertyHelper.getPropertyId("HostRoles", "component_name"),
+      PropertyHelper.getPropertyId("HostRoles", "state"));
 
     for (int i = 0; i < NUMBER_OF_RESOURCES; ++i) {
       // datanode
       Resource resource = new ResourceImpl(Resource.Type.HostComponent);
-
+      resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
       resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-14-ee-b3.compute-1.internal");
       resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "DATANODE");
       resource.setProperty("unique_id", i);
 
       resources.add(resource);
     }
-
     // request with an empty set should get all supported properties
     Request request = PropertyHelper.getReadRequest(Collections.<String>emptySet());
 
     Set<Resource> resourceSet = propertyProvider.populateResources(resources, request, null);
 
     Assert.assertEquals(NUMBER_OF_RESOURCES, resourceSet.size());
-
     for (Resource resource : resourceSet) {
       // see test/resources/hdfs_datanode_jmx.json for values
-      Assert.assertEquals(856,  resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
+      Assert.assertEquals(856, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/rpc", "ReceivedBytes")));
       Assert.assertEquals(954466304, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryMax")));
       Assert.assertEquals(9772616, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "HeapMemoryUsed")));
       Assert.assertEquals(136314880, resource.getPropertyValue(PropertyHelper.getPropertyId("metrics/jvm", "NonHeapMemoryMax")));
@@ -423,30 +432,29 @@ public class JMXPropertyProviderTest {
     }
   }
 
-  @Test
   public void testPopulateResourcesTimeout() throws Exception {
     // Set the provider to take 100 millis to return the JMX values
-    TestStreamProvider  streamProvider = new TestStreamProvider(100L);
+    TestStreamProvider streamProvider = new TestStreamProvider(100L);
     TestJMXHostProvider hostProvider = new TestJMXHostProvider(true);
     TestMetricHostProvider metricsHostProvider = new TestMetricHostProvider();
     Set<Resource> resources = new HashSet<Resource>();
 
     JMXPropertyProvider propertyProvider = new JMXPropertyProvider(
-        PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
-        streamProvider,
-        hostProvider,
-        metricsHostProvider,
-        "HostRoles/cluster_name",
-        "HostRoles/host_name",
-        "HostRoles/component_name",
-        "HostRoles/state");
+      PropertyHelper.getJMXPropertyIds(Resource.Type.HostComponent),
+      streamProvider,
+      hostProvider,
+      metricsHostProvider,
+      "HostRoles/cluster_name",
+      "HostRoles/host_name",
+      "HostRoles/component_name",
+      "HostRoles/state");
 
     // set the provider timeout to 50 millis
     propertyProvider.setPopulateTimeout(50L);
 
     // datanode
     Resource resource = new ResourceImpl(Resource.Type.HostComponent);
-
+    resource.setProperty(CLUSTER_NAME_PROPERTY_ID, "c1");
     resource.setProperty(HOST_COMPONENT_HOST_NAME_PROPERTY_ID, "domu-12-31-39-14-ee-b3.compute-1.internal");
     resource.setProperty(HOST_COMPONENT_COMPONENT_NAME_PROPERTY_ID, "DATANODE");
 
@@ -483,13 +491,13 @@ public class JMXPropertyProviderTest {
     }
 
     @Override
-    public String getPort(String clusterName, String componentName, boolean httpsEnabled) throws SystemException {
-      return getPort(clusterName, componentName);
+    public String getPort(String clusterName, String componentName, String hostName, boolean httpsEnabled) throws SystemException {
+      return getPort(clusterName, componentName, hostName);
     }
 
     @Override
-    public String getPort(String clusterName, String componentName) throws
-        SystemException {
+    public String getPort(String clusterName, String componentName, String hostName) throws
+      SystemException {
 
       if (unknownPort) {
         return null;
@@ -499,15 +507,17 @@ public class JMXPropertyProviderTest {
         return "50070";
       else if (componentName.equals("DATANODE"))
         return "50075";
-      else if (componentName.equals("JOBTRACKER"))
-        return "50030";
-      else if (componentName.equals("TASKTRACKER"))
-        return "50060";
       else if (componentName.equals("HBASE_MASTER"))
-        return null == clusterName ? "60010" : "60011";
-      else  if (componentName.equals("JOURNALNODE"))
+        if(clusterName == "c2") {
+          return "60011";
+        } else {
+          // Caters the case where 'clusterName' is null or
+          // any other name (includes hardcoded name "c1").
+          return "60010";
+        }
+      else if (componentName.equals("JOURNALNODE"))
         return "8480";
-      else  if (componentName.equals("STORM_REST_API"))
+      else if (componentName.equals("STORM_REST_API"))
         return "8745";
       else
         return null;
@@ -533,7 +543,7 @@ public class JMXPropertyProviderTest {
     }
 
     @Override
-    public String getCollectorPortName(String clusterName, MetricsService service) throws SystemException {
+    public String getCollectorPort(String clusterName, MetricsService service) throws SystemException {
       return null;
     }
 

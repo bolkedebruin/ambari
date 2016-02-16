@@ -33,6 +33,7 @@ import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.utilities.StreamProvider;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.StackId;
@@ -40,6 +41,7 @@ import org.apache.ambari.server.state.stack.Metric;
 import org.apache.ambari.server.state.stack.MetricDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -49,8 +51,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-
-import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
 
 /**
  * This class analyzes a service's metrics to determine if additional
@@ -67,21 +67,19 @@ public class StackDefinedPropertyProvider implements PropertyProvider {
   @Inject
   private static Injector injector = null;
 
-
   private Resource.Type type = null;
   private String clusterNamePropertyId = null;
   private String hostNamePropertyId = null;
   private String componentNamePropertyId = null;
   private String resourceStatePropertyId = null;
   private ComponentSSLConfiguration sslConfig = null;
-  private StreamProvider streamProvider = null;
+  private URLStreamProvider streamProvider = null;
   private JMXHostProvider jmxHostProvider;
   private PropertyProvider defaultJmx = null;
   private PropertyProvider defaultGanglia = null;
 
   private final MetricHostProvider metricHostProvider;
   private final MetricsServiceProvider metricsServiceProvider;
-  private MetricsService metricsService = MetricsService.GANGLIA;
   private TimelineMetricCacheProvider cacheProvider;
 
   /**
@@ -101,7 +99,7 @@ public class StackDefinedPropertyProvider implements PropertyProvider {
                                       JMXHostProvider jmxHostProvider,
                                       MetricHostProvider metricHostProvider,
                                       MetricsServiceProvider serviceProvider,
-                                      StreamProvider streamProvider,
+                                      URLStreamProvider streamProvider,
                                       String clusterPropertyId,
                                       String hostPropertyId,
                                       String componentPropertyId,
@@ -130,29 +128,6 @@ public class StackDefinedPropertyProvider implements PropertyProvider {
     defaultGanglia = defaultGangliaPropertyProvider;
     cacheProvider = injector.getInstance(TimelineMetricCacheProvider.class);
   }
-
-
-  public StackDefinedPropertyProvider(Resource.Type type,
-                                      MetricsService metricsService,
-                                      JMXHostProvider jmxHostProvider,
-                                      MetricHostProvider metricHostProvider,
-                                      MetricsServiceProvider serviceProvider,
-                                      StreamProvider streamProvider,
-                                      String clusterPropertyId,
-                                      String hostPropertyId,
-                                      String componentPropertyId,
-                                      String jmxStatePropertyId,
-                                      PropertyProvider defaultJmxPropertyProvider,
-                                      PropertyProvider defaultGangliaPropertyProvider) {
-
-    this(type, jmxHostProvider, metricHostProvider, serviceProvider,
-      streamProvider, clusterPropertyId, hostPropertyId, componentPropertyId,
-      jmxStatePropertyId, defaultJmxPropertyProvider, defaultGangliaPropertyProvider);
-
-    this.metricsService = metricsService;
-    cacheProvider = injector.getInstance(TimelineMetricCacheProvider.class);
-  }
-
 
   @Override
   public Set<Resource> populateResources(Set<Resource> resources,
@@ -231,8 +206,11 @@ public class StackDefinedPropertyProvider implements PropertyProvider {
         pp.populateResources(resources, request, predicate);
       }
 
-    } catch (Exception e) {
-      e.printStackTrace();
+    } catch (AuthorizationException e) {
+      // Need to rethrow the catched 'AuthorizationException'.
+      throw e;
+    }
+    catch (Exception e) {
       throw new SystemException("Error loading deferred resources", e);
     }
 

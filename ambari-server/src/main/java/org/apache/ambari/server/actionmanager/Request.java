@@ -20,9 +20,9 @@ package org.apache.ambari.server.actionmanager;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
-import com.google.inject.Inject;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.controller.ExecuteActionRequest;
@@ -41,6 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
+import com.google.inject.Inject;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
 
@@ -158,7 +159,7 @@ public class Request {
   /**
    * Load existing request from database
    */
-  public Request(@Assisted RequestEntity entity, StageFactory stageFactory, Clusters clusters){
+  public Request(@Assisted RequestEntity entity, final StageFactory stageFactory, Clusters clusters){
     if (entity == null) {
       throw new RuntimeException("Request entity cannot be null.");
     }
@@ -189,13 +190,17 @@ public class Request {
       this.requestScheduleId = entity.getRequestScheduleEntity().getScheduleId();
     }
 
-    for (StageEntity stageEntity : entity.getStages()) {
-      Stage stage = stageFactory.createExisting(stageEntity);
-      stages.add(stage);
+    Collection<StageEntity> stageEntities = entity.getStages();
+    if(stageEntities == null || stageEntities.isEmpty()) {
+      stages = Collections.emptyList();
+    } else {
+      stages = new ArrayList<>(stageEntities.size());
+      for (StageEntity stageEntity : stageEntities) {
+        stages.add(stageFactory.createExisting(stageEntity));
+      }
     }
 
     resourceFilters = filtersFromEntity(entity);
-
     operationLevel = operationLevelFromEntity(entity);
   }
 
@@ -396,7 +401,7 @@ public class Request {
   }
 
   public void setExclusive(boolean isExclusive) {
-    this.exclusive = isExclusive;
+    exclusive = isExclusive;
   }
 
   /**

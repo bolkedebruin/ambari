@@ -32,10 +32,14 @@
     <description>
       Is the registry enabled: does the RM start it up, create the user and system paths, and purge service records when containers, application attempts and applications complete
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
   <property>
     <name>hadoop.registry.zk.quorum</name>
     <value>localhost:2181</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>
       List of hostname:port pairs defining the zookeeper quorum binding for the registry
     </description>
@@ -95,6 +99,7 @@
   <property>
     <name>yarn.resourcemanager.zk-address</name>
     <value>localhost:2181</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>
       List Host:Port of the ZooKeeper servers to be used by the RM. comma separated host:port pairs, each corresponding to a zk server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002" If the optional chroot suffix is used the example would look like: "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002/app/a" where the client would be rooted at "/app/a" and all paths would be relative to this root - ie getting/setting/etc...  "/foo/bar" would result in operations being run on "/app/a/foo/bar" (from the server perspective).
     </description>
@@ -276,6 +281,9 @@
     <description>
       Enable age off of timeline store data.
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -294,12 +302,18 @@
     <name>yarn.timeline-service.leveldb-state-store.path</name>
     <value>/hadoop/yarn/timeline</value>
     <description>Store file name for leveldb state store.</description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>yarn.timeline-service.leveldb-timeline-store.path</name>
     <value>/hadoop/yarn/timeline</value>
     <description>Store file name for leveldb timeline store.</description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
   <property>
     <name>yarn.timeline-service.leveldb-timeline-store.read-cache-size</name>

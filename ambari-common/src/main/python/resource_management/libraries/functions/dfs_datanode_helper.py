@@ -25,33 +25,16 @@ import os
 from resource_management.libraries.functions.file_system import get_mount_point_for_dir, get_and_cache_mount_points
 from resource_management.core.logger import Logger
 
+DATA_DIR_TO_MOUNT_HEADER = """
+# This file keeps track of the last known mount-point for each DFS data dir.
+# It is safe to delete, since it will get regenerated the next time that the DataNode starts.
+# However, it is not advised to delete this file since Ambari may
+# re-create a DFS data dir that used to be mounted on a drive but is now mounted on the root.
+# Comments begin with a hash (#) symbol
+# data_dir,mount_point
+"""
 
-def _write_data_dir_to_mount_in_file(params, new_data_dir_to_mount_point):
-  """
-  :param new_data_dir_to_mount_point: Dictionary to write to the data_dir_mount_file file, where
-  the key is each DFS data dir, and the value is its current mount point.
-  :return: Returns True on success, False otherwise.
-  """
-  # Overwrite the existing file, or create it if doesn't exist
-  if params.data_dir_mount_file:
-    try:
-      with open(str(params.data_dir_mount_file), "w") as f:
-        f.write("# This file keeps track of the last known mount-point for each DFS data dir.\n")
-        f.write("# It is safe to delete, since it will get regenerated the next time that the DataNode starts.\n")
-        f.write("# However, it is not advised to delete this file since Ambari may \n")
-        f.write("# re-create a DFS data dir that used to be mounted on a drive but is now mounted on the root.\n")
-        f.write("# Comments begin with a hash (#) symbol\n")
-        f.write("# data_dir,mount_point\n")
-        for kv in new_data_dir_to_mount_point.iteritems():
-          f.write(kv[0] + "," + kv[1] + "\n")
-    except Exception, e:
-      Logger.error("Encountered error while attempting to save DFS data dir mount mount values to file %s" %
-                   str(params.data_dir_mount_file))
-      return False
-  return True
-
-
-def _get_data_dir_to_mount_from_file(params):
+def get_data_dir_to_mount_from_file(params):
   """
   :return: Returns a dictionary by parsing the data_dir_mount_file file,
   where the key is each DFS data dir, and the value is its last known mount point.
@@ -96,10 +79,11 @@ def handle_dfs_data_dir(func, params, update_cache=True):
                will be called as func(data_dir, params)
   :param params: parameters to pass to function pointer
   :param update_cache: Bool indicating whether to update the global cache of mount points
+  :return: Returns a data_dir_mount_file content
   """
 
   # Get the data dirs that Ambari knows about and their last known mount point
-  prev_data_dir_to_mount_point = _get_data_dir_to_mount_from_file(params)
+  prev_data_dir_to_mount_point = get_data_dir_to_mount_from_file(params)
 
   # Dictionary from data dir to the mount point that will be written to the history file.
   # If a data dir becomes unmounted, we should still keep its original value.
@@ -107,7 +91,15 @@ def handle_dfs_data_dir(func, params, update_cache=True):
   data_dir_to_mount_point = prev_data_dir_to_mount_point.copy()
 
   # This should typically be False for customers, but True the first time.
-  allowed_to_create_any_dir = params.data_dir_mount_file is None or not os.path.exists(params.data_dir_mount_file)
+  allowed_to_create_any_dir = False
+
+  if params.data_dir_mount_file is None:
+    allowed_to_create_any_dir = True
+    Logger.warning("DataNode is allowed to create any data directory since dfs.datanode.data.dir.mount.file property is null.")
+  else:
+    if not os.path.exists(params.data_dir_mount_file):
+      allowed_to_create_any_dir = True
+      Logger.warning("DataNode is allowed to create any data directory since dfs.datanode.data.dir.mount.file property has file %s and it does not exist." % params.data_dir_mount_file)
 
   valid_data_dirs = []                # data dirs that have been normalized
   error_messages = []                 # list of error messages to report at the end
@@ -164,9 +156,6 @@ def handle_dfs_data_dir(func, params, update_cache=True):
       curr_mount_point = get_mount_point_for_dir(data_dir)
       data_dir_to_mount_point[data_dir] = curr_mount_point
 
-  # Save back to the file
-  _write_data_dir_to_mount_in_file(params, data_dir_to_mount_point)
-
   if error_messages and len(error_messages) > 0:
     header = " ERROR ".join(["*****"] * 6)
     header = "\n" + "\n".join([header, ] * 3) + "\n"
@@ -175,4 +164,9 @@ def handle_dfs_data_dir(func, params, update_cache=True):
           "root partition, either update the contents of {0}, or delete that file.".format(params.data_dir_mount_file)
     Logger.error(header + msg + header)
 
+  data_dir_to_mount = DATA_DIR_TO_MOUNT_HEADER
+  for kv in data_dir_to_mount_point.iteritems():
+    data_dir_to_mount += kv[0] + "," + kv[1] + "\n"
+
+  return data_dir_to_mount
 

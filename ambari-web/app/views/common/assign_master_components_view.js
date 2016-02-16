@@ -39,9 +39,7 @@ App.AssignMasterComponentsView = Em.View.extend({
    * Otherwise - App.SelectHostView
    * @type {bool}
    */
-  shouldUseInputs: function() {
-    return this.get('controller.hosts.length') > 25;
-  }.property('controller.hosts.length'),
+  shouldUseInputs: Em.computed.gt('controller.hosts.length', 25),
 
   didInsertElement: function () {
     this.get('controller').loadStep();
@@ -150,6 +148,12 @@ App.SelectHostView = Em.Select.extend(App.SelectHost, {
 App.AddControlView = Em.View.extend({
 
   /**
+   * DOM node class attribute
+   * @type {string}
+   */
+  uniqueId: Em.computed.format('{0}-add', 'componentName'),
+
+  /**
    * Current component name
    * @type {string}
    */
@@ -158,6 +162,8 @@ App.AddControlView = Em.View.extend({
   tagName: "span",
 
   classNames: ["badge", "badge-important"],
+
+  classNameBindings: ['uniqueId'],
 
   template: Em.Handlebars.compile('+'),
 
@@ -172,6 +178,13 @@ App.AddControlView = Em.View.extend({
 });
 
 App.RemoveControlView = Em.View.extend({
+  /**
+   * DOM node class attribute
+   * @type {string}
+   */
+  uniqueId: Em.computed.format('{0}-{1}-remove', 'componentName', 'serviceComponentId'),
+
+  classNameBindings: ['uniqueId'],
 
   /**
    * Index for multiple component

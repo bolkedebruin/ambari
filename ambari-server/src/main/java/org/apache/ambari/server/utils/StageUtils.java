@@ -201,8 +201,8 @@ public class StageUtils {
     s.setStageId(stageId);
     long now = System.currentTimeMillis();
     s.addHostRoleExecutionCommand(hostname, Role.NAMENODE, RoleCommand.INSTALL,
-        new ServiceComponentHostInstallEvent("NAMENODE", hostname, now, "HDP-1.2.0"),
-        "cluster1", "HDFS", false);
+        new ServiceComponentHostInstallEvent("NAMENODE", hostname, now, "HDP-1.2.0"), "cluster1",
+        "HDFS", false, false);
     ExecutionCommand execCmd = s.getExecutionCommandWrapper(hostname, "NAMENODE").getExecutionCommand();
 
     execCmd.setRequestAndStage(s.getRequestId(), s.getStageId());
@@ -277,7 +277,7 @@ public class StageUtils {
     }
 
     // add hosts from topology manager
-    Map<String, Collection<String>> pendingHostComponents = topologyManager.getProjectedTopology();
+    Map<String, Collection<String>> pendingHostComponents = topologyManager.getPendingHostComponents();
     for (String hostname : pendingHostComponents.keySet()) {
       if (!hostsSet.contains(hostname)) {
         hostsSet.add(hostname);
@@ -541,6 +541,10 @@ public class StageUtils {
     return result;
   }
 
+  public static String getHostName() {
+    return server_hostname;
+  }
+
   /**
    * Splits a range to its explicit set of values.
    * <p/>
@@ -576,9 +580,5 @@ public class StageUtils {
         endOfRange.toString() :
         startOfRange + separator + endOfRange;
     return rangeItem;
-  }
-
-  public static String getHostName() {
-    return server_hostname;
   }
 }

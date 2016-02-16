@@ -27,6 +27,7 @@ require('models/configs/objects/service_config_category');
  */
 App.StackService = DS.Model.extend({
   serviceName: DS.attr('string'),
+  serviceType: DS.attr('string'),
   displayName: DS.attr('string'),
   comments: DS.attr('string'),
   configTypes: DS.attr('object'),
@@ -41,8 +42,14 @@ App.StackService = DS.Model.extend({
   stack: DS.belongsTo('App.Stack'),
   serviceComponents: DS.hasMany('App.StackServiceComponent'),
   configs: DS.attr('array'),
-  requiredServices: DS.attr('array'),
+  requiredServices: DS.attr('array', {defaultValue: []}),
 
+  /**
+   * @type {String[]}
+   */
+  configTypeList: function() {
+    return Object.keys(this.get('configTypes') || {});
+  }.property('configTypes'),
   /**
    * contains array of serviceNames that have configs that
    * depends on configs from current service
@@ -53,14 +60,15 @@ App.StackService = DS.Model.extend({
   // Is the service a distributed filesystem
   isDFS: function () {
     var dfsServices = ['HDFS', 'GLUSTERFS'];
-    return dfsServices.contains(this.get('serviceName'));
+    if( this.get('serviceType') == 'HCFS' || dfsServices.contains(this.get('serviceName')) )
+    	return true;
+    else
+    	return false;
   }.property('serviceName'),
 
   // Primary DFS. used if there is more than one DFS in a stack.
   // Only one service in the stack should be tagged as primary DFS.
-  isPrimaryDFS: function () {
-    return this.get('serviceName') === 'HDFS';
-  }.property('serviceName'),
+  isPrimaryDFS: Em.computed.equal('serviceName', 'HDFS'),
 
   configTypesRendered: function () {
     var configTypes = this.get('configTypes');
@@ -73,7 +81,6 @@ App.StackService = DS.Model.extend({
 
   displayNameOnSelectServicePage: function () {
     var displayName = this.get('displayName');
-    console.info("displayName = " + displayName);
     var services = this.get('coSelectedServices').slice();
     var serviceDisplayNames = services.map(function (item) {
       return App.format.role(item);
@@ -102,22 +109,13 @@ App.StackService = DS.Model.extend({
   }.property('serviceName'),
 
   // Is the service required for monitoring of other hadoop ecosystem services
-  isMonitoringService: function () {
-    var services = ['GANGLIA'];
-    return services.contains(this.get('serviceName'));
-  }.property('serviceName'),
+  isMonitoringService: Em.computed.existsIn('serviceName', ['GANGLIA']),
 
   // Is the service required for reporting host metrics
-  isHostMetricsService: function () {
-      var services = ['GANGLIA', 'AMBARI_METRICS'];
-      return services.contains(this.get('serviceName'));
-  }.property('serviceName'),
+  isHostMetricsService: Em.computed.existsIn('serviceName', ['GANGLIA', 'AMBARI_METRICS']),
 
   // Is the service required for reporting hadoop service metrics
-  isServiceMetricsService: function () {
-      var services = ['GANGLIA'];
-      return services.contains(this.get('serviceName'));
-  }.property('serviceName'),
+  isServiceMetricsService: Em.computed.existsIn('serviceName', ['GANGLIA']),
 
   coSelectedServices: function () {
     var coSelectedServices = App.StackService.coSelected[this.get('serviceName')];
@@ -128,30 +126,18 @@ App.StackService = DS.Model.extend({
     }
   }.property('serviceName'),
 
-  hasClient: function () {
-    var serviceComponents = this.get('serviceComponents');
-    return serviceComponents.someProperty('isClient');
-  }.property('serviceName'),
+  hasClient: Em.computed.someBy('serviceComponents', 'isClient', true),
 
-  hasMaster: function () {
-    var serviceComponents = this.get('serviceComponents');
-    return serviceComponents.someProperty('isMaster');
-  }.property('serviceName'),
+  hasMaster: Em.computed.someBy('serviceComponents', 'isMaster', true),
 
-  hasSlave: function () {
-    var serviceComponents = this.get('serviceComponents');
-    return serviceComponents.someProperty('isSlave');
-  }.property('serviceName'),
+  hasSlave: Em.computed.someBy('serviceComponents', 'isSlave', true),
 
   hasNonMastersWithCustomAssignment: function () {
     var serviceComponents = this.get('serviceComponents');
     return serviceComponents.rejectProperty('isMaster').rejectProperty('cardinality', 'ALL').length > 0;
   }.property('serviceName'),
 
-  isClientOnlyService: function () {
-    var serviceComponents = this.get('serviceComponents');
-    return serviceComponents.everyProperty('isClient');
-  }.property('serviceName'),
+  isClientOnlyService: Em.computed.everyBy('serviceComponents', 'isClient', true),
 
   isNoConfigTypes: function () {
     var configTypes = this.get('configTypes');
@@ -162,9 +148,7 @@ App.StackService = DS.Model.extend({
     return App.StackService.reviewPageHandlers[this.get('serviceName')];
   }.property('serviceName'),
 
-  hasHeatmapSection: function() {
-    return ['HDFS', 'YARN', 'HBASE'].contains(this.get('serviceName'));
-  }.property('serviceName'),
+  hasHeatmapSection: Em.computed.existsIn('serviceName', ['HDFS', 'YARN', 'HBASE']),
 
   /**
    * configCategories are fetched from  App.StackService.configCategories.
@@ -175,7 +159,7 @@ App.StackService = DS.Model.extend({
     var configTypes = this.get('configTypes');
     var serviceComponents = this.get('serviceComponents');
     if (configTypes && Object.keys(configTypes).length) {
-      var pattern = ["General", "CapacityScheduler", "FaultTolerance", "Isolation", "Performance", "HIVE_SERVER2", "KDC", "Kadmin","^Advanced", "Env$", "^Custom", "Falcon - Oozie integration", "FalconStartupSite", "FalconRuntimeSite", "MetricCollector", "Settings$"];
+      var pattern = ["General", "CapacityScheduler", "FaultTolerance", "Isolation", "Performance", "HIVE_SERVER2", "KDC", "Kadmin","^Advanced", "Env$", "^Custom", "Falcon - Oozie integration", "FalconStartupSite", "FalconRuntimeSite", "MetricCollector", "Settings$", "AdvancedGpcheck"];
       configCategories = App.StackService.configCategories.call(this).filter(function (_configCategory) {
         var serviceComponentName = _configCategory.get('name');
         var isServiceComponent = serviceComponents.someProperty('componentName', serviceComponentName);
@@ -202,8 +186,10 @@ App.StackService.displayOrder = [
   'TEZ',
   'GANGLIA',
   'HIVE',
+  'HAWQ',
   'HBASE',
   'PIG',
+  'PXF',
   'SQOOP',
   'OOZIE',
   'ZOOKEEPER',
@@ -231,12 +217,14 @@ App.StackService.configCategories = function () {
   var serviceConfigCategories = [];
   switch (this.get('serviceName')) {
     case 'HDFS':
+      serviceConfigCategories.pushObject(App.ServiceConfigCategory.create({ name: 'NAMENODE', displayName: 'NameNode', showHost: true}));
+      if (!App.get('isHaEnabled')) {
+        serviceConfigCategories.pushObject(App.ServiceConfigCategory.create({ name: 'SECONDARY_NAMENODE', displayName: 'Secondary NameNode', showHost: true}));
+      }
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'NAMENODE', displayName: 'NameNode'}),
-        App.ServiceConfigCategory.create({ name: 'SECONDARY_NAMENODE', displayName: 'Secondary NameNode'}),
-        App.ServiceConfigCategory.create({ name: 'DATANODE', displayName: 'DataNode'}),
+        App.ServiceConfigCategory.create({ name: 'DATANODE', displayName: 'DataNode', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
-        App.ServiceConfigCategory.create({ name: 'NFS_GATEWAY', displayName: 'NFS Gateway'})
+        App.ServiceConfigCategory.create({ name: 'NFS_GATEWAY', displayName: 'NFS Gateway', showHost: true})
       ]);
       break;
     case 'GLUSTERFS':
@@ -246,9 +234,9 @@ App.StackService.configCategories = function () {
       break;
     case 'YARN':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'RESOURCEMANAGER', displayName: 'Resource Manager'}),
-        App.ServiceConfigCategory.create({ name: 'NODEMANAGER', displayName: 'Node Manager'}),
-        App.ServiceConfigCategory.create({ name: 'APP_TIMELINE_SERVER', displayName: 'Application Timeline Server'}),
+        App.ServiceConfigCategory.create({ name: 'RESOURCEMANAGER', displayName: 'Resource Manager', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'NODEMANAGER', displayName: 'Node Manager', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'APP_TIMELINE_SERVER', displayName: 'Application Timeline Server', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
         App.ServiceConfigCategory.create({ name: 'FaultTolerance', displayName: 'Fault Tolerance'}),
         App.ServiceConfigCategory.create({ name: 'Isolation', displayName: 'Isolation'}),
@@ -257,14 +245,14 @@ App.StackService.configCategories = function () {
       break;
     case 'MAPREDUCE2':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'HISTORYSERVER', displayName: 'History Server'}),
+        App.ServiceConfigCategory.create({ name: 'HISTORYSERVER', displayName: 'History Server', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);
       break;
     case 'HIVE':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'HIVE_METASTORE', displayName: 'Hive Metastore'}),
-        App.ServiceConfigCategory.create({ name: 'WEBHCAT_SERVER', displayName: 'WebHCat Server'}),
+        App.ServiceConfigCategory.create({ name: 'HIVE_METASTORE', displayName: 'Hive Metastore', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'WEBHCAT_SERVER', displayName: 'WebHCat Server', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
         App.ServiceConfigCategory.create({ name: 'Performance', displayName: 'Performance'}),
         App.ServiceConfigCategory.create({ name: 'HIVE_SERVER2', displayName: 'Hive Server2'}),
@@ -273,24 +261,25 @@ App.StackService.configCategories = function () {
       break;
     case 'HBASE':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'HBASE_MASTER', displayName: 'HBase Master'}),
-        App.ServiceConfigCategory.create({ name: 'HBASE_REGIONSERVER', displayName: 'RegionServer'}),
+        App.ServiceConfigCategory.create({ name: 'HBASE_MASTER', displayName: 'HBase Master', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'HBASE_REGIONSERVER', displayName: 'RegionServer', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);
       break;
     case 'ZOOKEEPER':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'ZOOKEEPER_SERVER', displayName: 'ZooKeeper Server'})
+        App.ServiceConfigCategory.create({ name: 'ZOOKEEPER_SERVER', displayName: 'ZooKeeper Server', showHost: true})
       ]);
       break;
     case 'OOZIE':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'OOZIE_SERVER', displayName: 'Oozie Server'})
+        App.ServiceConfigCategory.create({ name: 'OOZIE_SERVER', displayName: 'Oozie Server', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'Falcon - Oozie integration', displayName: 'Falcon - Oozie integration'})
       ]);
       break;
     case 'FALCON':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'FALCON_SERVER', displayName: 'Falcon Server'}),
+        App.ServiceConfigCategory.create({ name: 'FALCON_SERVER', displayName: 'Falcon Server', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'Falcon - Oozie integration', displayName: 'Falcon - Oozie integration'}),
         App.ServiceConfigCategory.create({ name: 'FalconStartupSite', displayName: 'Falcon startup.properties'}),
         App.ServiceConfigCategory.create({ name: 'FalconRuntimeSite', displayName: 'Falcon runtime.properties'}),
@@ -299,11 +288,11 @@ App.StackService.configCategories = function () {
       break;
     case 'STORM':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'NIMBUS', displayName: 'Nimbus'}),
-        App.ServiceConfigCategory.create({ name: 'SUPERVISOR', displayName: 'Supervisor'}),
-        App.ServiceConfigCategory.create({ name: 'STORM_UI_SERVER', displayName: 'Storm UI Server'}),
-        App.ServiceConfigCategory.create({ name: 'STORM_REST_API', displayName: 'Storm REST API Server'}),
-        App.ServiceConfigCategory.create({ name: 'DRPC_SERVER', displayName: 'DRPC Server'}),
+        App.ServiceConfigCategory.create({ name: 'NIMBUS', displayName: 'Nimbus', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'SUPERVISOR', displayName: 'Supervisor', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'STORM_UI_SERVER', displayName: 'Storm UI Server', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'STORM_REST_API', displayName: 'Storm REST API Server', showHost: true}),
+        App.ServiceConfigCategory.create({ name: 'DRPC_SERVER', displayName: 'DRPC Server', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'})
       ]);
       break;
@@ -319,12 +308,12 @@ App.StackService.configCategories = function () {
       break;
     case 'KNOX':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'KNOX_GATEWAY', displayName: 'Knox Gateway'})
+        App.ServiceConfigCategory.create({ name: 'KNOX_GATEWAY', displayName: 'Knox Gateway', showHost: true})
       ]);
       break;
     case 'KAFKA':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'KAFKA_BROKER', displayName: 'Kafka Broker'})
+        App.ServiceConfigCategory.create({ name: 'KAFKA_BROKER', displayName: 'Kafka Broker', showHost: true})
       ]);
       break;
     case 'KERBEROS':
@@ -342,12 +331,18 @@ App.StackService.configCategories = function () {
       break;
     case 'RANGER':
       serviceConfigCategories.pushObjects([
-        App.ServiceConfigCategory.create({ name: 'AdminSettings', displayName: 'Admin Settings'}),
+        App.ServiceConfigCategory.create({ name: 'RANGER_ADMIN', displayName: 'Admin Settings', showHost: true}),
         App.ServiceConfigCategory.create({ name: 'DBSettings', displayName: 'DB Settings'}),
         App.ServiceConfigCategory.create({ name: 'RangerSettings', displayName: 'Ranger Settings'}),
         App.ServiceConfigCategory.create({ name: 'UnixAuthenticationSettings', displayName: 'Unix Authentication Settings'}),
         App.ServiceConfigCategory.create({ name: 'ADSettings', displayName: 'AD Settings'}),
-        App.ServiceConfigCategory.create({ name: 'LDAPSettings', displayName: 'LDAP Settings'})
+        App.ServiceConfigCategory.create({ name: 'LDAPSettings', displayName: 'LDAP Settings'}),
+        App.ServiceConfigCategory.create({ name: 'KnoxSSOSettings', displayName: 'Knox SSO Settings'})
+      ]);
+      break;
+    case 'RANGER_KMS':
+      serviceConfigCategories.pushObjects([
+        App.ServiceConfigCategory.create({ name: 'RANGER_KMS_SERVER', displayName: 'Ranger KMS Server', showHost: true})
       ]);
       break;
     case 'ACCUMULO':
@@ -358,6 +353,12 @@ App.StackService.configCategories = function () {
     case 'PIG':
       break;
     case 'SQOOP':
+      break;
+    case 'HAWQ':
+      serviceConfigCategories.pushObjects([
+        App.ServiceConfigCategory.create({ name: 'General', displayName: 'General'}),
+        App.ServiceConfigCategory.create({ name: 'AdvancedGpcheck', displayName: 'Advanced gpcheck'})
+      ]);
       break;
     default:
       serviceConfigCategories.pushObjects([
@@ -384,16 +385,14 @@ App.StackService.configCategories = function () {
 
   // Add custom section for every configType to all the services
   configTypes.forEach(function (type) {
-    var configTypesWithNoCustomSection = ['capacity-scheduler','mapred-queue-acls','flume-conf', 'pig-properties','topology','users-ldif'];
-    if (type.endsWith('-env') || type.endsWith('-log4j') || configTypesWithNoCustomSection.contains(type)) {
-      return;
+    if (Em.getWithDefault(this.get('configTypes')[type] || {}, 'supports.adding_forbidden', 'true') === 'false') {
+      serviceConfigCategories.pushObject(App.ServiceConfigCategory.create({
+        name: 'Custom ' + type,
+        displayName: Em.I18n.t('common.custom') + " " + type,
+        siteFileName: type + '.xml',
+        canAddProperty: true
+      }));
     }
-    serviceConfigCategories.pushObject(App.ServiceConfigCategory.create({
-      name: 'Custom ' + type,
-      displayName: Em.I18n.t('common.custom') + " " + type,
-      siteFileName: type + '.xml',
-      canAddProperty: true
-    }));
   }, this);
   return serviceConfigCategories;
 };

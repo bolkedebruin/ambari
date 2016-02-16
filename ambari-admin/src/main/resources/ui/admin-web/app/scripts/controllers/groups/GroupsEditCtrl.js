@@ -18,7 +18,13 @@
 'use strict';
 
 angular.module('ambariAdminConsole')
-.controller('GroupsEditCtrl',['$scope', 'Group', '$routeParams', 'Alert', 'ConfirmationModal', '$location', function($scope, Group, $routeParams, Alert, ConfirmationModal, $location) {
+.controller('GroupsEditCtrl',['$scope', 'Group', '$routeParams', 'Alert', 'ConfirmationModal', '$location', '$translate', function($scope, Group, $routeParams, Alert, ConfirmationModal, $location, $translate) {
+  var $t = $translate.instant;
+  $scope.constants = {
+    group: $t('common.group'),
+    view: $t('common.view').toLowerCase(),
+    cluster: $t('common.cluster').toLowerCase()
+  };
   $scope.editMode = false;
   $scope.group = new Group($routeParams.id);
   $scope.group.editingUsers = [];
@@ -52,7 +58,7 @@ angular.module('ambariAdminConsole')
     );
     $scope.group.members = newMembers;
     $scope.group.saveMembers().catch(function(data) {
-        Alert.error('Cannot update group members', "<div class='break-word'>" + data.message + "</div>");
+        Alert.error($t('groups.alerts.cannotUpdateGroupMembers'), "<div class='break-word'>" + data.message + "</div>");
       }).finally(function() {
         loadMembers();
       });
@@ -73,7 +79,15 @@ angular.module('ambariAdminConsole')
   });
 
   $scope.deleteGroup = function(group) {
-    ConfirmationModal.show('Delete Group', 'Are you sure you want to delete group "'+ group.group_name +'"?').then(function() {
+    ConfirmationModal.show(
+      $t('common.delete', {
+        term: $t('common.group')
+      }),
+      $t('common.deleteConfirmation', {
+        instanceType: $t('common.group').toLowerCase(),
+        instanceName: '"' + group.group_name + '"'
+      })
+    ).then(function() {
       group.destroy().then(function() {
         $location.path('/groups');
       }).catch(function() {
@@ -93,19 +107,21 @@ angular.module('ambariAdminConsole')
       if(privilege.type === 'CLUSTER'){
         // This is cluster
         privileges.clusters[privilege.cluster_name] = privileges.clusters[privilege.cluster_name] || [];
-        privileges.clusters[privilege.cluster_name].push(privilege.permission_name);
+        privileges.clusters[privilege.cluster_name].push(privilege.permission_label);
       } else if ( privilege.type === 'VIEW'){
         privileges.views[privilege.instance_name] = privileges.views[privilege.instance_name] || { privileges:[]};
         privileges.views[privilege.instance_name].version = privilege.version;
         privileges.views[privilege.instance_name].view_name = privilege.view_name;
-        privileges.views[privilege.instance_name].privileges.push(privilege.permission_name);
+        privileges.views[privilege.instance_name].privileges.push(privilege.permission_label);
       }
     });
 
     $scope.privileges = data.data.items.length ? privileges : null;
-    $scope.dataLoaded = true;
+    $scope.noClusterPriv = $.isEmptyObject(privileges.clusters);
+    $scope.noViewPriv = $.isEmptyObject(privileges.views);
+    $scope.hidePrivileges = $scope.noClusterPriv && $scope.noViewPriv;    $scope.dataLoaded = true;
   }).catch(function(data) {
-    Alert.error('Cannot load privileges', data.data.message);
+    Alert.error($t('common.alerts.cannotLoadPrivileges'), data.data.message);
   });
 
 

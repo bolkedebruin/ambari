@@ -41,11 +41,11 @@ public class TopologyRequestDAO {
   }
 
   @RequiresSession
-  public List<TopologyRequestEntity> findByCluster(String clusterName) {
+  public List<TopologyRequestEntity> findByClusterId(long clusterId) {
     TypedQuery<TopologyRequestEntity> query = entityManagerProvider.get()
-      .createNamedQuery("TopologyRequestEntity.findByCluster", TopologyRequestEntity.class);
+      .createNamedQuery("TopologyRequestEntity.findByClusterId", TopologyRequestEntity.class);
 
-    query.setParameter("clusterName", clusterName);
+    query.setParameter("clusterId", clusterId);
     return daoUtils.selectList(query);
   }
 
@@ -73,4 +73,16 @@ public class TopologyRequestDAO {
   public void removeByPK(Long requestId) {
     remove(findById(requestId));
   }
+
+  /**
+   * Removes all {@link TopologyRequestEntity} that are associated with the specified cluster ID.
+   * @param clusterId the cluster ID.
+   */
+  @Transactional
+  public void removeAll(Long clusterId) {
+    List<TopologyRequestEntity> clusterTopologyRequests = findByClusterId(clusterId);
+    for (TopologyRequestEntity topologyRequestEntity: clusterTopologyRequests)
+      remove(topologyRequestEntity);
+  }
 }
+

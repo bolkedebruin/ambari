@@ -34,35 +34,35 @@ class TestMetadataServer(RMFTestCase):
       self.assertResourceCalled('Directory', '/var/run/atlas',
                                 owner='atlas',
                                 group='hadoop',
-                                recursive=True,
+                                create_parents = True,
                                 cd_access='a',
                                 mode=0755
       )
       self.assertResourceCalled('Directory', '/etc/atlas/conf',
                                 owner='atlas',
                                 group='hadoop',
-                                recursive=True,
+                                create_parents = True,
                                 cd_access='a',
                                 mode=0755
       )
       self.assertResourceCalled('Directory', '/var/log/atlas',
                                 owner='atlas',
                                 group='hadoop',
-                                recursive=True,
+                                create_parents = True,
                                 cd_access='a',
                                 mode=0755
       )
       self.assertResourceCalled('Directory', '/var/lib/atlas/data',
                                 owner='atlas',
                                 group='hadoop',
-                                recursive=True,
+                                create_parents = True,
                                 cd_access='a',
                                 mode=0644
       )
       self.assertResourceCalled('Directory', '/var/lib/atlas/server/webapp',
                                 owner='atlas',
                                 group='hadoop',
-                                recursive=True,
+                                create_parents = True,
                                 cd_access='a',
                                 mode=0644
       )
@@ -89,8 +89,8 @@ class TestMetadataServer(RMFTestCase):
                                 group='hadoop',
                                 mode=0755,
       )
-      self.assertResourceCalled('File', '/etc/atlas/conf/log4j.xml',
-                                content=StaticFile('log4j.xml'),
+      self.assertResourceCalled('File', '/etc/atlas/conf/atlas-log4j.xml',
+                                content=StaticFile('atlas-log4j.xml'),
                                 owner='atlas',
                                 group='hadoop',
                                 mode=0644,
@@ -108,6 +108,21 @@ class TestMetadataServer(RMFTestCase):
     self.configureResourcesCalled()
     self.assertNoMoreResources()
 
+  def test_configure_secure(self):
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/metadata_server.py",
+                       classname = "MetadataServer",
+                       command = "configure",
+                       config_file="secure.json",
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+                       )
+
+    self.configureResourcesCalled()
+    self.assertResourceCalled('TemplateConfig', '/etc/atlas/conf/atlas_jaas.conf',
+                              owner = 'atlas',
+                              )
+    self.assertNoMoreResources()
+
   def test_start_default(self):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/metadata_server.py",
                        classname = "MetadataServer",
@@ -117,7 +132,7 @@ class TestMetadataServer(RMFTestCase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.configureResourcesCalled()
-    self.assertResourceCalled('Execute', 'source /etc/atlas/conf/atlas-env.sh ; /usr/hdp/current/atlas-server/bin/atlas_start.py --port 21000',
+    self.assertResourceCalled('Execute', 'source /etc/atlas/conf/atlas-env.sh ; /usr/hdp/current/atlas-server/bin/atlas_start.py',
                               not_if = 'ls /var/run/atlas/atlas.pid >/dev/null 2>&1 && ps -p `cat /var/run/atlas/atlas.pid` >/dev/null 2>&1',
                               user = 'atlas',
     )

@@ -16,7 +16,7 @@
  */
 
 var App = require('app');
-var date = require('utils/date');
+var date = require('utils/date/date');
 var numberUtils = require('utils/number_utils');
 
 App.MainDashboardServiceHbaseView = App.MainDashboardServiceView.extend({
@@ -25,59 +25,26 @@ App.MainDashboardServiceHbaseView = App.MainDashboardServiceView.extend({
   /**
    * All master components
    */
-  masters: function () {
-    return this.get('service.hostComponents').filterProperty('isMaster', true);
-  }.property('service.hostComponents.length'),
+  masters: Em.computed.filterBy('service.hostComponents', 'isMaster', true),
   /**
    * Passive master components
    */
-  passiveMasters: function () {
-    return this.get('masters').filterProperty('haStatus', 'false');
-  }.property('masters'),
+  passiveMasters: Em.computed.filterBy('masters', 'haStatus', 'false'),
 
-  regionServesText: function () {
-    if (this.get('service.regionServersTotal') == 0) {
-      return '';
-    } else if (this.get('service.regionServersTotal') > 1) {
-      return Em.I18n.t('services.service.summary.viewHosts');
-    } else {
-      return Em.I18n.t('services.service.summary.viewHost');
-    }
-  }.property("service"),
+  regionServesText: Em.computed.countBasedMessage('service.regionServersTotal', '', Em.I18n.t('services.service.summary.viewHost'), Em.I18n.t('services.service.summary.viewHosts')),
 
-  phoenixServersText: function () {
-    if (this.get('service.phoenixServersTotal') == 0) {
-      return '';
-    } else if (this.get('service.phoenixServersTotal') > 1) {
-      return Em.I18n.t('services.service.summary.viewHosts');
-    } else {
-      return Em.I18n.t('services.service.summary.viewHost');
-    }
-  }.property("service"),
+  phoenixServersText: Em.computed.countBasedMessage('service.phoenixServersTotal', '', Em.I18n.t('services.service.summary.viewHost'), Em.I18n.t('services.service.summary.viewHosts')),
 
-  showPhoenixInfo: function () {
-    return !!this.get('service.phoenixServersTotal');
-  }.property("service.phoenixServersTotal"),
+  showPhoenixInfo: Em.computed.bool('service.phoenixServersTotal'),
 
   /**
    * One(!) active master component
    */
-  activeMaster: function () {
-    return this.get('masters').findProperty('haStatus', 'true');
-  }.property('masters'),
+  activeMaster: Em.computed.findBy('masters', 'haStatus', 'true'),
 
-  activeMasterTitle: function(){
-    return this.t('service.hbase.activeMaster');
-  }.property('activeMaster'),
+  activeMasterTitle: Em.I18n.t('service.hbase.activeMaster'),
 
-  masterServerHeapSummary: function () {
-    var heapUsed = this.get('service').get('heapMemoryUsed');
-    var heapMax = this.get('service').get('heapMemoryMax');
-    var percent = heapMax > 0 ? 100 * heapUsed / heapMax : 0;
-    var heapString = numberUtils.bytesToSize(heapUsed, 1, "parseFloat");
-    var heapMaxString = numberUtils.bytesToSize(heapMax, 1, "parseFloat");
-    return this.t('dashboard.services.hbase.masterServerHeap.summary').format(heapString, heapMaxString, percent.toFixed(1));
-  }.property('service.heapMemoryUsed', 'service.heapMemoryMax'),
+  masterServerHeapSummary: App.MainDashboardServiceView.formattedHeap('dashboard.services.hbase.masterServerHeap.summary', 'service.heapMemoryUsed', 'service.heapMemoryMax'),
 
   summaryHeader: function () {
     var avgLoad = this.get('service.averageLoad');
@@ -127,16 +94,11 @@ App.MainDashboardServiceHbaseView = App.MainDashboardServiceView.extend({
     return this.t('services.service.summary.notRunning');
   }.property("service.masterActiveTime"),
 
-  regionServerComponent: function () {
-    return Em.Object.create({
-      componentName: 'HBASE_REGIONSERVER'
-    });
-    //return this.get('service.regionServers').objectAt(0);
-  }.property(),
+  regionServerComponent: Em.Object.create({
+    componentName: 'HBASE_REGIONSERVER'
+  }),
 
-  phoenixServerComponent: function () {
-    return Em.Object.create({
-      componentName: 'PHOENIX_QUERY_SERVER'
-    });
-  }.property()
+  phoenixServerComponent: Em.Object.create({
+    componentName: 'PHOENIX_QUERY_SERVER'
+  })
 });

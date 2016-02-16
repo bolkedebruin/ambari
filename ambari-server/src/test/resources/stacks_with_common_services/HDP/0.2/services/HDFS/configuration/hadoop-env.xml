@@ -68,6 +68,7 @@
   </property>
   <property>
     <name>proxyuser_group</name>
+    <display-name>Proxy User Group</display-name>
     <value>users</value>
     <description>Proxy user group.</description>
   </property>
@@ -93,11 +94,13 @@
   </property>
   <property>
     <name>smokeuser</name>
+    <display-name>Smoke User</display-name>
     <value>ambari-qa</value>
     <description>User executing service checks</description>
   </property>
   <property>
     <name>user_group</name>
+    <display-name>Hadoop Group</display-name>
     <value>hadoop</value>
     <description>Proxy user group.</description>
   </property>
@@ -218,6 +221,9 @@ export HADOOP_LIBEXEC_DIR={{hadoop_libexec_dir}}
 #Mostly required for hadoop 2.0
 export JAVA_LIBRARY_PATH=${JAVA_LIBRARY_PATH}:/usr/lib/hadoop/lib/native/Linux-amd64-64
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
   
 </configuration>

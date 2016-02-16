@@ -18,15 +18,19 @@
 
 
 var App = require('app');
-var componentsUtils = require('utils/components');
 
-App.KerberosWizardController = App.WizardController.extend({
+App.KerberosWizardController = App.WizardController.extend(App.InstallComponent, {
 
   exceptionsOnSkipClient: [{'KDC': 'realm'}, {'KDC': 'kdc_type'}, {'Advanced kerberos-env': 'executable_search_paths'}],
 
   name: 'kerberosWizardController',
 
   totalSteps: 8,
+
+  /**
+   * @type {string}
+   */
+  displayName: Em.I18n.t('admin.kerberos.wizard.header'),
 
   isKerberosWizard: true,
 
@@ -153,6 +157,7 @@ App.KerberosWizardController = App.WizardController.extend({
    *
    * @param {Array} itemsArray
    * @param newValue
+   * @param exceptions
    */
   overrideVisibility: function (itemsArray, newValue, exceptions) {
     newValue = newValue || false;
@@ -179,7 +184,7 @@ App.KerberosWizardController = App.WizardController.extend({
   createKerberosResources: function (callback) {
     var self = this;
     this.createKerberosService().done(function () {
-      componentsUtils.updateAndCreateServiceComponent('KERBEROS_CLIENT').done(function () {
+      self.updateAndCreateServiceComponent('KERBEROS_CLIENT').done(function () {
         self.createKerberosHostComponents().done(callback);
       });
     });
@@ -193,6 +198,40 @@ App.KerberosWizardController = App.WizardController.extend({
         data: '{"ServiceInfo": { "service_name": "KERBEROS"}}',
         cluster: App.get('clusterName') || App.clusterStatus.get('clusterName')
       }
+    });
+  },
+
+  /**
+   * Delete Kerberos service if it exists
+   *
+   * @returns {$.Deferred}
+   */
+  deleteKerberosService: function () {
+    var serviceName = 'KERBEROS';
+    if (App.cache.services.someProperty('ServiceInfo.service_name', serviceName)) {
+      App.cache.services.removeAt(App.cache.services.indexOf(App.cache.services.findProperty('ServiceInfo.service_name', serviceName)));
+    }
+    if (App.Service.find().someProperty('serviceName', serviceName)) {
+      App.serviceMapper.deleteRecord(App.Service.find(serviceName));
+    }
+    return App.ajax.send({
+      name: 'common.delete.service',
+      sender: this,
+      data: {
+        serviceName: serviceName
+      }
+    });
+  },
+
+  /**
+   * Unkerberize cluster. Set cluster `security_type` to "NONE".
+   *
+   * @returns {$.Deferred}
+   */
+  unkerberize: function() {
+    return App.ajax.send({
+      name: 'admin.unkerberize.cluster',
+      sender: this
     });
   },
 
@@ -307,6 +346,7 @@ App.KerberosWizardController = App.WizardController.extend({
       : Em.I18n.t('admin.kerberos.wizard.exit.warning.msg');
     return App.showConfirmationPopup(primary, msg, null, null, primaryText, isCritical);
   },
+
   /**
    * Clear all temporary data
    */
@@ -315,6 +355,25 @@ App.KerberosWizardController = App.WizardController.extend({
     this.setCurrentStep('1', false, true);
     // kerberos wizard namespace in the localStorage should be emptied
     this.resetDbNamespace();
-    App.get('router.updateController').updateAll();
+  },
+
+  /**
+   * Discard changes affected by wizard:
+   *   - Unkerberize cluster
+   *   - Remove Kerberos service
+   *
+   * @returns {$.Deferred}
+   */
+  discardChanges: function() {
+    var dfd = $.Deferred();
+    var self = this;
+
+    this.unkerberize().always(function() {
+      self.deleteKerberosService().always(function() {
+        dfd.resolve();
+      });
+    });
+
+    return dfd.promise();
   }
 });

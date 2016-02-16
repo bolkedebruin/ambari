@@ -28,6 +28,9 @@
       A comma-separated list of one or more directories in which Kafka data is stored.
       Each new partition that is created will be placed in the directory which currently has the fewest partitions.
     </description>
+    <value-attributes>
+      <type>directories</type>
+    </value-attributes>
   </property>
   <property>
     <name>port</name>
@@ -35,10 +38,14 @@
     <description>
       The port on which the server accepts client connections.
     </description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
   <property>
     <name>zookeeper.connect</name>
     <value>localhost:2181</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>
       Zookeeper also allows you to add a "chroot" path which will make all kafka data for this cluster appear under a particular path.
       This is a way to setup multiple Kafka clusters or other applications on the same zookeeper cluster. To do this give a connection
@@ -244,7 +251,7 @@
   </property>
   <property>
     <name>zookeeper.connection.timeout.ms</name>
-    <value>15000</value>
+    <value>25000</value>
     <description>The maximum amount of time that the client waits to establish a connection to zookeeper.</description>
   </property>
   <property>
@@ -271,10 +278,13 @@
   </property>
   <property>
     <name>kafka.metrics.reporters</name>
-    <value>{{kafka_metrics_reporters}}</value>
+    <value></value>
     <description>
       kafka ganglia metrics reporter and kafka timeline metrics reporter
     </description>
+    <value-attributes>
+      <empty-value-valid>true</empty-value-valid>
+    </value-attributes>
   </property>
   <property>
     <name>kafka.ganglia.metrics.reporter.enabled</name>
@@ -286,6 +296,7 @@
   <property>
     <name>kafka.ganglia.metrics.host</name>
     <value>localhost</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description> Ganglia host </description>
   </property>
   <property>

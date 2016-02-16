@@ -22,14 +22,17 @@ import os
 import socket
 import sys
 import urllib2
+import tempfile
 
 from ambari_agent.AlertSchedulerHandler import AlertSchedulerHandler
+from ambari_agent.RecoveryManager import RecoveryManager
 from ambari_agent.alerts.collector import AlertCollector
 from ambari_agent.alerts.base_alert import BaseAlert
 from ambari_agent.alerts.metric_alert import MetricAlert
 from ambari_agent.alerts.port_alert import PortAlert
 from ambari_agent.alerts.script_alert import ScriptAlert
 from ambari_agent.alerts.web_alert import WebAlert
+from ambari_agent.alerts.recovery_alert import RecoveryAlert
 from ambari_agent.apscheduler.scheduler import Scheduler
 from ambari_agent.ClusterConfiguration import ClusterConfiguration
 from ambari_commons.urllib_handlers import RefreshHeaderProcessor
@@ -59,8 +62,8 @@ class TestAlerts(TestCase):
     cluster_configuration = self.__get_cluster_configuration()
 
     ash = AlertSchedulerHandler(test_file_path, test_stack_path,
-      test_common_services_path, test_host_scripts_path, cluster_configuration,
-      None)
+      test_common_services_path, test_host_scripts_path, 5, cluster_configuration,
+      None, None)
 
     ash.start()
 
@@ -104,6 +107,102 @@ class TestAlerts(TestCase):
     self.assertEquals('WARNING', alerts[0]['state'])
 
     # throws a socket.timeout exception, causes a CRITICAL
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('CRITICAL', alerts[0]['state'])
+
+  @patch.object(RecoveryManager, "is_action_info_stale")
+  @patch.object(RecoveryManager, "get_actions_copy")
+  def test_recovery_alert(self, rm_get_actions_mock, is_stale_mock):
+    definition_json = self._get_recovery_alert_definition()
+    is_stale_mock.return_value = False
+    rm_get_actions_mock.return_value = {
+        "METRICS_COLLECTOR": {
+          "count": 0,
+          "lastAttempt": 1447860184,
+          "warnedLastReset": False,
+          "lastReset": 1447860184,
+          "warnedThresholdReached": False,
+          "lifetimeCount": 1,
+          "warnedLastAttempt": False
+        }
+      }
+
+    collector = AlertCollector()
+    cluster_configuration = self.__get_cluster_configuration()
+    self.__update_cluster_configuration(cluster_configuration, {})
+
+    rm = RecoveryManager(tempfile.mktemp(), True)
+    alert = RecoveryAlert(definition_json, definition_json['source'], rm)
+    alert.set_helpers(collector, cluster_configuration)
+    alert.set_cluster("c1", "c6401.ambari.apache.org")
+    self.assertEquals(1, alert.interval())
+
+    #  OK - "count": 0
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('OK', alerts[0]['state'])
+
+    #  WARN - "count": 1
+    rm_get_actions_mock.return_value = {
+      "METRICS_COLLECTOR": {
+        "count": 1,
+        "lastAttempt": 1447860184,
+        "warnedLastReset": False,
+        "lastReset": 1447860184,
+        "warnedThresholdReached": False,
+        "lifetimeCount": 1,
+        "warnedLastAttempt": False
+      }
+    }
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('WARNING', alerts[0]['state'])
+
+    #  CRIT - "count": 5
+    rm_get_actions_mock.return_value = {
+      "METRICS_COLLECTOR": {
+        "count": 5,
+        "lastAttempt": 1447860184,
+        "warnedLastReset": False,
+        "lastReset": 1447860184,
+        "warnedThresholdReached": False,
+        "lifetimeCount": 1,
+        "warnedLastAttempt": False
+      }
+    }
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('CRITICAL', alerts[0]['state'])
+
+    # OK again, after recovery manager window expired
+    is_stale_mock.return_value = True
+
+    alert.collect()
+    alerts = collector.alerts()
+    self.assertEquals(0, len(collector.alerts()))
+    self.assertEquals('OK', alerts[0]['state'])
+
+    #  CRIT, after recovery manager window expired,
+    # but max_lifetime_count reached, warnedThresholdReached == True
+    rm_get_actions_mock.return_value = {
+      "METRICS_COLLECTOR": {
+        "count": 5,
+        "lastAttempt": 1447860184,
+        "warnedLastReset": False,
+        "lastReset": 1447860184,
+        "warnedThresholdReached": True,
+        "lifetimeCount": 12,
+        "warnedLastAttempt": False
+      }
+    }
+
+    is_stale_mock.return_value = True
+
     alert.collect()
     alerts = collector.alerts()
     self.assertEquals(0, len(collector.alerts()))
@@ -474,8 +573,8 @@ class TestAlerts(TestCase):
     cluster_configuration = self.__get_cluster_configuration()
 
     ash = AlertSchedulerHandler(test_file_path, test_stack_path,
-      test_common_services_path, test_host_scripts_path, cluster_configuration,
-      None)
+      test_common_services_path, test_host_scripts_path, 5, cluster_configuration,
+      None, None)
 
     ash.start()
 
@@ -521,8 +620,8 @@ class TestAlerts(TestCase):
     cluster_configuration = self.__get_cluster_configuration()
 
     ash = AlertSchedulerHandler(test_file_path, test_stack_path,
-      test_common_services_path, test_host_scripts_path, cluster_configuration,
-      None)
+      test_common_services_path, test_host_scripts_path, 5, cluster_configuration,
+      None, None)
 
     ash.start()
 
@@ -557,8 +656,8 @@ class TestAlerts(TestCase):
 
     cluster_configuration = self.__get_cluster_configuration()
     ash = AlertSchedulerHandler(test_file_path, test_stack_path,
-      test_common_services_path, test_host_scripts_path, cluster_configuration,
-      None)
+      test_common_services_path, test_host_scripts_path, 5, cluster_configuration,
+      None, None)
 
     ash.start()
 
@@ -632,6 +731,13 @@ class TestAlerts(TestCase):
     self.assertEquals(alert._get_reporting_text(alert.RESULT_OK), '{0}')
     self.assertEquals(alert._get_reporting_text(alert.RESULT_WARNING), '{0}')
     self.assertEquals(alert._get_reporting_text(alert.RESULT_CRITICAL), '{0}')
+
+    rm = RecoveryManager(tempfile.mktemp())
+    definition_json['source']['type'] = 'RECOVERY'
+    alert = RecoveryAlert(definition_json, definition_json['source'], rm)
+    self.assertEquals(alert._get_reporting_text(alert.RESULT_OK), 'No recovery operations executed for {2}{0}.')
+    self.assertEquals(alert._get_reporting_text(alert.RESULT_WARNING), '{1} recovery operations executed for {2}{0}.')
+    self.assertEquals(alert._get_reporting_text(alert.RESULT_CRITICAL), '{1} recovery operations executed for {2}{0}.')
 
 
   def test_configuration_updates(self):
@@ -1211,6 +1317,33 @@ class TestAlerts(TestCase):
       }
     }
 
+
+  def _get_recovery_alert_definition(self):
+    return {
+      "componentName": "METRICS_COLLECTOR",
+      "name": "ams_metrics_collector_autostart",
+      "label": "Metrics Collector Recovery",
+      "description": "This alert is triggered if the Metrics Collector has been auto-started for number of times equal to threshold.",
+      "interval": 1,
+      "scope": "HOST",
+      "enabled": True,
+      "source": {
+        "type": "RECOVERY",
+        "reporting": {
+          "ok": {
+            "text": "Metrics Collector has not been auto-started and is running normally{0}."
+          },
+          "warning": {
+            "text": "Metrics Collector has been auto-started {1} times{0}.",
+            "count": 1
+          },
+          "critical": {
+            "text": "Metrics Collector has been auto-started {1} times{0}.",
+            "count": 5
+          }
+        }
+      }
+    }
 
   def _get_metric_alert_definition(self):
     return {

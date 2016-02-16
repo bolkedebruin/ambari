@@ -58,6 +58,9 @@
     <description>The amount of memory to be used by the AppMaster.
       Used only if the value is not specified explicitly by the DAG definition.
     </description>
+    <value-attributes>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -266,7 +269,7 @@
 
   <property>
     <name>tez.counters.max</name>
-    <value>2000</value>
+    <value>5000</value>
     <description>The number of allowed counters for the executing DAG</description>
   </property>
 
@@ -301,12 +304,24 @@
     <name>tez.runtime.io.sort.mb</name>
     <value>512</value>
     <description>The size of the sort buffer when output needs to be sorted</description>
+    <depends-on>
+      <property>
+        <type>tez-site</type>
+        <name>tez.task.resource.memory.mb</name>
+      </property>
+    </depends-on>
   </property>
 
   <property>
     <name>tez.runtime.unordered.output.buffer.size-mb</name>
     <value>100</value>
     <description>The size of the buffer when output does not require to be sorted</description>
+    <depends-on>
+      <property>
+        <type>tez-site</type>
+        <name>tez.task.resource.memory.mb</name>
+      </property>
+    </depends-on>
   </property>
 
   <property>
@@ -337,6 +352,11 @@
        Template replaces __APPLICATION_ID__ with the actual applicationId and
        __HISTORY_URL_BASE__ with the value from the tez.tez-ui.history-url.base config property
     </description>
+  </property>
+
+  <property>
+    <name>tez.tez-ui.history-url.base</name>
+    <description></description>
   </property>
 
 </configuration>

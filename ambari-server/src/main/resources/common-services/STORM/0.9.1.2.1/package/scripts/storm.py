@@ -20,7 +20,7 @@ limitations under the License.
 
 from resource_management.core.exceptions import Fail
 from resource_management.core.resources.service import ServiceConfig
-from resource_management.core.resources.system import Directory, Execute, File
+from resource_management.core.resources.system import Directory, Execute, File, Link
 from resource_management.core.source import InlineTemplate
 from resource_management.libraries.resources.template_config import TemplateConfig
 from resource_management.libraries.functions.format import format
@@ -56,19 +56,20 @@ def storm(name=None):
             owner=params.storm_user,
             group=params.user_group,
             mode=0777,
-            recursive=True
+            create_parents = True
   )
 
   Directory([params.pid_dir, params.local_dir],
             owner=params.storm_user,
             group=params.user_group,
-            recursive=True,
+            create_parents = True,
             cd_access="a",
+            mode=0755,
   )
 
   Directory(params.conf_dir,
             group=params.user_group,
-            recursive=True,
+            create_parents = True,
             cd_access="a",
   )
 
@@ -86,6 +87,11 @@ def storm(name=None):
        group=params.user_group
   )
 
+  File(format("{conf_dir}/storm-env.sh"),
+       owner=params.storm_user,
+       content=InlineTemplate(params.storm_env_sh_template)
+  )
+
   if params.has_metric_collector:
     File(format("{conf_dir}/storm-metrics2.properties"),
         owner=params.storm_user,
@@ -93,16 +99,34 @@ def storm(name=None):
         content=Template("storm-metrics2.properties.j2")
     )
 
+    # Remove symlinks. They can be there, if you doing upgrade from HDP < 2.2 to HDP >= 2.2
+    Link(format("{storm_lib_dir}/ambari-metrics-storm-sink.jar"),
+         action="delete")
+    # On old HDP 2.1 versions, this symlink may also exist and break EU to newer versions
+    Link("/usr/lib/storm/lib/ambari-metrics-storm-sink.jar", action="delete")
+
     Execute(format("{sudo} ln -s {metric_collector_sink_jar} {storm_lib_dir}/ambari-metrics-storm-sink.jar"),
             not_if=format("ls {storm_lib_dir}/ambari-metrics-storm-sink.jar"),
             only_if=format("ls {metric_collector_sink_jar}")
     )
 
-  File(format("{conf_dir}/storm-env.sh"),
-    owner=params.storm_user,
-    content=InlineTemplate(params.storm_env_sh_template)
-  )
-
+  if params.storm_logs_supported:
+    Directory(params.log4j_dir,
+              owner=params.storm_user,
+              group=params.user_group,
+              mode=0755,
+              create_parents = True
+    )
+    
+    File(format("{log4j_dir}/cluster.xml"),
+      owner=params.storm_user,
+      content=InlineTemplate(params.storm_cluster_log4j_content)
+    )
+    File(format("{log4j_dir}/worker.xml"),
+      owner=params.storm_user,
+      content=InlineTemplate(params.storm_worker_log4j_content)
+    )
+  
   if params.security_enabled:
     TemplateConfig(format("{conf_dir}/storm_jaas.conf"),
                    owner=params.storm_user

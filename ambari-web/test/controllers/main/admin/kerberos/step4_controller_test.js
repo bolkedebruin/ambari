@@ -17,71 +17,46 @@
  */
 
 var App = require('app');
-
+var c = App.KerberosWizardStep4Controller.create({
+  wizardController: Em.Object.create({
+    name: ''
+  })
+});
 describe('App.KerberosWizardStep4Controller', function() {
-  
+
+  App.TestAliases.testAsComputedEqual(c, 'isWithinAddService', 'wizardController.name', 'addServiceController');
+
   describe('#isSubmitDisabled', function() {
     var controller = App.KerberosWizardStep4Controller.create({});
     var configs = Em.A([
       App.ServiceConfigProperty.create({ name: 'prop1', value: 'someVal1', identityType: 'user', category: 'Ambari Principals', serviceName: 'Cluster'})
     ]);
     controller.set('stepConfigs', controller.createServiceConfig(configs));
-    
+
     it('configuration errors are absent, submit should be not disabled', function() {
-      expect(controller.get('stepConfigs')[0].get('errorCount')).to.be.eql(0);
+      expect(controller.get('stepConfigs')[0].get('errorCount')).to.be.equal(0);
       expect(controller.get('isSubmitDisabled')).to.be.false;
     });
 
     it('config has invalid value, submit should be disabled', function() {
       var serviceConfig = controller.get('stepConfigs')[0];
       serviceConfig.get('configs').findProperty('name', 'prop1').set('value', '');
-      expect(serviceConfig.get('errorCount')).to.be.eql(1);
+      expect(serviceConfig.get('errorCount')).to.be.equal(1);
       expect(controller.get('isSubmitDisabled')).to.be.true;
-    });  
+    });
   });
 
   describe('#createServiceConfig', function() {
     var controller = App.KerberosWizardStep4Controller.create({});
     it('should create instance of App.ServiceConfig', function() {
-      controller.createServiceConfig([], []).forEach(function(item){
-        expect(item).be.instanceof(App.ServiceConfig);
-      });
+      var configs = controller.createServiceConfig([], []);
+      expect(configs).to.have.property('length').equal(2);
+      expect(configs[0]).to.be.instanceof(App.ServiceConfig);
+      expect(configs[1]).to.be.instanceof(App.ServiceConfig);
     });
   });
 
   describe('#prepareConfigProperties', function() {
-
-    before(function() {
-      var controller = App.KerberosWizardStep4Controller.create({
-        wizardController: {
-          getDBProperty: function() {
-            return Em.A([
-              Em.Object.create({ name: 'realm', value: 'realm_value' })
-            ]);
-          },
-          loadCachedStepConfigValues: function() {
-            return null;
-          }
-        }
-      });
-      sinon.stub(App.Service, 'find').returns(Em.A([
-        { serviceName: 'HDFS' }
-      ]));
-      sinon.stub(App.config, 'get').withArgs('preDefinedSiteProperties').returns([
-        {
-          name: 'hadoop.security.auth_to_local',
-          displayType: 'multiLine'
-        }
-      ]);
-      sinon.stub(App.router, 'get').withArgs('mainAdminKerberosController.isManualKerberos').returns(false);
-      this.result = controller.prepareConfigProperties(properties);
-    });
-
-    after(function() {
-      App.Service.find.restore();
-      App.config.get.restore();
-      App.router.get.restore();
-    });
 
     var properties = Em.A([
       Em.Object.create({ name: 'realm', value: '', serviceName: 'Cluster' }),
@@ -92,7 +67,7 @@ describe('App.KerberosWizardStep4Controller', function() {
       Em.Object.create({ name: 'hdfs_principal', value: 'hdfs_principal_value', identityType: 'user', serviceName: 'HDFS' }),
       Em.Object.create({ name: 'hadoop.security.auth_to_local', serviceName: 'HDFS' })
     ]);
-    
+
     var propertyValidationCases = [
       {
         property: 'spnego_keytab',
@@ -123,9 +98,41 @@ describe('App.KerberosWizardStep4Controller', function() {
         ]
       }
     ];
-    
+
     var absentPropertiesTest = ['falcon_keytab', 'mapreduce_keytab'];
-    
+
+    before(function() {
+      var controller = App.KerberosWizardStep4Controller.create({
+        wizardController: {
+          getDBProperty: function() {
+            return Em.A([
+              Em.Object.create({ name: 'realm', value: 'realm_value' })
+            ]);
+          },
+          loadCachedStepConfigValues: function() {
+            return null;
+          }
+        }
+      });
+      sinon.stub(App.Service, 'find').returns(Em.A([
+        { serviceName: 'HDFS' }
+      ]));
+      sinon.stub(App.configsCollection, 'getAll').returns([
+        {
+          name: 'hadoop.security.auth_to_local',
+          displayType: 'multiLine'
+        }
+      ]);
+      sinon.stub(App.router, 'get').withArgs('mainAdminKerberosController.isManualKerberos').returns(false);
+      this.result = controller.prepareConfigProperties(properties);
+    });
+
+    after(function() {
+      App.Service.find.restore();
+      App.configsCollection.getAll.restore();
+      App.router.get.restore();
+    });
+
     it('should contains properties only for installed services', function() {
       expect(this.result.mapProperty('serviceName').uniq()).to.be.eql(['Cluster', 'HDFS']);
     });
@@ -135,7 +142,7 @@ describe('App.KerberosWizardStep4Controller', function() {
         expect(this.result.findProperty('name', item)).to.be.undefined;
       });
     }, this);
-    
+
     propertyValidationCases.forEach(function(test) {
       it('property {0} should be created'.format(test.property), function() {
         expect(this.result.findProperty('name', test.property)).to.be.ok;
@@ -151,10 +158,29 @@ describe('App.KerberosWizardStep4Controller', function() {
       }, this);
     });
   });
-  
-  describe('#setStepConfigs', function() {
 
+  describe('#setStepConfigs', function() {
     describe('Add Service Wizard', function() {
+
+      var properties = Em.A([
+        Em.Object.create({ name: 'realm', value: '', serviceName: 'Cluster' }),
+        Em.Object.create({ name: 'spnego_keytab', value: 'spnego_keytab_value', serviceName: 'Cluster', isEditable: true }),
+        Em.Object.create({ name: 'hdfs_keytab', value: '', serviceName: 'HDFS', observesValueFrom: 'spnego_keytab', isEditable: true }),
+        Em.Object.create({ name: 'falcon_keytab', value: 'falcon_keytab_value', serviceName: 'FALCON', isEditable: true }),
+        Em.Object.create({ name: 'mapreduce_keytab', value: 'mapreduce_keytab_value', serviceName: 'MAPREDUCE2', isEditable: true })
+      ]);
+
+      var propertiesEditableTests = [
+        { name: 'spnego_keytab', e: false },
+        { name: 'falcon_keytab', e: true },
+        { name: 'hdfs_keytab', e: false },
+        { name: 'mapreduce_keytab', e: true },
+        { name: 'admin_principal', e: true },
+        { name: 'admin_password', e: true }
+      ];
+
+      var res;
+      var controller;
       before(function() {
         sinon.stub(App.StackService, 'find').returns([
           Em.Object.create({
@@ -177,7 +203,7 @@ describe('App.KerberosWizardStep4Controller', function() {
             serviceName: 'KERBEROS'
           })
         ]);
-        this.controller = App.KerberosWizardStep4Controller.create({
+        controller = App.KerberosWizardStep4Controller.create({
           selectedServiceNames: ['FALCON', 'MAPREDUCE2'],
           installedServiceNames: ['HDFS', 'KERBEROS'],
           wizardController: Em.Object.create({
@@ -185,8 +211,6 @@ describe('App.KerberosWizardStep4Controller', function() {
             getDBProperty: function() {
               return Em.A([
                 Em.Object.create({ name: 'realm', value: 'realm_value' }),
-                Em.Object.create({ name: 'admin_principal', value: 'some_val1', recommendedValue: 'some_val1', filename: 'krb5-conf.xml' }),
-                Em.Object.create({ name: 'admin_password', value: 'some_password', recommendedValue: 'some_password', filename: 'krb5-conf.xml' })
               ]);
             },
             loadCachedStepConfigValues : function() {
@@ -195,45 +219,28 @@ describe('App.KerberosWizardStep4Controller', function() {
           })
         });
         sinon.stub(App.router, 'get').withArgs('mainAdminKerberosController.isManualKerberos').returns(false);
-        this.controller.setStepConfigs(properties);
-        this.result = this.controller.get('stepConfigs')[0].get('configs').concat(this.controller.get('stepConfigs')[1].get('configs'));
+        controller.setStepConfigs(properties);
+        res = controller.get('stepConfigs')[0].get('configs').concat(controller.get('stepConfigs')[1].get('configs'));
       });
 
-      after(function() {
-        this.controller.destroy();
-        this.controller = null;
-        App.StackService.find.restore();
-        App.Service.find.restore();
-        App.router.get.restore();
-      });
-
-      var properties = Em.A([
-        Em.Object.create({ name: 'realm', value: '', serviceName: 'Cluster' }),
-        Em.Object.create({ name: 'spnego_keytab', value: 'spnego_keytab_value', serviceName: 'Cluster', isEditable: true }),
-        Em.Object.create({ name: 'hdfs_keytab', value: '', serviceName: 'HDFS', observesValueFrom: 'spnego_keytab', isEditable: true }),
-        Em.Object.create({ name: 'falcon_keytab', value: 'falcon_keytab_value', serviceName: 'FALCON', isEditable: true }),
-        Em.Object.create({ name: 'mapreduce_keytab', value: 'mapreduce_keytab_value', serviceName: 'MAPREDUCE2', isEditable: true })
-      ]);
-
-      var propertiesEditableTests = [
-        { name: 'spnego_keytab', e: false },
-        { name: 'falcon_keytab', e: true },
-        { name: 'hdfs_keytab', e: false },
-        { name: 'mapreduce_keytab', e: true },
-        { name: 'admin_principal', e: true },
-        { name: 'admin_password', e: true }
-      ];
-      
       propertiesEditableTests.forEach(function(test) {
         it('Add Service: property `{0}` should be {1} editable'.format(test.name, !!test.e ? '' : 'not '), function() {
-          expect(this.result.findProperty('name', test.name).get('isEditable')).to.eql(test.e);
+          expect(res.findProperty('name', test.name).get('isEditable')).to.eql(test.e);
         });
       });
 
       ['admin_principal', 'admin_password'].forEach(function(item) {
         it('property `{0}` should have empty value'.format(item), function() {
-          expect(this.result.findProperty('name', item).get('value')).to.be.empty;
+          expect(res.findProperty('name', item).get('value')).to.be.equal('');
         });
+      });
+
+      after(function() {
+        controller.destroy();
+        controller = null;
+        App.StackService.find.restore();
+        App.Service.find.restore();
+        App.router.get.restore();
       });
     });
   });
@@ -283,22 +290,22 @@ describe('App.KerberosWizardStep4Controller', function() {
   });
 
   describe('#loadStep', function() {
-
+    var controller;
     describe('skip "Configure Identities" step. ', function() {
       beforeEach(function() {
-        this.controller = App.KerberosWizardStep4Controller.create({});
+        controller = App.KerberosWizardStep4Controller.create({});
         this.wizardController = App.AddServiceController.create({});
-        this.controller.set('wizardController', this.wizardController);
-        sinon.stub(this.controller, 'clearStep').returns(true);
-        sinon.stub(this.controller, 'getDescriptorConfigs').returns((new $.Deferred()).resolve(true).promise());
-        sinon.stub(this.controller, 'setStepConfigs').returns(true);
+        controller.set('wizardController', this.wizardController);
+        sinon.stub(controller, 'clearStep').returns(true);
+        sinon.stub(controller, 'getDescriptorConfigs').returns((new $.Deferred()).resolve(true).promise());
+        sinon.stub(controller, 'setStepConfigs').returns(true);
         sinon.stub(App.router, 'send').withArgs('next');
       });
 
       afterEach(function() {
-        this.controller.clearStep.restore();
-        this.controller.getDescriptorConfigs.restore();
-        this.controller.setStepConfigs.restore();
+        controller.clearStep.restore();
+        controller.getDescriptorConfigs.restore();
+        controller.setStepConfigs.restore();
         App.router.send.restore();
       });
 
@@ -314,21 +321,109 @@ describe('App.KerberosWizardStep4Controller', function() {
       ];
 
       tests.forEach(function(test) {
-        it('Security {0} configure identities step should be {1}'.format(!!test.securityEnabled ? 'enabled' : 'disabled', !!test.stepSkipped ? 'skipped' : 'not skipped'), function() {
-          sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(test.securityEnabled);
-          this.wizardController.checkSecurityStatus();
-          App.get.restore();
-          this.controller.loadStep();
-          expect(App.router.send.calledWith('next')).to.be.eql(test.stepSkipped);
+        var message = 'Security {0} configure identities step should be {1}'.format(!!test.securityEnabled ? 'enabled' : 'disabled', !!test.stepSkipped ? 'skipped' : 'not skipped');
+        describe(message, function() {
+
+          beforeEach(function () {
+            sinon.stub(App, 'get').withArgs('isKerberosEnabled').returns(test.securityEnabled);
+            this.wizardController.checkSecurityStatus();
+            controller.loadStep();
+          });
+
+          afterEach(function () {
+            App.get.restore();
+          });
+
+          it('`send` is ' + (test.stepSkipped ? '' : 'not') + ' called with `next`', function () {
+            expect(App.router.send.calledWith('next')).to.be.eql(test.stepSkipped);
+          });
+
         });
       }, this);
 
       it('step should not be disabled for Add Kerberos wizard', function() {
-        this.controller.set('wizardController', App.KerberosWizardController.create({}));
-        this.controller.loadStep();
+        controller.set('wizardController', App.KerberosWizardController.create({}));
+        controller.loadStep();
         expect(App.router.send.calledWith('next')).to.be.false;
       });
     });
   });
 
+  describe('#getDescriptorConfigs', function() {
+    describe('Within Add Service', function () {
+      var controller;
+      beforeEach(function () {
+        controller = App.KerberosWizardStep4Controller.create({
+          wizardController: Em.Object.create({
+            name: 'addServiceController',
+            setDBProperty: sinon.spy()
+          })
+        });
+        this.loadStackDescriptorStub = sinon.stub(controller, 'loadStackDescriptorConfigs').returns($.Deferred().resolve().promise());
+        this.loadClusterDescriptorStub = sinon.stub(controller, 'loadClusterDescriptorConfigs');
+        sinon.stub(controller, 'createServicesStackDescriptorConfigs', Em.K);
+      });
+
+      afterEach(function() {
+        this.loadStackDescriptorStub.restore();
+        this.loadClusterDescriptorStub.restore();
+        controller.createServicesStackDescriptorConfigs.restore();
+        controller.destroy();
+        controller = null;
+      });
+
+      var cases = [
+        {
+          wizardController: 'addServiceController',
+          clusterDescriptorExists: false,
+          m: 'Within Add Service, Cluster Descriptor not exists. Should be reflected in wizard controller',
+          e: {
+            setDBPropertyCalled: true,
+            setDBPropertyCalledWith: ['isClusterDescriptorExists', false]
+          }
+        },
+        {
+          wizardController: 'addServiceController',
+          clusterDescriptorExists: true,
+          m: 'Within Add Service, Cluster Descriptor is present. Should be reflected in wizard controller',
+          e: {
+            setDBPropertyCalled: true,
+            setDBPropertyCalledWith: ['isClusterDescriptorExists', true]
+          }
+        },
+        {
+          wizardController: 'notAddService',
+          clusterDescriptorExists: true,
+          m: 'Within another controller, nothing to store',
+          e: {
+            setDBPropertyCalled: false
+          }
+        }
+      ];
+
+      cases.forEach(function(test) {
+        describe(test.m, function () {
+
+          beforeEach(function () {
+            controller.get('wizardController').set('name', test.wizardController);
+            this.loadClusterDescriptorStub.returns(test.clusterDescriptorExists ?
+              $.Deferred().resolve().promise() :
+              $.Deferred().reject().promise());
+            controller.getDescriptorConfigs();
+          });
+
+          if (test.e.setDBPropertyCalled) {
+            it('setDBProperty is called with valid arguments', function () {
+              expect(controller.get('wizardController').setDBProperty.args[0]).to.be.eql(test.e.setDBPropertyCalledWith);
+            });
+          }
+          else {
+            it('setDBProperty is not called', function () {
+              expect(controller.get('wizardController').setDBProperty.called).to.be.false;
+            });
+          }
+        });
+      })
+    });
+  });
 });

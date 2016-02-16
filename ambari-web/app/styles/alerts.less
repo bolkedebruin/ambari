@@ -155,24 +155,30 @@
   .col0,
   td:first-child,
   th:first-child {
-    width: 30%;
+    width: 10%;
   }
 
   .col1,
   td:first-child + td,
   th:first-child + th {
-    width: 23%;
+    width: 20%;
   }
 
   .col2,
   td:first-child + td + td,
   th:first-child + th + th {
-    width: 7%
+    width: 23%;
   }
 
   .col3,
   td:first-child + td + td + td,
   th:first-child + th + th + th {
+    width: 7%;
+  }
+
+  .col4,
+  td:first-child + td + td + td + td,
+  th:first-child + th + th + th + th {
     width: 40%;
   }
 
@@ -186,14 +192,16 @@
 }
 
 #alert-definition-details {
+  .alert-definition-details-header {
+    margin-bottom: 30px;
+  }
   .box {
     .box-header {
       .edit-link {
         margin: 5px;
       }
     }
-    margin-top: 20px;
-    margin-bottom: 0px;
+    margin-bottom: 0;
   }
   .definition-details-block {
     margin-top: 30px;
@@ -213,7 +221,6 @@
   }
 
   .status {
-    margin-bottom: 30px;
     text-align: right;
     .label {
       font-size: 14px;
@@ -222,13 +229,12 @@
   }
 
   .right-column {
-    text-align: right;
     button {
       margin-top: 10px;
       width: 100%;
     }
     .properties-list {
-      margin-top: 50px;
+      padding: 10px;
       text-align: left;
       .property-name {
         font-weight: bold;
@@ -294,6 +300,10 @@
     width: 170px;
   }
 
+  .stuck-left {
+    margin-left: 0!important;
+  }
+
   .controls.shifted {
     margin-left: 190px;
   }
@@ -314,7 +324,7 @@
     padding-right: 13px;
   }
 
-  .alert-interval-input {
+  .alert-interval-input, .alert-connection-timeout {
     input {
       width: 20%;
     }
@@ -409,7 +419,9 @@
 }
 
 .notification-description {
-  white-space: pre;
+  .input-value {
+    white-space: pre;
+  }
 }
 
 #create-edit-alert-notification {

@@ -61,9 +61,7 @@ App.MainHostAlertsView = App.TableView.extend({
   /**
    * @type {number}
    */
-  totalCount: function () {
-    return this.get('content.length');
-  }.property('content.length'),
+  totalCount: Em.computed.alias('content.length'),
 
   colPropAssoc: ['', 'serviceName', 'label', 'latestTimestamp', 'state', 'text'],
 
@@ -202,9 +200,7 @@ App.MainHostAlertsView = App.TableView.extend({
    * Filtered number of all content number information displayed on the page footer bar
    * @returns {String}
    */
-  filteredContentInfo: function () {
-    return this.t('alerts.filters.filteredAlertsInfo').format(this.get('filteredCount'), this.get('totalCount'));
-  }.property('filteredCount', 'totalCount'),
+  filteredContentInfo: Em.computed.i18nFormat('alerts.filters.filteredAlertsInfo', 'filteredCount', 'totalCount'),
 
   /**
    * Determines how display "back"-link - as link or text

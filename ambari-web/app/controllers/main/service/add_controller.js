@@ -25,6 +25,11 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   totalSteps: 8,
 
   /**
+   * @type {string}
+   */
+  displayName: Em.I18n.t('services.add.header'),
+
+  /**
    * Used for hiding back button in wizard
    */
   hideBackButton: true,
@@ -66,8 +71,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     configGroups: [],
     clients: [],
     additionalClients: [],
-    smokeuser: "ambari-qa",
-    group: "hadoop"
+    installedHosts: {}
   }),
 
   loadMap: {
@@ -118,19 +122,12 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
           var self = this;
           var dfd = $.Deferred();
           this.loadKerberosDescriptorConfigs().done(function() {
-            if (App.get('isClusterSupportsEnhancedConfigs')) {
-              var serviceNames = App.StackService.find().filter(function(s) {
-                return s.get('isSelected') || s.get('isInstalled');
-              }).mapProperty('serviceName');
-              self.loadConfigThemes().then(function() {
-                dfd.resolve();
-              });
-            }
-            else {
+            self.loadConfigThemes().then(function() {
               dfd.resolve();
-            }
+            });
             self.loadServiceConfigGroups();
             self.loadServiceConfigProperties();
+            self.loadCurrentHostGroups();
           });
           return dfd.promise();
         }
@@ -156,6 +153,10 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       wizardControllerName: this.get('name'),
       localdb: App.db.data
     });
+  },
+
+  loadCurrentHostGroups: function () {
+    this.set("content.recommendationsHostGroups", this.getDBProperty('recommendationsHostGroups'));
   },
 
   /**
@@ -213,7 +214,6 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       return !services.installedServices.contains(serviceName);
     }));
     this.setDBProperty('services', services);
-    console.log('AddServiceController.saveServices: saved data', stepController.get('content'));
 
     this.set('content.selectedServiceNames', selectedServiceNames);
     this.setDBProperty('selectedServiceNames', selectedServiceNames);
@@ -241,7 +241,6 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       });
     });
 
-    console.log("AddServiceController.saveMasterComponentHosts: saved hosts ", masterComponentHosts);
     this.setDBProperty('masterComponentHosts', masterComponentHosts);
     this.set('content.masterComponentHosts', masterComponentHosts);
 
@@ -339,97 +338,15 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
         });
       });
     }
-    if (!slaveComponentHosts) {
-      slaveComponentHosts = this.getSlaveComponentHosts();
-    }
+
+    this.set('content.installedHosts', this.getDBProperty('hosts') || this.get('content.hosts'));
     this.set("content.slaveComponentHosts", slaveComponentHosts);
-    console.log("AddServiceController.loadSlaveComponentHosts: loaded hosts ", slaveComponentHosts);
-  },
-
-  /**
-   * return slaveComponents bound to hosts
-   * @return {Array}
-   */
-  getSlaveComponentHosts: function () {
-    var components = this.get('slaveComponents');
-    var result = [];
-    var installedServices = App.Service.find().mapProperty('serviceName');
-    var selectedServices = this.get('content.services').filterProperty('isSelected', true).mapProperty('serviceName');
-    var installedComponentsMap = {};
-    var uninstalledComponents = [];
-    var hosts = this.getDBProperty('hosts') || this.get('content.hosts');
-    var masterComponents = App.get('components.masters');
-    var nonMasterComponentHosts = [];
-
-    components.forEach(function (component) {
-      if (installedServices.contains(component.get('serviceName'))) {
-        installedComponentsMap[component.get('componentName')] = [];
-      } else if (selectedServices.contains(component.get('serviceName'))) {
-        uninstalledComponents.push(component);
-      }
-    }, this);
-
-    for (var hostName in hosts) {
-      if (hosts[hostName].isInstalled) {
-        var isMasterComponentHosted = false;
-        hosts[hostName].hostComponents.forEach(function (component) {
-          if (installedComponentsMap[component.HostRoles.component_name]) {
-            installedComponentsMap[component.HostRoles.component_name].push(hostName);
-          }
-          if (masterComponents.contains(component.HostRoles.component_name)) {
-            isMasterComponentHosted = true;
-          }
-        }, this);
-        if (!isMasterComponentHosted) {
-          nonMasterComponentHosts.push(hostName);
-        }
-      }
-    }
-
-    for (var componentName in installedComponentsMap) {
-      var component = {
-        componentName: componentName,
-        displayName: App.format.role(componentName),
-        hosts: [],
-        isInstalled: true
-      };
-      installedComponentsMap[componentName].forEach(function (hostName) {
-        component.hosts.push({
-          group: "Default",
-          hostName: hostName,
-          isInstalled: true
-        });
-      }, this);
-      result.push(component);
-    }
-
-    if (!nonMasterComponentHosts.length) {
-      nonMasterComponentHosts.push(Object.keys(hosts)[0]);
-    }
-    var uninstalledComponentHosts =  nonMasterComponentHosts.map(function(_hostName){
-      return {
-        group: "Default",
-        hostName: _hostName,
-        isInstalled: false
-      }
-    });
-    uninstalledComponents.forEach(function (component) {
-      result.push({
-        componentName: component.get('componentName'),
-        displayName: App.format.role(component.get('componentName')),
-        hosts: uninstalledComponentHosts,
-        isInstalled: false
-      })
-    });
-
-    return result;
   },
 
   /**
    * Generate clients list for selected services and save it to model
-   * @param stepController step4WizardController
    */
-  saveClients: function (stepController) {
+  saveClients: function () {
     var clients = [];
     var serviceComponents = App.StackServiceComponent.find();
     this.get('content.services').filterProperty('isSelected').filterProperty('isInstalled',false).forEach(function (_service) {
@@ -445,7 +362,6 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
 
     this.setDBProperty('clientInfo', clients);
     this.set('content.clients', clients);
-    console.log("AddServiceController.saveClients: saved list ", clients);
   },
 
   /**

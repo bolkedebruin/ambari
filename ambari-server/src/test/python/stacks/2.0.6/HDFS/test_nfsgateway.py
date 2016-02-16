@@ -61,7 +61,7 @@ class TestNFSGateway(RMFTestCase):
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop/root',
                               owner = 'root',
-                              recursive = True,
+                              create_parents = True,
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop/root',
                               owner = 'root',
@@ -89,20 +89,14 @@ class TestNFSGateway(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('File', '/var/run/hadoop/root/hadoop_privileged_nfs3.pid',
-        action = ['delete'],
-        not_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/root/hadoop_privileged_nfs3.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/root/hadoop_privileged_nfs3.pid",
-    )
     self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop nfs3',
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec',
            'HADOOP_PRIVILEGED_NFS_LOG_DIR': u'/var/log/hadoop/root',
            'HADOOP_PRIVILEGED_NFS_PID_DIR': u'/var/run/hadoop/root',
            'HADOOP_PRIVILEGED_NFS_USER': u'hdfs'},
-        not_if = None,
-    )
-    self.assertResourceCalled('File', '/var/run/hadoop/root/hadoop_privileged_nfs3.pid',
-                              action = ['delete'],
-                              )
+        only_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/root/hadoop_privileged_nfs3.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/root/hadoop_privileged_nfs3.pid")
+
+    self.assertResourceCalled('File', '/var/run/hadoop/root/hadoop_privileged_nfs3.pid', action = ['delete'])
     self.assertNoMoreResources()
 
   def test_configure_secured(self):
@@ -134,7 +128,7 @@ class TestNFSGateway(RMFTestCase):
                               )
     self.assertResourceCalled('Directory', '/var/run/hadoop/root',
                               owner = 'root',
-                              recursive = True,
+                              create_parents = True,
                               )
     self.assertResourceCalled('Directory', '/var/log/hadoop/root',
                               owner = 'root',
@@ -162,28 +156,22 @@ class TestNFSGateway(RMFTestCase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('File', '/var/run/hadoop/root/hadoop_privileged_nfs3.pid',
-        action = ['delete'],
-        not_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/root/hadoop_privileged_nfs3.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/root/hadoop_privileged_nfs3.pid",
-    )
     self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/lib/hadoop/sbin/hadoop-daemon.sh --config /etc/hadoop/conf stop nfs3',
         environment = {'HADOOP_LIBEXEC_DIR': '/usr/lib/hadoop/libexec',
            'HADOOP_PRIVILEGED_NFS_LOG_DIR': u'/var/log/hadoop/root',
            'HADOOP_PRIVILEGED_NFS_PID_DIR': u'/var/run/hadoop/root',
            'HADOOP_PRIVILEGED_NFS_USER': u'hdfs'},
-        not_if = None,
-    )
-    self.assertResourceCalled('File', '/var/run/hadoop/root/hadoop_privileged_nfs3.pid',
-                              action = ['delete'],
-                              )
+        only_if = "ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop/root/hadoop_privileged_nfs3.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop/root/hadoop_privileged_nfs3.pid")
+
+    self.assertResourceCalled('File', '/var/run/hadoop/root/hadoop_privileged_nfs3.pid', action = ['delete'])
     self.assertNoMoreResources()
 
   def assert_configure_default(self):
     self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-i386-32',
-        recursive = True,
+        create_parents = True,
     )
     self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-amd64-64',
-        recursive = True,
+        create_parents = True,
     )
     self.assertResourceCalled('Link', '/usr/lib/hadoop/lib/native/Linux-i386-32/libsnappy.so',
         to = '/usr/lib/hadoop/lib/libsnappy.so',
@@ -194,7 +182,7 @@ class TestNFSGateway(RMFTestCase):
     self.assertResourceCalled('Directory', '/etc/security/limits.d',
                               owner = 'root',
                               group = 'root',
-                              recursive = True,
+                              create_parents = True,
                               )
     self.assertResourceCalled('File', '/etc/security/limits.d/hdfs.conf',
                               content = Template('hdfs.conf.j2'),
@@ -221,14 +209,18 @@ class TestNFSGateway(RMFTestCase):
                               content = Template('slaves.j2'),
                               owner = 'hdfs',
                               )
+    self.assertResourceCalled('Directory', '/tmp/.hdfs-nfs',
+        owner = 'hdfs',
+        group = 'hadoop',
+    )
 
 
   def assert_configure_secured(self):
     self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-i386-32',
-        recursive = True,
+        create_parents = True,
     )
     self.assertResourceCalled('Directory', '/usr/lib/hadoop/lib/native/Linux-amd64-64',
-        recursive = True,
+        create_parents = True,
     )
     self.assertResourceCalled('Link', '/usr/lib/hadoop/lib/native/Linux-i386-32/libsnappy.so',
         to = '/usr/lib/hadoop/lib/libsnappy.so',
@@ -239,7 +231,7 @@ class TestNFSGateway(RMFTestCase):
     self.assertResourceCalled('Directory', '/etc/security/limits.d',
                               owner = 'root',
                               group = 'root',
-                              recursive = True,
+                              create_parents = True,
                               )
     self.assertResourceCalled('File', '/etc/security/limits.d/hdfs.conf',
                               content = Template('hdfs.conf.j2'),
@@ -266,6 +258,10 @@ class TestNFSGateway(RMFTestCase):
                               content = Template('slaves.j2'),
                               owner = 'root',
                               )
+    self.assertResourceCalled('Directory', '/tmp/.hdfs-nfs',
+        owner = 'hdfs',
+        group = 'hadoop',
+    )
 
 
 
@@ -384,7 +380,7 @@ class TestNFSGateway(RMFTestCase):
     self.assertNoMoreResources()
 
   @patch("resource_management.core.shell.call")
-  def test_pre_rolling_restart(self, call_mock):
+  def test_pre_upgrade_restart(self, call_mock):
     call_mock.side_effects = [(0, None), (0, None)]
     config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
     with open(config_file, "r") as f:
@@ -395,11 +391,12 @@ class TestNFSGateway(RMFTestCase):
     json_content['hostLevelParams']['stack_version'] = stack_version
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nfsgateway.py",
                        classname = "NFSGateway",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
-                       call_mocks = [(0, None), (0, None), (0, None), (0, None)])
+                       call_mocks = [(0, None, ''), (0, None), (0, None), (0, None)])
+    self.assertResourceCalled('Link', ('/etc/hadoop/conf'), to='/usr/hdp/current/hadoop-client/conf')
     self.assertResourceCalled('Execute',
-                              ('hdp-select', 'set', 'hadoop-hdfs-nfs3', version), sudo=True,)
+                              ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'hadoop-hdfs-nfs3', version), sudo=True,)
     self.assertNoMoreResources()

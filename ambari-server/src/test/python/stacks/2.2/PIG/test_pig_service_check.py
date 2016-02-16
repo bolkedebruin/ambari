@@ -21,7 +21,6 @@ from mock.mock import patch, MagicMock
 
 from stacks.utils.RMFTestCase import *
 
-
 class TestPigServiceCheck(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "PIG/0.12.0.2.0/package"
   STACK_VERSION = "2.2"
@@ -47,6 +46,7 @@ class TestPigServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs@EXAMPLE.COM',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'directory',
@@ -62,6 +62,7 @@ class TestPigServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs@EXAMPLE.COM',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'file',
@@ -76,8 +77,12 @@ class TestPigServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs@EXAMPLE.COM',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'],
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
+    )
+    self.assertResourceCalled('Execute', '/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM;',
+        user = 'ambari-qa',
     )
     self.assertResourceCalled("File", "/tmp/pigSmoke.sh",
       content=StaticFile("pigSmoke.sh"),
@@ -104,6 +109,7 @@ class TestPigServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs@EXAMPLE.COM',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'directory',
@@ -119,13 +125,14 @@ class TestPigServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs@EXAMPLE.COM',
         user = 'hdfs',
+        dfs_type = '',
         owner = 'ambari-qa',
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
         type = 'file',
         action = ['create_on_execute'],
     )
 
-    copy_to_hdfs_mock.assert_called_with("tez", "hadoop", "hdfs")
+    copy_to_hdfs_mock.assert_called_with("tez", "hadoop", "hdfs", host_sys_prepped=False)
     self.assertResourceCalled('HdfsResource', None,
         security_enabled = True,
         hadoop_bin_dir = '/usr/hdp/current/hadoop-client/bin',
@@ -135,12 +142,10 @@ class TestPigServiceCheck(RMFTestCase):
         kinit_path_local = '/usr/bin/kinit',
         principal_name = 'hdfs@EXAMPLE.COM',
         user = 'hdfs',
+        dfs_type = '',
         action = ['execute'],
         hadoop_conf_dir = '/usr/hdp/current/hadoop-client/conf',
     )
-
-    self.assertResourceCalled("Execute", "/usr/bin/kinit -kt /etc/security/keytabs/smokeuser.headless.keytab ambari-qa@EXAMPLE.COM;",
-      user="ambari-qa")
 
     self.assertResourceCalled("Execute", "pig -x tez /tmp/pigSmoke.sh",
       tries=3,

@@ -31,6 +31,8 @@ from ambari_commons.os_family_impl import OsFamilyImpl
 
 class AmsCollector(Script):
   def install(self, env):
+    import params
+    env.set_params(params)
     self.install_packages(env)
 
   def configure(self, env, action = None):
@@ -42,6 +44,8 @@ class AmsCollector(Script):
 
   def start(self, env):
     self.configure(env, action = 'start') # for security
+    # stop hanging components before start
+    ams_service('collector', action = 'stop')
     ams_service('collector', action = 'start')
 
   def stop(self, env):
@@ -83,7 +87,7 @@ class AmsCollectorDefault(AmsCollector):
     security_params = get_params_from_filesystem(status_params.ams_hbase_conf_dir,
                                                  {'hbase-site.xml': FILE_TYPE_XML})
 
-    is_hbase_distributed = security_params['hbase-site']['hbase.rootdir'].startswith('hdfs://')
+    is_hbase_distributed = security_params['hbase-site']['hbase.cluster.distributed']
     # for embedded mode, when HBase is backed by file, security state is SECURED_KERBEROS by definition when cluster is secured
     if status_params.security_enabled and not is_hbase_distributed:
       self.put_structured_out({"securityState": "SECURED_KERBEROS"})

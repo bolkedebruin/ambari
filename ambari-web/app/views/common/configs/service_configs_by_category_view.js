@@ -80,9 +80,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
    * Without this property, all serviceConfigs Objects will show up even if some was collapsed before.
    * @type {boolean}
    */
-  isCategoryBodyVisible: function () {
-    return this.get('category.isCollapsed') ? "display: none;" : "display: block;"
-  }.property('serviceConfigs.length'),
+  isCategoryBodyVisible: Em.computed.ifThenElse('category.isCollapsed', 'display: none;', 'display: block;'),
 
   /**
    * Should we show config group or not
@@ -321,7 +319,6 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
       selector: '[data-toggle=tooltip]',
       placement: 'top'
     });
-    this.updateReadOnlyFlags();
     this.filteredCategoryConfigs();
     Em.run.next(function () {
       self.updateReadOnlyFlags();
@@ -347,14 +344,14 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
       name: propertyObj.name,
       displayName: propertyObj.displayName || propertyObj.name,
       value: propertyObj.value,
-      displayType: stringUtils.isSingleLine(propertyObj.value) ? 'advanced' : 'multiLine',
+      displayType: stringUtils.isSingleLine(propertyObj.value) ? 'string' : 'multiLine',
       isSecureConfig: isSecureConfig,
       category: propertyObj.categoryName,
-      id: 'site property',
       serviceName: propertyObj.serviceName,
       savedValue: null,
       recommendedValue: null,
       supportsFinal: App.config.shouldSupportFinal(propertyObj.serviceName, propertyObj.filename),
+      supportsAddingForbidden: false, //Can add a new property implies the given categrary allows adding new properties...
       filename: propertyObj.filename || '',
       isUserProperty: true,
       isNotSaved: true,
@@ -386,10 +383,9 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
         var serviceName = service.get('serviceName');
 
         var configsOfFile = service.get('configs').filterProperty('filename', siteFileName);
-        var siteFileProperties = App.config.get('configMapping').all().filterProperty('filename', siteFileName);
 
         function isDuplicatedConfigKey(name) {
-          return siteFileProperties.findProperty('name', name) || configsOfFile.findProperty('name', name);
+          return configsOfFile.findProperty('name', name);
         }
 
         var serviceConfigObj = Ember.Object.create({
@@ -518,9 +514,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
           },
           bodyClass: Em.View.extend({
             fileName: siteFileName,
-            notMisc: function () {
-              return serviceName !== 'MISC';
-            }.property(),
+            notMisc: serviceName !== 'MISC',
             templateName: require('templates/common/configs/addPropertyWindow'),
             controllerBinding: 'App.router.mainServiceInfoConfigsController',
             serviceConfigObj: serviceConfigObj,
@@ -567,20 +561,20 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
   removeProperty: function (event) {
     var serviceConfigProperty = event.contexts[0];
     this.get('serviceConfigs').removeObject(serviceConfigProperty);
-    if (App.get('isClusterSupportsEnhancedConfigs')) {
-      var deletedConfig = App.ConfigProperty.find().find(function(cp) {
-        return cp.get('name') === serviceConfigProperty.get('name')
-          && cp.get('fileName') === serviceConfigProperty.get('filename')
-          && cp.get('isOriginalSCP');
-      });
-      if (deletedConfig) {
-        deletedConfig.deleteRecord();
-        App.store.commit();
-      }
-    }
     // push config's file name if this config was stored on server
     if (!serviceConfigProperty.get('isNotSaved')) {
-      this.get('controller').get('modifiedFileNames').push(serviceConfigProperty.get('filename'));
+      var modifiedFileNames = this.get('controller.modifiedFileNames'),
+        wizardController = this.get('controller.wizardController'),
+        filename = serviceConfigProperty.get('filename');
+      if (modifiedFileNames && !modifiedFileNames.contains(filename)) {
+        modifiedFileNames.push(serviceConfigProperty.get('filename'));
+      } else if (wizardController) {
+        var fileNamesToUpdate = wizardController.getDBProperty('fileNamesToUpdate') || [];
+        if (!fileNamesToUpdate.contains(filename)) {
+          fileNamesToUpdate.push(filename);
+          wizardController.setDBProperty('fileNamesToUpdate', fileNamesToUpdate);
+        }
+      }
     }
     Em.$('body>.tooltip').remove(); //some tooltips get frozen when their owner's DOM element is removed
   },

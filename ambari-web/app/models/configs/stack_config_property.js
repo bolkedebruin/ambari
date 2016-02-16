@@ -17,7 +17,7 @@
  */
 
 var App = require('app');
-
+//TODO delete this file soon
 App.StackConfigProperty = DS.Model.extend({
   /**
    * id is consist of property <code>name<code>+<code>fileName<code>
@@ -47,9 +47,7 @@ App.StackConfigProperty = DS.Model.extend({
    * same as fileName
    * @property {string}
    */
-  filename: function() {
-    return this.get('fileName');
-  }.property('fileName'),
+  filename: Em.computed.alias('fileName'),
 
   /**
    * description of config property meaning
@@ -107,6 +105,12 @@ App.StackConfigProperty = DS.Model.extend({
   widget: DS.attr('object', {defaultValue: null}),
 
   /**
+   * widget type
+   * @property {string}
+   */
+  widgetType: DS.attr('string', {defaultValue: null}),
+
+  /**
    * this property contains array of properties which value
    * is dependent from current property
    * @property {array}
@@ -156,14 +160,19 @@ App.StackConfigProperty = DS.Model.extend({
    */
   subSection: DS.belongsTo('App.SubSection'),
 
+  /**
+   * sub section tab to which belongs this property
+   * @property {App.SubSectionTab}
+   */
+  subSectionTab: DS.belongsTo('App.SubSectionTab'),
+
   /******************************* UI properties ****************************************/
 
   /**
-   * defines what kind of value this property contains
-   * ex: string, digits, number, directories, custom
-   * @property {string}
+   * if property should be saved to server
+   * @property {boolean}
    */
-  displayType: DS.attr('string', {defaultValue: 'string'}),
+  isRequiredByAgent: DS.attr('boolean', {defaultValue: true}),
 
   /**
    * defines category name of property
@@ -187,8 +196,97 @@ App.StackConfigProperty = DS.Model.extend({
   /**
    * @type {boolean}
    */
-  index: DS.attr('number', {defaultValue: null})
+  index: DS.attr('number', {defaultValue: null}),
+
+  /**
+   * defines what kind of value this property contains
+   * ex: string, digits, number, directories, custom
+   * @property {string}
+   */
+  displayType: function() {
+    return this.getAttribute('type', 'string');
+  }.property('valueAttributes.type'),
+
+  /**
+   * defines if the property can be overriden in the host config group
+   * @type {boolean}
+   */
+  isOverridable: function() {
+    return this.getAttribute('overridable', true);
+  }.property('valueAttributes.overridable'),
+
+  /**
+   * defines if the property is visible or hidden
+   * @type {boolean}
+   */
+  isVisible: function() {
+    return this.getAttribute('visible', true);
+  }.property('valueAttributes.visible'),
+
+  /**
+   * defines if the value of property can be left empty or not
+   * @type {boolean}
+   */
+  isRequired: function() {
+    return !this.getAttribute('empty_value_valid', false);
+  }.property('valueAttributes.empty_value_valid'),
+
+  /**
+   * defines if the value of property can be reconfigured post-install
+   * @type {boolean}
+   */
+  isReconfigurable: function() {
+    return !this.getAttribute('editable_only_at_install', false);
+  }.property('valueAttributes.editable_only_at_install'),
+
+  /**
+   * defines if the name of the property is visible or hidden
+   * @type {boolean}
+   */
+  showLabel: function() {
+    return this.getAttribute('show_property_name', true);
+  }.property('valueAttributes.show_property_name'),
+
+  /**
+   * defines if the property is editable or not
+   * @type {boolean}
+   */
+  isEditable: function() {
+    return this.getAttribute('read_only' ,true);
+  }.property('valueAttributes.read_only'),
+
+  /**
+   * defines if the property is editable or not
+   * @type {boolean}
+   */
+  unit: function() {
+    return this.getAttribute('unit', '');
+  }.property('valueAttributes.unit'),
+
+  /**
+   *
+   * @param propertyName
+   * @param defaultValue
+   * @returns {string}
+   */
+  getAttribute: function(propertyName, defaultValue) {
+    var result = defaultValue;
+    if (!Em.empty(this.get('valueAttributes.' + propertyName))) {
+      result = this.get('valueAttributes.' + propertyName);
+    }
+    return result;
+  }
 });
 
 
 App.StackConfigProperty.FIXTURES = [];
+
+App.StackConfigValAttributesMap = {
+  'overridable': 'isOverridable' ,
+  'visible': 'isVisible' ,
+  'empty_value_valid':'isRequired' ,
+  'editable_only_at_install': 'isReconfigurable' ,
+  'show_property_name': 'showLabel',
+  'read_only': 'isEditable',
+  'ui_only_property': 'isRequiredByAgent'
+};

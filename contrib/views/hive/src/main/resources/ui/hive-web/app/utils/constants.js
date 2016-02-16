@@ -39,6 +39,7 @@ export default Ember.Object.create({
       logs: 'logs',
       results: 'results',
       explain: 'explain',
+      uploadTable :'upload-table',
       visualization: 'visualization'
     },
 
@@ -89,6 +90,7 @@ export default Ember.Object.create({
       name: 'hive.tez.container.size',
       validate: helpers.regexes.digits
     },
+
     {
       name: 'hive.prewarm.enabled',
       values: helpers.validationValues.bool
@@ -107,6 +109,10 @@ export default Ember.Object.create({
     },
     {
       name: 'hive.vectorized.execution.enabled',
+      values: helpers.validationValues.bool
+    },
+    {
+      name: 'hive.auto.convert.join',
       values: helpers.validationValues.bool
     },
     {
@@ -222,5 +228,6 @@ export default Ember.Object.create({
     comment: "--Global Settings--\n\n"
   },
 
-  visualizationRowCount: 30000
+  defaultVisualizationRowCount: 10000
+
 });

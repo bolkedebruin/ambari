@@ -92,6 +92,16 @@ var urls = {
     'mock': '/data/wizard/deploy/poll_1.json'
   },
 
+  'common.service.hdfs.getNnCheckPointTime': {
+    'real': '/clusters/{clusterName}/services/HDFS/components/NAMENODE?fields=host_components/metrics/dfs/FSNamesystem/HAState,host_components/metrics/dfs/FSNamesystem/LastCheckpointTime',
+    'mock': ''
+  },
+
+  'common.host_component.getNnCheckPointTime': {
+    'real': '/clusters/{clusterName}/hosts/{host}/host_components/NAMENODE?fields=metrics/dfs/FSNamesystem/HAState,metrics/dfs/FSNamesystem/LastCheckpointTime',
+    'mock': ''
+  },
+
   'common.host_component.update': {
     'real': '/clusters/{clusterName}/host_components',
     'mock': '',
@@ -626,6 +636,18 @@ var urls = {
     'mock': '/data/configurations/theme_services.json'
   },
 
+  /*************************CONFIG QUICKLINKS****************************************/
+
+  'configs.quicklinksconfig': {
+    'real': '{stackVersionUrl}/services/{serviceName}/quicklinks?QuickLinkInfo/default=true&fields=*',
+    'mock': '/data/configurations/quicklinks.json'
+  },
+
+  'configs.quicklinksconfig.services': {
+    'real': '{stackVersionUrl}/services?StackServices/service_name.in({serviceNames})&quicklinks/QuickLinkInfo/default=true&fields=quicklinks/*',
+    'mock': '/data/configurations/quicklinks_services.json'
+  },
+
   /*************************CONFIG GROUPS***************************************/
 
   'configs.config_groups.load.all': {
@@ -741,6 +763,10 @@ var urls = {
     'real': '/clusters/{clusterName}?fields=Clusters/desired_configs',
     'mock': '/data/clusters/cluster.json'
   },
+  'config.tags.site': {
+    'real': '/clusters/{clusterName}?fields=Clusters/desired_configs/{site}',
+    'mock': ''
+  },
   'config.tags_and_groups': {
     'real': '/clusters/{clusterName}?fields=Clusters/desired_configs,config_groups/*{urlParams}',
     'mock': '/data/clusters/tags_and_groups.json'
@@ -779,6 +805,53 @@ var urls = {
   'config.cluster_env_site': {
     'real': '/clusters/{clusterName}/configurations?type=cluster-env',
     'mock': '/data/configuration/cluster_env_site.json'
+  },
+
+  'credentials.store.info': {
+    'real': '/clusters/{clusterName}?fields=Clusters/credential_store_properties',
+    'mock': ''
+  },
+
+  'credentials.list': {
+    'real': '/clusters/{clusterName}/credentials?fields=Credential/*',
+    'mock': ''
+  },
+
+  'credentials.get': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': ''
+  },
+
+  'credentials.create': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': '',
+    type: 'POST',
+    'format': function(data) {
+      return {
+        data: JSON.stringify({
+          Credential: data.resource
+        })
+      };
+    }
+  },
+
+  'credentials.update': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function(data) {
+      return {
+        data: JSON.stringify({
+          Credential: data.resource
+        })
+      };
+    }
+  },
+
+  'credentials.delete': {
+    'real': '/clusters/{clusterName}/credentials/{alias}',
+    'mock': '',
+    'type':'DELETE'
   },
 
   'host.host_component.add_new_component': {
@@ -913,6 +986,12 @@ var urls = {
   'service.metrics.flume.channel_size_for_all': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
+  'service.metrics.flume.channel_size_for_all.mma': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate/avg[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/ChannelSize/rate/max[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/ChannelSize/rate/min[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.channel_size_for_all.sum': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/ChannelSize/rate/sum[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
   'service.metrics.flume.gc': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=host_components/metrics/jvm/gcTimeMillis[{fromSeconds},{toSeconds},{stepSeconds}]',
     'mock': '/data/services/metrics/flume/jvmGcTime.json',
@@ -936,8 +1015,20 @@ var urls = {
   'service.metrics.flume.incoming_event_put_successCount': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
+  'service.metrics.flume.incoming_event_put_successCount.mma': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/avg[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/max[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/min[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.incoming_event_put_successCount.sum': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventPutSuccessCount/rate/sum[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
   'service.metrics.flume.outgoing_event_take_success_count': {
     'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.outgoing_event_take_success_count.mma': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/avg[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/max[{fromSeconds},{toSeconds},{stepSeconds}],metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/min[{fromSeconds},{toSeconds},{stepSeconds}]'
+  },
+  'service.metrics.flume.outgoing_event_take_success_count.sum': {
+    'real': '/clusters/{clusterName}/services/FLUME/components/FLUME_HANDLER?fields=metrics/flume/flume/CHANNEL/EventTakeSuccessCount/rate/sum[{fromSeconds},{toSeconds},{stepSeconds}]'
   },
   'service.metrics.hbase.cluster_requests': {
     'real': '/clusters/{clusterName}/services/HBASE/components/HBASE_MASTER?fields=metrics/hbase/master/cluster_requests[{fromSeconds},{toSeconds},{stepSeconds}]',
@@ -1218,7 +1309,7 @@ var urls = {
     'mock': '/data/clusters/info.json'
   },
   'cluster.load_last_upgrade': {
-    'real': '/clusters/{clusterName}/upgrades?fields=Upgrade/request_status,Upgrade/request_id,Upgrade/to_version,Upgrade/direction',
+    'real': '/clusters/{clusterName}/upgrades?fields=Upgrade/request_status,Upgrade/request_id,Upgrade/to_version,Upgrade/from_version,Upgrade/direction,Upgrade/upgrade_type,Upgrade/downgrade_allowed,Upgrade/skip_failures,Upgrade/skip_service_check_failures',
     'mock': '/data/stack_versions/upgrades.json'
   },
   'cluster.update_upgrade_version': {
@@ -1298,7 +1389,7 @@ var urls = {
     'real': '/clusters/{clusterName}/configurations?(type=core-site&tag={coreSiteTag})|(type=hdfs-site&tag={hdfsSiteTag})',
     'mock': ''
   },
-  'admin.high_availability.save_configs': {
+  'admin.save_configs': {
     'real': '/clusters/{clusterName}',
     'mock': '',
     'type': 'PUT',
@@ -1380,6 +1471,21 @@ var urls = {
         data: JSON.stringify({
           Clusters: {
             security_type: "NONE"
+          }
+        })
+      }
+    }
+  },
+
+  'admin.kerberize.cluster.force': {
+    'type': 'PUT',
+    'real': '/clusters/{clusterName}?force_toggle_kerberos=true',
+    'mock': '/data/wizard/kerberos/kerberize_cluster.json',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          Clusters: {
+            security_type: "KERBEROS"
           }
         })
       }
@@ -1483,16 +1589,16 @@ var urls = {
   },
   'admin.upgrade.data': {
     'real': '/clusters/{clusterName}/upgrades/{id}?upgrade_groups/UpgradeGroup/status!=PENDING&fields=' +
-    'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,' +
+    'Upgrade/progress_percent,Upgrade/request_context,Upgrade/request_status,Upgrade/direction,Upgrade/downgrade_allowed,' +
     'upgrade_groups/UpgradeGroup,' +
     'upgrade_groups/upgrade_items/UpgradeItem/status,' +
+    'upgrade_groups/upgrade_items/UpgradeItem/display_status,' +
     'upgrade_groups/upgrade_items/UpgradeItem/context,' +
     'upgrade_groups/upgrade_items/UpgradeItem/group_id,' +
     'upgrade_groups/upgrade_items/UpgradeItem/progress_percent,' +
     'upgrade_groups/upgrade_items/UpgradeItem/request_id,' +
     'upgrade_groups/upgrade_items/UpgradeItem/skippable,' +
     'upgrade_groups/upgrade_items/UpgradeItem/stage_id,' +
-    'upgrade_groups/upgrade_items/UpgradeItem/status,' +
     'upgrade_groups/upgrade_items/UpgradeItem/text&' +
     'minimal_response=true',
     'mock': '/data/stack_versions/upgrade.json'
@@ -1516,6 +1622,21 @@ var urls = {
   'admin.upgrade.service_checks': {
     'real': '/clusters/{clusterName}/upgrades/{upgradeId}/upgrade_groups?upgrade_items/UpgradeItem/status=COMPLETED&upgrade_items/tasks/Tasks/status.in(FAILED,ABORTED,TIMEDOUT)&upgrade_items/tasks/Tasks/command=SERVICE_CHECK&fields=upgrade_items/tasks/Tasks/command_detail,upgrade_items/tasks/Tasks/status&minimal_response=true'
   },
+  'admin.upgrade.update.options': {
+    'real': '/clusters/{clusterName}/upgrades/{upgradeId}',
+    'mock': '/data/stack_versions/start_upgrade.json',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          "Upgrade": {
+            "skip_failures": data.skipComponentFailures,
+            "skip_service_check_failures": data.skipSCFailures
+          }
+        })
+      }
+    }
+  },
   'admin.upgrade.start': {
     'real': '/clusters/{clusterName}/upgrades',
     'mock': '/data/stack_versions/start_upgrade.json',
@@ -1524,7 +1645,10 @@ var urls = {
       return {
         data: JSON.stringify({
           "Upgrade": {
-            "repository_version": data.value
+            "repository_version": data.value,
+            "upgrade_type": data.type,
+            "skip_failures": data.skipComponentFailures,
+            "skip_service_check_failures": data.skipSCFailures
           }
         })
       }
@@ -1542,7 +1666,8 @@ var urls = {
           },
           "Upgrade": {
             "from_version": data.from,
-            "repository_version": data.value
+            "repository_version": data.value,
+            "upgrade_type": data.upgradeType
           }
         })
       }
@@ -1555,6 +1680,9 @@ var urls = {
     'format': function (data) {
       return {
         data: JSON.stringify({
+          "RequestInfo": {
+            "downgrade": data.isDowngrade
+          },
           "Upgrade": {
             "request_status": "ABORTED"
           }
@@ -1632,9 +1760,14 @@ var urls = {
     }
   },
 
-  'admin.rolling_upgrade.pre_upgrade_check': {
-    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={value}',
+  'admin.upgrade.pre_upgrade_check': {
+    'real': '/clusters/{clusterName}/rolling_upgrades_check?fields=*&UpgradeChecks/repository_version={value}&UpgradeChecks/upgrade_type={type}',
     'mock': '/data/stack_versions/pre_upgrade_check.json'
+  },
+
+  'admin.upgrade.get_supported_upgradeTypes': {
+    'real': '/stacks/{stackName}/versions/{stackVersion}/compatible_repository_versions?CompatibleRepositoryVersions/repository_version={toVersion}',
+    'mock': '/data/stack_versions/supported_upgrade_types.json'
   },
 
   'admin.kerberos_security.checks': {
@@ -1958,12 +2091,20 @@ var urls = {
     mock: '/data/users/privileges.json'
   },
   'router.user.privileges': {
-    real: '/privileges?PrivilegeInfo/principal_name={userName}&fields=*',
+    real: '/users/{userName}/privileges?fields=*',
+    mock: '/data/users/privileges_{userName}.json'
+  },
+  'router.user.authorizations': {
+    real: '/users/{userName}/authorizations?fields=*',
     mock: '/data/users/privileges_{userName}.json'
   },
   'router.login.clusters': {
     'real': '/clusters?fields=Clusters/provisioning_state',
     'mock': '/data/clusters/info.json'
+  },
+  'router.login.message': {
+    'real': '/settings/motd',
+    'mock': '/data/settings/motd.json'
   },
   'router.logoff': {
     'real': '/logout',
@@ -1987,15 +2128,7 @@ var urls = {
     'format': function (data) {
       return {
         type: 'POST',
-        data: JSON.stringify([{
-          "ConfigGroup": {
-            "group_name": data.group_name,
-            "tag": data.service_id,
-            "description": data.description,
-            "desired_configs": data.desired_configs,
-            "hosts": data.hosts
-          }
-        }])
+        data: JSON.stringify(data.data)
       }
     }
   },
@@ -2047,6 +2180,28 @@ var urls = {
             "operation_level": data.operation_level
           },
           "Requests/resource_filters": data.resource_filters
+        })
+      }
+    }
+  },
+
+  'restart.staleConfigs': {
+    'real': "/clusters/{clusterName}/requests",
+    'mock': "",
+    'format': function () {
+      return {
+        type: 'POST',
+        data: JSON.stringify({
+          "RequestInfo": {
+            "command": "RESTART",
+            "context": "Restart all required services",
+            "operation_level": "host_component"
+          },
+          "Requests/resource_filters": [
+            {
+              "hosts_predicate": "HostRoles/stale_configs=true"
+            }
+          ]
         })
       }
     }
@@ -2200,6 +2355,27 @@ var urls = {
     'real': '/clusters/{clusterName}/components?fields=host_components/HostRoles/host_name,ServiceComponentInfo/component_name,ServiceComponentInfo/started_count{urlParams}&minimal_response=true',
     'mock': ''
   },
+  'components.get_category': {
+    'real': '/clusters/{clusterName}/components?fields=ServiceComponentInfo/component_name,ServiceComponentInfo/service_name,ServiceComponentInfo/category,ServiceComponentInfo/recovery_enabled&minimal_response=true',
+    'mock': ''
+  },
+  'components.update': {
+    'real': '/clusters/{clusterName}/components?{urlParams}',
+    'mock': '',
+    'type': 'PUT',
+    'format': function (data) {
+      return {
+        data: JSON.stringify({
+          RequestInfo: {
+            query: data.query
+          },
+          Body: {
+            ServiceComponentInfo: data.ServiceComponentInfo
+          }
+        })
+      }
+    }
+  },
   'hosts.all.install': {
     'real': '/hosts?minimal_response=true',
     'mock': ''
@@ -2213,7 +2389,7 @@ var urls = {
     'mock': ''
   },
   'hosts.for_quick_links': {
-    'real': '/clusters/{clusterName}/hosts?Hosts/host_name.in({masterHosts})&fields=Hosts/public_host_name,host_components/HostRoles/component_name{urlParams}&minimal_response=true',
+    'real': '/clusters/{clusterName}/hosts?Hosts/host_name.in({masterHosts})&fields=Hosts/public_host_name{urlParams}&minimal_response=true',
     'mock': '/data/hosts/quick_links.json'
   },
   'hosts.confirmed.install': {
@@ -2223,6 +2399,21 @@ var urls = {
   'hosts.confirmed': {
     'real': '/clusters/{clusterName}/hosts?fields=Hosts/cpu_count,Hosts/disk_info,Hosts/total_mem,Hosts/os_type,Hosts/os_arch,Hosts/ip,host_components/HostRoles/state&minimal_response=true',
     'mock': '/data/hosts/HDP2/hosts.json'
+  },
+  'hosts.with_searchTerm': {
+    'real': '/clusters/{clusterName}/hosts?fields=Hosts/{facet}&minimal_response=true&page_size={page_size}',
+    'mock': '',
+    format: function (data) {
+      return {
+        headers: {
+          'X-Http-Method-Override': 'GET'
+        },
+        type: 'POST',
+        data: JSON.stringify({
+          "RequestInfo": {"query": (data.searchTerm ? "Hosts/"+ data.facet +".matches(.*" + data.searchTerm + ".*)" : "")}
+        })
+      };
+    }
   },
   'host_components.all': {
     'real': '/clusters/{clusterName}/host_components?fields=HostRoles/host_name&minimal_response=true',
@@ -2266,6 +2457,29 @@ var urls = {
       }
     }
   },
+
+  'cluster.custom_action.create': {
+    'real': '/clusters/{clusterName}/requests',
+    'mock': '',
+    'format': function (data) {
+      var requestInfo = {
+        context: 'Check host',
+        action: 'check_host',
+        parameters: {}
+      };
+      $.extend(true, requestInfo, data.requestInfo);
+      return {
+        type: 'POST',
+        data: JSON.stringify({
+          'RequestInfo': requestInfo,
+          'Requests/resource_filters': [{
+            hosts: data.filteredHosts.join(',')
+          }]
+        })
+      }
+    }
+  },
+
   'custom_action.request': {
     'real': '/requests/{requestId}/tasks/{taskId}',
     'mock': '/data/requests/1.json',
@@ -2632,7 +2846,7 @@ var formatRequest = function (data) {
     type: this.type || 'GET',
     timeout: App.timeout,
     dataType: 'json',
-    statusCode: require('data/statusCodes')
+    headers: {}
   };
   if (App.get('testMode')) {
     opt.url = formatUrl(this.mock ? this.mock : '', data);
@@ -2646,6 +2860,31 @@ var formatRequest = function (data) {
   if (this.format) {
     jQuery.extend(opt, this.format(data, opt));
   }
+  var statusCode = jQuery.extend({}, require('data/statusCodes'));
+  statusCode['404'] = function () {
+    console.log("Error code 404: URI not found. -> " + opt.url);
+  };
+  opt.statusCode = statusCode;
+  return opt;
+};
+
+/**
+ * transform GET to POST call
+ * @param {object} opt
+ * @returns {object} opt
+ */
+var doGetAsPost = function(opt) {
+  var delimiterPos = opt.url.indexOf('?');
+
+  opt.type = "POST";
+  opt.headers["X-Http-Method-Override"] = "GET";
+  if (delimiterPos !== -1) {
+    opt.data = JSON.stringify({
+      "RequestInfo": {"query" : opt.url.substr(delimiterPos + 1, opt.url.length)}
+    });
+    opt.url = opt.url.substr(0, delimiterPos);
+  }
+  opt.url += '?_=' + App.dateTime();
   return opt;
 };
 
@@ -2655,6 +2894,13 @@ var formatRequest = function (data) {
  * @type {Object}
  */
 var ajax = Em.Object.extend({
+  /**
+   * max number of symbols in URL of GET call
+   * @const
+   * @type {number}
+   */
+  MAX_GET_URL_LENGTH: 2048,
+
   /**
    * Send ajax request
    *
@@ -2689,10 +2935,14 @@ var ajax = Em.Object.extend({
 
     var opt = {};
     if (!urls[config.name]) {
-      console.warn('Invalid name provided!');
+      console.warn('Invalid name provided `' + config.name + '`!');
       return null;
     }
     opt = formatRequest.call(urls[config.name], params);
+
+    if (opt.url && opt.url.length > this.get('MAX_GET_URL_LENGTH')) {
+      opt = doGetAsPost(opt);
+    }
 
     opt.context = this;
 
@@ -2703,7 +2953,6 @@ var ajax = Em.Object.extend({
       }
     };
     opt.success = function (data, textStatus, request) {
-      console.log("TRACE: The url is: " + opt.url);
       if (config.success) {
         config.sender[config.success](data, opt, params, request);
       }
@@ -2739,6 +2988,13 @@ var ajax = Em.Object.extend({
 
   // A single instance of App.ModalPopup view
   modalPopup: null,
+
+  /**
+   * Upon error with one of these statuses modal should be displayed
+   * @type {Array}
+   */
+  statuses: ['500', '401', '407', '413'],
+
   /**
    * defaultErrorHandler function is referred from App.ajax.send function and App.HttpClient.defaultErrorHandler function
    * @jqXHR {jqXHR Object}
@@ -2749,16 +3005,16 @@ var ajax = Em.Object.extend({
   defaultErrorHandler: function (jqXHR, url, method, showStatus) {
     method = method || 'GET';
     var self = this;
+    showStatus = (Em.isNone(showStatus)) ? this.get('statuses') : [showStatus];
     try {
       var json = $.parseJSON(jqXHR.responseText);
       var message = json.message;
     } catch (err) {
     }
-    if (!showStatus) {
-      showStatus = 500;
-    }
-    if (jqXHR.status === showStatus && !this.get('modalPopup')) {
+
+    if (showStatus.contains(jqXHR.status) && !this.get('modalPopup')) {
       this.set('modalPopup', App.ModalPopup.show({
+        elementId: 'default-error-modal',
         header: Em.I18n.t('common.error'),
         secondary: false,
         onPrimary: function () {
@@ -2842,6 +3098,16 @@ if ($.mocho) {
      */
     fakeFormatRequest: function (urlObj, data) {
       return formatRequest.call(urlObj, data);
+    },
+
+    /**
+     * Don't use it anywhere except tests!
+     * @param urlObj
+     * @param data
+     * @returns {Object}
+     */
+    fakeDoGetAsPost: function (urlObj, data) {
+      return doGetAsPost.call(urlObj, data);
     }
   });
 }

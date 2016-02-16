@@ -115,9 +115,7 @@ App.MainAdminStackVersionsView = Em.View.extend({
   /**
    * @type {object}
    */
-  selectedCategory: function () {
-    return this.get('categories').findProperty('isSelected');
-  }.property('categories.@each.isSelected'),
+  selectedCategory: Em.computed.findBy('categories', 'isSelected', true),
 
   /**
    * @type {Em.Array}
@@ -181,7 +179,6 @@ App.MainAdminStackVersionsView = Em.View.extend({
             }),
             sortedMappedVersions = mappedVersions.sort(),
             latestVersion = sortedMappedVersions[sortedMappedVersions.length-1];
-            console.log('/views/ADMIN_VIEW/' + latestVersion + '/INSTANCE/#/stackVersions');
             window.location.replace('/views/ADMIN_VIEW/' + latestVersion + '/INSTANCE/#/stackVersions');
         }
       });
@@ -202,7 +199,12 @@ App.MainAdminStackVersionsView = Em.View.extend({
    * stop polling upgrade state
    */
   willDestroyElement: function () {
+    var runningCheckRequests = this.get('controller.runningCheckRequests');
     window.clearTimeout(this.get('updateTimer'));
+    runningCheckRequests.forEach(function (request) {
+      request.abort();
+    });
+    runningCheckRequests.clear();
   },
 
   /**

@@ -27,6 +27,7 @@ import stat
 import string
 import sys
 import tempfile
+import ambari_server.serverClassPath
 
 from ambari_commons.exceptions import FatalException
 from ambari_commons.os_check import OSCheck, OSConst
@@ -83,8 +84,6 @@ JCE_NAME_PROPERTY = "jce.name"
 JDK_DOWNLOAD_SUPPORTED_PROPERTY = "jdk.download.supported"
 JCE_DOWNLOAD_SUPPORTED_PROPERTY = "jce.download.supported"
 
-# JDBC
-JDBC_PATTERNS = {"oracle": "*ojdbc*.jar", "mysql": "*mysql*.jar", "mssql": "*sqljdbc*.jar"}
 
 #TODO property used incorrectly in local case, it was meant to be dbms name, not postgres database name,
 # has workaround for now, as we don't need dbms name if persistence_type=local
@@ -107,7 +106,6 @@ SERVER_VERSION_FILE_PATH = "server.version.file"
 
 PERSISTENCE_TYPE_PROPERTY = "server.persistence.type"
 JDBC_DRIVER_PROPERTY = "server.jdbc.driver"
-JDBC_DRIVER_PATH_PROPERTY = "server.jdbc.driver.path"
 JDBC_URL_PROPERTY = "server.jdbc.url"
 
 # connection pool (age and time are in seconds)
@@ -127,6 +125,8 @@ JDBC_RCA_DRIVER_PROPERTY = "server.jdbc.rca.driver"
 JDBC_RCA_URL_PROPERTY = "server.jdbc.rca.url"
 JDBC_RCA_USER_NAME_PROPERTY = "server.jdbc.rca.user.name"
 JDBC_RCA_PASSWORD_FILE_PROPERTY = "server.jdbc.rca.user.passwd"
+
+DEFAULT_DBMS_PROPERTY = "server.setup.default.dbms"
 
 JDBC_RCA_PASSWORD_ALIAS = "ambari.db.password"
 
@@ -163,10 +163,15 @@ SSL_API = 'api.ssl'
 SSL_API_PORT = 'client.api.ssl.port'
 DEFAULT_SSL_API_PORT = 8443
 
+# Kerberos
+CHECK_AMBARI_KRB_JAAS_CONFIGURATION_PROPERTY = "kerberos.check.jaas.configuration"
+
 # JDK
 JDK_RELEASES="java.releases"
 
 VIEWS_DIR_PROPERTY = "views.dir"
+
+ACTIVE_INSTANCE_PROPERTY = "active.instance"
 
 #Common setup or upgrade message
 SETUP_OR_UPGRADE_MSG = "- If this is a new setup, then run the \"ambari-server setup\" command to create the user\n" \
@@ -174,6 +179,21 @@ SETUP_OR_UPGRADE_MSG = "- If this is a new setup, then run the \"ambari-server s
                        "Refer to the Ambari documentation for more information on setup and upgrade."
 
 DEFAULT_DB_NAME = "ambari"
+
+SECURITY_KEYS_DIR = "security.server.keys_dir"
+COMMON_SERVICES_PATH_PROPERTY = 'common.services.path'
+WEBAPP_DIR_PROPERTY = 'webapp.dir'
+SHARED_RESOURCES_DIR = 'shared.resources.dir'
+BOOTSTRAP_SCRIPT = 'bootstrap.script'
+CUSTOM_ACTION_DEFINITIONS = 'custom.action.definitions'
+BOOTSTRAP_SETUP_AGENT_SCRIPT = 'bootstrap.setup_agent.script'
+STACKADVISOR_SCRIPT = 'stackadvisor.script'
+REQUIRED_PROPERTIES = [OS_FAMILY_PROPERTY, OS_TYPE_PROPERTY, COMMON_SERVICES_PATH_PROPERTY, SERVER_VERSION_FILE_PATH,
+                       WEBAPP_DIR_PROPERTY, STACK_LOCATION_KEY, SECURITY_KEYS_DIR, JDBC_DATABASE_NAME_PROPERTY,
+                       NR_USER_PROPERTY, JAVA_HOME_PROPERTY, JDK_NAME_PROPERTY, JCE_NAME_PROPERTY,
+                       JDBC_PASSWORD_PROPERTY, SHARED_RESOURCES_DIR, JDBC_USER_NAME_PROPERTY, BOOTSTRAP_SCRIPT,
+                       RESOURCES_DIR_PROPERTY, CUSTOM_ACTION_DEFINITIONS, BOOTSTRAP_SETUP_AGENT_SCRIPT,
+                       STACKADVISOR_SCRIPT, BOOTSTRAP_DIR_PROPERTY]
 
 class ServerDatabaseType(object):
   internal = 0
@@ -450,7 +470,6 @@ class ServerConfigDefaultsLinux(ServerConfigDefaults):
 configDefaults = ServerConfigDefaults()
 
 # Security
-SECURITY_KEYS_DIR = "security.server.keys_dir"
 SECURITY_MASTER_KEY_LOCATION = "security.master.key.location"
 SECURITY_KEY_IS_PERSISTED = "security.master.key.ispersisted"
 SECURITY_KEY_ENV_VAR_NAME = "AMBARI_SECURITY_MASTER_KEY"
@@ -519,6 +538,26 @@ def read_ambari_user():
     if user:
       return user
   return None
+
+def get_is_active_instance():
+  # active.instance, if missing, will be considered to be true;
+  # if present, it should be explicitly set to "true" to set this as the active instance;
+  # any other value will be taken as a "false"
+  properties = get_ambari_properties()
+  # Get the value of active.instance.
+  active_instance_value = None
+  if properties != -1:
+    if ACTIVE_INSTANCE_PROPERTY in properties.propertyNames():
+      active_instance_value = properties[ACTIVE_INSTANCE_PROPERTY]
+
+  if active_instance_value is None:  # property is missing
+    is_active_instance = True
+  elif (active_instance_value == 'true'): # property is explicitly set to true
+    is_active_instance = True
+  else:  # any other value
+    is_active_instance = False
+
+  return is_active_instance
 
 def get_value_from_properties(properties, key, default=""):
   try:
@@ -753,8 +792,9 @@ def read_passwd_for_alias(alias, masterKey=""):
     if masterKey is None or masterKey == "":
       masterKey = "None"
 
+    serverClassPath = ambari_server.serverClassPath.ServerClassPath(get_ambari_properties(), None)
     command = SECURITY_PROVIDER_GET_CMD.format(get_java_exe_path(),
-                                               get_full_ambari_classpath(), alias, tempFilePath, masterKey)
+                                               serverClassPath.get_full_ambari_classpath_escaped_for_shell(), alias, tempFilePath, masterKey)
     (retcode, stdout, stderr) = run_os_command(command)
     print_info_msg("Return code from credential provider get passwd: " +
                    str(retcode))
@@ -794,8 +834,9 @@ def save_passwd_for_alias(alias, passwd, masterKey=""):
     if masterKey is None or masterKey == "":
       masterKey = "None"
 
+    serverClassPath = ambari_server.serverClassPath.ServerClassPath(get_ambari_properties(), None)
     command = SECURITY_PROVIDER_PUT_CMD.format(get_java_exe_path(),
-                                               get_full_ambari_classpath(), alias, passwd, masterKey)
+                                               serverClassPath.get_full_ambari_classpath_escaped_for_shell(), alias, passwd, masterKey)
     (retcode, stdout, stderr) = run_os_command(command)
     print_info_msg("Return code from credential provider save passwd: " +
                    str(retcode))
@@ -989,10 +1030,13 @@ def update_ambari_properties():
 
     for prop_key, prop_value in old_properties.getPropertyDict().items():
       if "agent.fqdn.service.url" == prop_key:
-        # BUG-7179 what is agent.fqdn property in ambari.props?
+        # what is agent.fqdn property in ambari.props?
         new_properties.process_pair(GET_FQDN_SERVICE_URL, prop_value)
       elif "server.os_type" == prop_key:
         new_properties.process_pair(OS_TYPE_PROPERTY, OS_FAMILY + OS_VERSION)
+      elif JDK_RELEASES == prop_key:
+        # don't replace new jdk releases with old releases, because they can be updated
+        pass
       else:
         new_properties.process_pair(prop_key, prop_value)
 
@@ -1193,38 +1237,6 @@ class JDKRelease:
     return (desc, url, dest_file, jcpol_url, jcpol_file, inst_dir, reg_exp)
   pass
 
-def get_ambari_jars():
-  try:
-    conf_dir = os.environ[AMBARI_SERVER_LIB]
-    return conf_dir
-  except KeyError:
-    default_jar_location = configDefaults.DEFAULT_LIBS_DIR
-    print_info_msg(AMBARI_SERVER_LIB + " is not set, using default "
-                 + default_jar_location)
-    return default_jar_location
-
-def get_jdbc_cp():
-  jdbc_jar_path = ""
-  properties = get_ambari_properties()
-  if properties != -1:
-    jdbc_jar_path = properties[JDBC_DRIVER_PATH_PROPERTY]
-  return jdbc_jar_path
-
-def get_ambari_classpath():
-  ambari_cp = os.path.abspath(get_ambari_jars() + os.sep + "*")
-  jdbc_cp = get_jdbc_cp()
-  if len(jdbc_cp) > 0:
-    ambari_cp = ambari_cp + os.pathsep + jdbc_cp
-  return ambari_cp
-
-def get_full_ambari_classpath(conf_dir = None):
-  if conf_dir is None:
-    conf_dir = get_conf_dir()
-  cp = conf_dir + os.pathsep + get_ambari_classpath()
-  if cp.find(' ') != -1:
-    cp = '"' + cp + '"'
-  return cp
-
 def get_JAVA_HOME():
   properties = get_ambari_properties()
   if properties == -1:
@@ -1308,3 +1320,12 @@ def get_stack_location(properties):
   if stack_location is None:
     stack_location = configDefaults.STACK_LOCATION_DEFAULT
   return stack_location
+
+def get_missing_properties(properties):
+  missing_propertiers = []
+  for property in REQUIRED_PROPERTIES:
+    value = properties[property]
+    if not value:
+      missing_propertiers.append(property)
+
+  return missing_propertiers

@@ -18,14 +18,14 @@
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL;
 import org.apache.hadoop.yarn.util.Clock;
 import org.apache.hadoop.yarn.util.SystemClock;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 import java.io.File;
 import java.io.IOException;
 import java.sql.Connection;
@@ -43,12 +43,11 @@ import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.ti
  */
 public abstract class AbstractTimelineAggregator implements TimelineMetricAggregator {
   protected final PhoenixHBaseAccessor hBaseAccessor;
-  private final Log LOG;
+  protected final Logger LOG;
   private Clock clock;
   protected final long checkpointDelayMillis;
   protected final Integer resultsetFetchSize;
   protected Configuration metricsConf;
-
   private String checkpointLocation;
   private Long sleepIntervalMillis;
   private Integer checkpointCutOffMultiplier;
@@ -56,24 +55,29 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
   protected String tableName;
   protected String outputTableName;
   protected Long nativeTimeRangeDelay;
+  // Explicitly name aggregators for logging needs
+  private final String aggregatorName;
 
-  public AbstractTimelineAggregator(PhoenixHBaseAccessor hBaseAccessor,
-                                    Configuration metricsConf, Clock clk) {
+  AbstractTimelineAggregator(String aggregatorName,
+                             PhoenixHBaseAccessor hBaseAccessor,
+                             Configuration metricsConf, Clock clk) {
+    this.aggregatorName = aggregatorName;
     this.hBaseAccessor = hBaseAccessor;
     this.metricsConf = metricsConf;
-    this.checkpointDelayMillis = SECONDS.toMillis(
-      metricsConf.getInt(AGGREGATOR_CHECKPOINT_DELAY, 120));
+    this.checkpointDelayMillis = SECONDS.toMillis(metricsConf.getInt(AGGREGATOR_CHECKPOINT_DELAY, 120));
     this.resultsetFetchSize = metricsConf.getInt(RESULTSET_FETCH_SIZE, 2000);
-    this.LOG = LogFactory.getLog(this.getClass());
+    this.LOG = LoggerFactory.getLogger(aggregatorName);
     this.clock = clk;
   }
 
-  public AbstractTimelineAggregator(PhoenixHBaseAccessor hBaseAccessor,
-                                    Configuration metricsConf) {
-    this(hBaseAccessor, metricsConf, new SystemClock());
+  AbstractTimelineAggregator(String aggregatorName,
+                             PhoenixHBaseAccessor hBaseAccessor,
+                             Configuration metricsConf) {
+    this(aggregatorName, hBaseAccessor, metricsConf, new SystemClock());
   }
 
-  public AbstractTimelineAggregator(PhoenixHBaseAccessor hBaseAccessor,
+  public AbstractTimelineAggregator(String aggregatorName,
+                                    PhoenixHBaseAccessor hBaseAccessor,
                                     Configuration metricsConf,
                                     String checkpointLocation,
                                     Long sleepIntervalMillis,
@@ -82,7 +86,7 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
                                     String tableName,
                                     String outputTableName,
                                     Long nativeTimeRangeDelay) {
-    this(hBaseAccessor, metricsConf);
+    this(aggregatorName, hBaseAccessor, metricsConf);
     this.checkpointLocation = checkpointLocation;
     this.sleepIntervalMillis = sleepIntervalMillis;
     this.checkpointCutOffMultiplier = checkpointCutOffMultiplier;
@@ -122,8 +126,7 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
         + " seconds.");
 
       long startTime = clock.getTime();
-      boolean success = doWork(lastCheckPointTime,
-        lastCheckPointTime + SLEEP_INTERVAL);
+      boolean success = doWork(lastCheckPointTime, lastCheckPointTime + SLEEP_INTERVAL);
       long executionTime = clock.getTime() - startTime;
       long delta = SLEEP_INTERVAL - executionTime;
 
@@ -200,7 +203,7 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
         }
       }
     } catch (IOException io) {
-      LOG.debug(io);
+      LOG.debug("", io);
     }
     return -1;
   }
@@ -242,16 +245,19 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
       stmt = PhoenixTransactSQL.prepareGetMetricsSqlStmt(conn, condition);
 
       LOG.debug("Query issued @: " + new Date());
-      rs = stmt.executeQuery();
+      if (condition.doUpdate()) {
+        int rows = stmt.executeUpdate();
+        conn.commit();
+        LOG.info(rows + " row(s) updated.");
+      } else {
+        rs = stmt.executeQuery();
+      }
       LOG.debug("Query returned @: " + new Date());
 
       aggregate(rs, startTime, endTime);
       LOG.info("End aggregation cycle @ " + new Date());
 
-    } catch (SQLException e) {
-      LOG.error("Exception during aggregating metrics.", e);
-      success = false;
-    } catch (IOException e) {
+    } catch (SQLException | IOException e) {
       LOG.error("Exception during aggregating metrics.", e);
       success = false;
     } finally {
@@ -300,6 +306,19 @@ public abstract class AbstractTimelineAggregator implements TimelineMetricAggreg
 
   public boolean isDisabled() {
     return metricsConf.getBoolean(aggregatorDisableParam, false);
+  }
+
+  protected String getQueryHint(Long startTime) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("/*+ ");
+    sb.append("NATIVE_TIME_RANGE(");
+    sb.append(startTime - nativeTimeRangeDelay);
+    sb.append(") ");
+    if (hBaseAccessor.isSkipBlockCacheForAggregatorsEnabled()) {
+      sb.append("NO_CACHE ");
+    }
+    sb.append("*/");
+    return sb.toString();
   }
 
   protected String getCheckpointLocation() {

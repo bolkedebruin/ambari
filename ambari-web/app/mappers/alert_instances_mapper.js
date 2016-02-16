@@ -35,6 +35,7 @@ App.alertInstanceMapper = App.QuickDataMapper.create({
     host_name: 'Alert.host_name',
     scope: 'Alert.scope',
     original_timestamp: 'Alert.original_timestamp',
+    original_raw_timestamp: 'Alert.original_timestamp',
     latest_timestamp: 'Alert.latest_timestamp',
     maintenance_state: 'Alert.maintenance_state',
     instance: 'Alert.instance',
@@ -58,6 +59,8 @@ App.alertInstanceMapper = App.QuickDataMapper.create({
 
       json.items.forEach(function (item) {
         var alert = this.parseIt(item, this.get('config'));
+        alert.original_timestamp = App.dateTimeWithTimeZone(alert.original_timestamp);
+        alert.latest_timestamp = App.dateTimeWithTimeZone(alert.latest_timestamp);
         alertInstances.push(alert);
         alertsToDelete = alertsToDelete.without(alert.id);
       }, this);

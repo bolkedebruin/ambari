@@ -22,6 +22,7 @@ from resource_management import *
 from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from hbase_service import hbase_service
+import os
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
 def ams_service(name, action):
@@ -44,16 +45,38 @@ def ams_service(name, action):
     #no_op_test = format("ls {pid_file} >/dev/null 2>&1 && ps `cat {pid_file}` >/dev/null 2>&1")
 
     if params.is_hbase_distributed:
-      hbase_service('zookeeper', action=action)
-      hbase_service('master', action=action)
-      hbase_service('regionserver', action=action)
+      if action == 'stop':
+        hbase_service('regionserver', action=action)
+        hbase_service('master', action=action)
+      else:
+        hbase_service('master', action=action)
+        hbase_service('regionserver', action=action)
       cmd = format("{cmd} --distributed")
 
     if action == 'start':
-      Execute(format('{sudo} rm -rf {hbase_tmp_dir}/*.tmp {zookeeper_data_dir}/*')
+      Execute(format("{sudo} rm -rf {hbase_tmp_dir}/*.tmp")
       )
 
-      daemon_cmd = format("{cmd} start")
+      if not params.is_hbase_distributed and os.path.exists(format("{zookeeper_data_dir}")):
+        Directory(params.zookeeper_data_dir,
+                  action='delete'
+        )
+
+      if not params.is_hbase_distributed:
+        File(format("{ams_collector_conf_dir}/core-site.xml"),
+             action='delete',
+             owner=params.ams_user)
+
+        File(format("{ams_collector_conf_dir}/hdfs-site.xml"),
+             action='delete',
+             owner=params.ams_user)
+
+      if params.security_enabled:
+        kinit_cmd = format("{kinit_path_local} -kt {ams_collector_keytab_path} {ams_collector_jaas_princ};")
+        daemon_cmd = format("{kinit_cmd} {cmd} start")
+      else:
+        daemon_cmd = format("{cmd} start")
+
       Execute(daemon_cmd,
               user=params.ams_user
       )

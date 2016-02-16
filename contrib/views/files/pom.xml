@@ -19,25 +19,37 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.apache.ambari.contrib.views</groupId>
   <artifactId>files</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0.0-SNAPSHOT</version>
   <name>Files</name>
 
   <parent>
     <groupId>org.apache.ambari.contrib.views</groupId>
     <artifactId>ambari-contrib-views</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
+    <version>2.0.0.0-SNAPSHOT</version>
   </parent>
 
   <dependencies>
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-hdfs</artifactId>
-      <version>${hadoop-version}</version>
+      <version>${hadoop.version}</version>
+        <exclusions>
+            <exclusion>
+                <groupId>tomcat</groupId>
+                <artifactId>jasper-runtime</artifactId>
+            </exclusion>
+        </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-common</artifactId>
-      <version>${hadoop-version}</version>
+      <version>${hadoop.version}</version>
+        <exclusions>
+            <exclusion>
+                <groupId>tomcat</groupId>
+                <artifactId>jasper-runtime</artifactId>
+            </exclusion>
+        </exclusions>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
@@ -65,7 +77,7 @@
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-minicluster</artifactId>
-      <version>${hadoop-version}</version>
+      <version>${hadoop.version}</version>
       <scope>test</scope>
     </dependency>
 
@@ -82,7 +94,7 @@
     <dependency>
       <groupId>org.apache.ambari.contrib.views</groupId>
       <artifactId>ambari-views-utils</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
+      <version>0.0.1.0-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>com.google.code.gson</groupId>
@@ -94,11 +106,15 @@
       <artifactId>jersey-container-servlet</artifactId>
       <scope>provided</scope>
     </dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+      <version>2.4</version>
+    </dependency>
   </dependencies>
 
   <properties>
     <ambari.dir>${project.parent.parent.parent.basedir}</ambari.dir>
-    <hadoop-version>2.6.0</hadoop-version>
     <nodejs.directory>${basedir}/target/nodejs</nodejs.directory>
     <npm.version>1.4.3</npm.version>
     <ui.directory>${basedir}/src/main/resources/ui</ui.directory>
@@ -156,7 +172,7 @@
               <!-- optional: The default argument is actually "install", so unless
                you need to run some other npm command, you can remove this whole <configuration>
                section. -->
-              <arguments>install --unsafe-perm --registry=http://registry.npmjs.eu</arguments>
+              <arguments>install --unsafe-perm</arguments>
             </configuration>
           </execution>
         </executions>

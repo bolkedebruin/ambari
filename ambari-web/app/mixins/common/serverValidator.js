@@ -58,6 +58,13 @@ App.ServerValidatorMixin = Em.Mixin.create({
   recommendationsConfigs: null,
 
   /**
+   * array of cluster-env configs
+   * used for validation request
+   * @type {Array}
+   */
+  clusterEnvConfigs: [],
+
+  /**
    * by default loads data from model otherwise must be overridden as computed property
    * refer to \assets\data\stacks\HDP-2.1\recommendations_configs.json to learn structure
    * (shouldn't contain configurations filed)
@@ -82,18 +89,6 @@ App.ServerValidatorMixin = Em.Mixin.create({
 
   /**
    * by default loads data from model otherwise must be overridden as computed property
-   * filter services that support server validation and concat with misc configs if Installer or current service
-   * @type {Array} - of objects (services)
-   */
-  services: function() {
-    var stackServices = App.StackService.find().filter(function(s) {
-      return this.get('serviceNames').contains(s.get('serviceName'));
-    }, this);
-    return this.get('isWizard') ? stackServices.concat(require("data/service_configs")) : stackServices;
-  }.property('serviceNames'),
-
-  /**
-   * by default loads data from model otherwise must be overridden as computed property
    * can be used for service|host configs pages
    * @type {Array} of strings (hostNames)
    */
@@ -107,94 +102,14 @@ App.ServerValidatorMixin = Em.Mixin.create({
    */
   stepConfigs: null,
 
-  /**
-   * @method loadServerSideConfigsRecommendations
-   * load recommendations from server
-   * (used only during install)
-   * @returns {*}
-   */
-  loadServerSideConfigsRecommendations: function() {
-    var self = this;
-    // if extended controller doesn't support recommendations ignore this call but keep promise chain
-    if (!this.get('isControllerSupportsEnhancedConfigs')) {
-      return $.Deferred().resolve().promise();
-    }
-    var recommendations = this.get('hostGroups');
-    // send user's input based on stored configurations
-    if (this.get('content.serviceConfigProperties.length')) {
-      recommendations.blueprint.configurations = blueprintUtils.buildConfigsJSON(this.get('services'), this.get('stepConfigs'));
-    }
-    // for add service send configurations for installed services on first transition to Customize Services step
-    if (!this.get('content.serviceConfigProperties.length') && this.get('wizardController.name') === 'addServiceController') {
-      recommendations.blueprint.configurations = blueprintUtils.buildConfigsJSON(this.get('services'), this.get('stepConfigs').filter(function(serviceConfigs) {
-        return self.get('installedServiceNames').contains(serviceConfigs.get('serviceName'));
-      }));
-      // include cluster-env site to recommendations call
-      var miscService = this.get('services').findProperty('serviceName', 'MISC');
-      if (miscService) {
-        var miscConfigs = blueprintUtils.buildConfigsJSON([miscService], [this.get('stepConfigs').findProperty('serviceName', 'MISC')]);
-        var clusterEnv = App.permit(miscConfigs, 'cluster-env');
-        if (!App.isEmptyObject(clusterEnv)) {
-          $.extend(recommendations.blueprint.configurations, clusterEnv);
-        }
-      }
-    }
-
-    return App.ajax.send({
-      'name': 'config.recommendations',
-      'sender': this,
-      'data': {
-        stackVersionUrl: App.get('stackVersionURL'),
-        dataToSend: {
-          recommend: 'configurations',
-          hosts: this.get('hostNames'),
-          services: this.get('serviceNames'),
-          recommendations: recommendations
-        }
-      },
-      'success': 'loadRecommendationsSuccess',
-      'error': 'loadRecommendationsError'
-    });
-  },
-
-  /**
-   * @method loadRecommendationsSuccess
-   * success callback after loading recommendations
-   * (used only during install)
-   * @param data
-   */
-  loadRecommendationsSuccess: function(data) {
-    if (!data) {
-      console.warn('error while loading default config values');
-    }
-    this._saveRecommendedValues(data);
-    var configObject = data.resources[0].recommendations.blueprint.configurations;
-    if (configObject) this.updateInitialValue(configObject);
-    this.set("recommendationsConfigs", Em.get(data.resources[0] , "recommendations.blueprint.configurations"));
-  },
-
-  loadRecommendationsError: function(jqXHR, ajaxOptions, error, opt) {
-    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
-    console.error('Load recommendations failed');
-  },
-
   serverSideValidation: function () {
     var deferred = $.Deferred();
-    var self = this;
     this.set('configValidationFailed', false);
     this.set('configValidationGlobalMessage', []);
     if (this.get('configValidationFailed')) {
       this.warnUser(deferred);
     } else {
-      if (this.get('isInstaller')) {
-        this.runServerSideValidation(deferred);
-      } else {
-        // on Service Configs page we need to load all hosts with componnets
-        this.getAllHostsWithComponents().then(function(data) {
-          self.set('content.recommendationsHostGroups', blueprintUtils.generateHostGroups(App.get('allHostNames'), self.mapHostsToComponents(data.items)));
-          self.runServerSideValidation(deferred);
-        });
-      }
+      this.runServerSideValidation(deferred);
     }
     return deferred;
   },
@@ -210,54 +125,89 @@ App.ServerValidatorMixin = Em.Mixin.create({
   },
 
   /**
-   * Generate array similar to App.HostComponent which will be used to
-   * create blueprint hostGroups object as well.
-   *
-   * @param {Object[]} jsonData
-   * @returns {Em.Object[]}
-   */
-  mapHostsToComponents: function(jsonData) {
-    var result = [];
-    jsonData.forEach(function(item) {
-      result.push(Em.Object.create({
-        componentName: Em.get(item, 'HostRoles.component_name'),
-        hostName: Em.get(item, 'HostRoles.host_name')
-      }));
-    });
-    return result;
-  },
-
-  /**
    * @method serverSideValidation
    * send request to validate configs
    * @returns {*}
    */
-  runServerSideValidation: function(deferred) {
+  runServerSideValidation: function (deferred) {
     var self = this;
     var recommendations = this.get('hostGroups');
-    recommendations.blueprint.configurations = blueprintUtils.buildConfigsJSON(this.get('services'), this.get('stepConfigs'));
+    var stepConfigs = this.get('stepConfigs');
 
-    return App.ajax.send({
-      name: 'config.validations',
-      sender: this,
-      data: {
-        stackVersionUrl: App.get('stackVersionURL'),
-        hosts: this.get('hostNames'),
-        services: this.get('serviceNames'),
-        validate: 'configurations',
-        recommendations: recommendations
-      },
-      success: 'validationSuccess',
-      error: 'validationError'
-    }).complete(function() {
-      self.warnUser(deferred);
+    return this.getBlueprintConfigurations().done(function(blueprintConfigurations){
+      recommendations.blueprint.configurations = blueprintConfigurations;
+      return App.ajax.send({
+        name: 'config.validations',
+        sender: self,
+        data: {
+          stackVersionUrl: App.get('stackVersionURL'),
+          hosts: self.get('hostNames'),
+          services: self.get('serviceNames'),
+          validate: 'configurations',
+          recommendations: recommendations
+        },
+        success: 'validationSuccess',
+        error: 'validationError'
+      }).complete(function () {
+        self.warnUser(deferred);
+      });
     });
   },
 
+  /**
+   * Return JSON for blueprint configurations
+   * @returns {*}
+   */
+  getBlueprintConfigurations: function () {
+    var dfd = $.Deferred();
+    var stepConfigs = this.get('stepConfigs');
+
+    // check if we have configs from 'cluster-env', if not, then load them, as they are mandatory for validation request
+    if (!stepConfigs.findProperty('serviceName', 'MISC')) {
+      this.getClusterEnvConfigsForValidation().done(function(clusterEnvConfigs){
+        stepConfigs = stepConfigs.concat(Em.Object.create({
+          serviceName: 'MISC',
+          configs: clusterEnvConfigs
+        }));
+        dfd.resolve(blueprintUtils.buildConfigsJSON(stepConfigs));
+      });
+    } else {
+      dfd.resolve(blueprintUtils.buildConfigsJSON(stepConfigs));
+    }
+    return dfd.promise();
+  },
+
+  getClusterEnvConfigsForValidation: function () {
+    var dfd = $.Deferred();
+    App.ajax.send({
+      name: 'config.cluster_env_site',
+      sender: this,
+      error: 'validationError'
+    }).done(function (data) {
+      App.router.get('configurationController').getConfigsByTags([{
+        siteName: data.items[data.items.length - 1].type,
+        tagName: data.items[data.items.length - 1].tag
+      }]).done(function (clusterEnvConfigs) {
+        var configsObject = clusterEnvConfigs[0].properties;
+        var configsArray = [];
+        for (var property in configsObject) {
+          if (configsObject.hasOwnProperty(property)) {
+            configsArray.push(Em.Object.create({
+              name: property,
+              value: configsObject[property],
+              filename: 'cluster-env.xml'
+            }));
+          }
+        }
+        dfd.resolve(configsArray);
+      });
+    });
+    return dfd.promise();
+  },
 
   /**
    * @method validationSuccess
-   * success callback after getting responce from server
+   * success callback after getting response from server
    * go through the step configs and set warn and error messages
    * @param data
    */
@@ -313,8 +263,6 @@ App.ServerValidatorMixin = Em.Mixin.create({
 
   validationError: function (jqXHR, ajaxOptions, error, opt) {
     this.set('configValidationFailed', true);
-    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
-    console.error('config validation failed');
   },
 
 
@@ -327,13 +275,8 @@ App.ServerValidatorMixin = Em.Mixin.create({
   warnUser: function(deferred) {
     var self = this;
     if (this.get('configValidationFailed')) {
-      deferred.reject();
-      return App.showAlertPopup(Em.I18n.t('installer.step7.popup.validation.failed.header'), Em.I18n.t('installer.step7.popup.validation.request.failed.body'));
-    } else if (this.get('configValidationWarning') || this.get('configValidationError')) {
-      // Motivation: for server-side validation warnings and EVEN errors allow user to continue wizard
       return App.ModalPopup.show({
-        header: Em. I18n.t('installer.step7.popup.validation.warning.header'),
-        classNames: ['sixty-percent-width-modal','modal-full-width'],
+        header: Em.I18n.t('installer.step7.popup.validation.failed.header'),
         primary: Em.I18n.t('common.proceedAnyway'),
         primaryClass: 'btn-danger',
         marginBottom: 200,
@@ -349,11 +292,46 @@ App.ServerValidatorMixin = Em.Mixin.create({
           this.hide();
           deferred.reject("invalid_configs"); // message used to differentiate types of rejections.
         },
-        bodyClass: Em.View.extend({
-          controller: self,
-          templateName: require('templates/common/modal_popups/config_recommendation_popup')
+        body: Em.I18n.t('installer.step7.popup.validation.request.failed.body')
+      });
+    } else if (this.get('configValidationWarning') || this.get('configValidationError')) {
+      // Motivation: for server-side validation warnings and EVEN errors allow user to continue wizard
+      var stepConfigs = self.get('name') === 'mainServiceInfoConfigsController'
+        ? [self.get('selectedService')]
+        : self.get('stepConfigs');
+      var configsWithErrors = stepConfigs.some(function (step) {
+        return step.get('configs').some(function(c) {
+          return c.get('isVisible') && !c.get('hiddenBySection') && (c.get('warn') || c.get('error'));
         })
       });
+      if (configsWithErrors) {
+        return App.ModalPopup.show({
+          header: Em. I18n.t('installer.step7.popup.validation.warning.header'),
+          classNames: ['sixty-percent-width-modal','modal-full-width'],
+          primary: Em.I18n.t('common.proceedAnyway'),
+          primaryClass: 'btn-danger',
+          marginBottom: 200,
+          onPrimary: function () {
+            this.hide();
+            deferred.resolve();
+          },
+          onSecondary: function () {
+            this.hide();
+            deferred.reject("invalid_configs"); // message used to differentiate types of rejections.
+          },
+          onClose: function () {
+            this.hide();
+            deferred.reject("invalid_configs"); // message used to differentiate types of rejections.
+          },
+          bodyClass: Em.View.extend({
+            controller: self,
+            templateName: require('templates/common/modal_popups/config_recommendation_popup'),
+            serviceConfigs: stepConfigs
+          })
+        });
+      } else {
+        deferred.resolve();
+      }
     } else {
       deferred.resolve();
     }

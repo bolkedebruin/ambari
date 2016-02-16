@@ -22,38 +22,67 @@ limitations under the License.
   <property>
     <name>hive.heapsize</name>
     <value>1024</value>
+    <display-name>HiveServer2 heap size</display-name>
     <description>Hive Java heap size</description>
+    <value-attributes>
+      <unit>MB</unit>
+      <overridable>false</overridable>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>ambari.hive.db.schema.name</name>
     <value>hive</value>
+    <display-name>Database Name</display-name>
     <description>Database name used as the Hive Metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
     <value>jdbc:mysql://localhost/hive?createDatabaseIfNotExist=true</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
+    <display-name>Database URL</display-name>
     <description>JDBC connect string for a JDBC metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionDriverName</name>
     <value>com.mysql.jdbc.Driver</value>
+    <display-name>JDBC Driver Class</display-name>
     <description>Driver class name for a JDBC metastore</description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionUserName</name>
     <value>hive</value>
+    <display-name>Database Username</display-name>
     <description>username to use against metastore database</description>
+    <value-attributes>
+      <type>db_user</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property require-input="true">
     <name>javax.jdo.option.ConnectionPassword</name>
     <value></value>
     <property-type>PASSWORD</property-type>
+    <display-name>Database Password</display-name>
     <description>password to use against metastore database</description>
+    <value-attributes>
+      <type>password</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>
@@ -92,6 +121,7 @@ limitations under the License.
   <property>
     <name>hive.metastore.uris</name>
     <value>thrift://localhost:9083</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>URI for client to contact metastore server</description>
   </property>
 
@@ -111,6 +141,9 @@ limitations under the License.
     <name>hive.security.authorization.enabled</name>
     <value>false</value>
     <description>enable or disable the hive client authorization</description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -428,6 +461,9 @@ limitations under the License.
     <name>hive.server2.tez.default.queues</name>
     <value>default</value>
     <description>A comma-separated list of queues configured for the cluster.</description>
+    <value-attributes>
+      <empty-value-valid>true</empty-value-valid>
+    </value-attributes>
   </property>
 
   <property>
@@ -463,7 +499,7 @@ limitations under the License.
   <property>
     <name>hive.compactor.initiator.on</name>
     <value>false</value>
-    <description>Whether to run the compactor's initiator thread in this metastore instance or not. If there is more than one instance of the thrift metastore this should only be set to true for one of them.</description>
+    <description>Whether to run the compactor's initiator thread in this metastore instance or not. If there is more than one instance of the thrift metastore this should be set to true on only one instance. Setting true on only one host can be achieved by creating a config-group containing the metastore host, and overriding the default value to true in it.</description>
     <display-name>Run Compactor</display-name>
     <value-attributes>
       <type>value-list</type>
@@ -545,9 +581,14 @@ limitations under the License.
   <property>
     <name>hive.server2.thrift.port</name>
     <value>10000</value>
+    <display-name>HiveServer2 Port</display-name>
     <description>
       TCP port number to listen on, default 10000.
     </description>
+    <value-attributes>
+      <overridable>false</overridable>
+      <type>int</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -575,6 +616,9 @@ limitations under the License.
       should use the ZooKeeper ensemble: hive.zookeeper.quorum in their
       connection string.
     </description>
+    <value-attributes>
+      <type>boolean</type>
+    </value-attributes>
   </property>
 
   <property>

@@ -19,7 +19,7 @@
 var App = require('app');
 var filters = require('views/common/filter_view');
 var sort = require('views/common/sort_view');
-var date = require('utils/date');
+var date = require('utils/date/date');
 
 App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   templateName:require('templates/main/host'),
@@ -64,17 +64,13 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   /**
    * flag to toggle displaying selected hosts counter
    */
-  showSelectedFilter: function () {
-    return this.get('selectedHosts.length') > 0;
-  }.property('selectedHosts'),
+  showSelectedFilter: Em.computed.bool('selectedHosts.length'),
 
   /**
    * return filtered number of all content number information displayed on the page footer bar
    * @returns {String}
    */
-  filteredContentInfo: function () {
-    return this.t('hosts.filters.filteredHostsInfo').format(this.get('filteredCount'), this.get('totalCount'));
-  }.property('filteredCount', 'totalCount'),
+  filteredContentInfo: Em.computed.i18nFormat('hosts.filters.filteredHostsInfo', 'filteredCount', 'totalCount'),
 
   /**
    * request latest data filtered by new parameters
@@ -108,9 +104,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    * Return pagination information displayed on the page
    * @type {String}
    */
-  paginationInfo: function () {
-    return this.t('tableView.filters.paginationInfo').format(this.get('startIndex'), this.get('endIndex'), this.get('filteredCount'));
-  }.property('startIndex', 'endIndex', 'filteredCount'),
+  paginationInfo: Em.computed.i18nFormat('tableView.filters.paginationInfo', 'startIndex', 'endIndex', 'filteredCount'),
 
   paginationLeftClass: function () {
     if (this.get("startIndex") > 1 && this.get('filteringComplete')) {
@@ -181,7 +175,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    */
   willInsertElement: function () {
     if (!this.get('controller.showFilterConditionsFirstLoad')) {
-      var didClearedSomething = this.clearFilterCondition();
+      var didClearedSomething = this.clearFilterConditionsFromLocalStorage();
       this.set('controller.filterChangeHappened', didClearedSomething);
     }
     this._super();
@@ -315,188 +309,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
     this.filterSelected();
   },
 
-  /**
-   * Returs all hostNames if amount is less than {minShown} or
-   * first elements of array (number of elements - {minShown}) converted to string
-   * @param {Array} hostNames - array of all listed hostNames
-   * @param {String} divider - string to separate hostNames
-   * @param {Number} minShown - min amount of hostName to be shown
-   * @returns {String} hostNames
-   * @method showHostNames
-   */
-  showHostNames: function(hostNames, divider, minShown) {
-    if (hostNames.length > minShown) {
-      return hostNames.slice(0, minShown).join(divider) + divider + Em.I18n.t("installer.step8.other").format(hostNames.length - minShown);
-    } else {
-      return hostNames.join(divider);
-    }
-  },
 
-  /**
-   * Confirmation Popup for bulk Operations
-   */
-  bulkOperationConfirm: function(operationData, selection) {
-    var hostsNames = [],
-      queryParams = [];
-    switch(selection) {
-      case 's':
-        hostsNames = this.get('selectedHosts');
-        if(hostsNames.length > 0){
-          queryParams.push({
-            key: 'Hosts/host_name',
-            value: hostsNames,
-            type: 'MULTIPLE'
-          });
-        }
-        break;
-      case 'f':
-        queryParams = this.get('controller').getQueryParameters(true).filter(function (obj) {
-          return !(obj.key == 'page_size' || obj.key == 'from');
-        });
-        break;
-    }
-
-    if (operationData.action === 'SET_RACK_INFO') {
-      this.getHostsForBulkOperations(queryParams, operationData, null);
-      return;
-    }
-
-    var loadingPopup = App.ModalPopup.show({
-      header: Em.I18n.t('jobs.loadingTasks'),
-      primary: false,
-      secondary: false,
-      bodyClass: Ember.View.extend({
-        template: Ember.Handlebars.compile('<div class="spinner"></div>')
-      })
-    });
-
-    this.getHostsForBulkOperations(queryParams, operationData, loadingPopup);
-  },
-
-  getHostsForBulkOperations: function (queryParams, operationData, loadingPopup) {
-    var params = App.router.get('updateController').computeParameters(queryParams);
-
-    App.ajax.send({
-      name: 'hosts.bulk.operations',
-      sender: this,
-      data: {
-        parameters: params,
-        operationData: operationData,
-        loadingPopup: loadingPopup
-      },
-      success: 'getHostsForBulkOperationSuccessCallback'
-    });
-  },
-
-  convertHostsObjects: function(hosts) {
-    var newHostArr = [];
-    hosts.forEach(function (host) {
-      newHostArr.push({
-        index:host.index,
-        id:host.id,
-        clusterId: host.cluster_id,
-        passiveState: host.passive_state,
-        hostName: host.host_name,
-        hostComponents: host.host_components
-      })
-    });
-    return newHostArr;
-  },
-
-  getHostsForBulkOperationSuccessCallback: function(json, opt, param) {
-    var self = this,
-    operationData = param.operationData,
-    hosts = this.convertHostsObjects(App.hostsMapper.map(json, true));
-    // no hosts - no actions
-    if (!hosts.length) {
-      console.log('No bulk operation if no hosts selected.');
-      return;
-    }
-    var hostNames = hosts.mapProperty('hostName');
-    var hostsToSkip = [];
-    if (operationData.action == "DECOMMISSION") {
-      var hostComponentStatusMap = {}; // "DATANODE_c6401.ambari.apache.org" => "STARTED"
-      var hostComponentIdMap = {}; // "DATANODE_c6401.ambari.apache.org" => "DATANODE"
-      if (json.items) {
-        json.items.forEach(function(host) {
-          if (host.host_components) {
-            host.host_components.forEach(function(component) {
-              hostComponentStatusMap[component.id] = component.HostRoles.state;
-              hostComponentIdMap[component.id] = component.HostRoles.component_name;
-            });
-          }
-        });
-      }
-      hostsToSkip = hosts.filter(function(host) {
-        var invalidStateComponents = host.hostComponents.filter(function(component) {
-          return hostComponentIdMap[component] == operationData.realComponentName && hostComponentStatusMap[component] == 'INSTALLED';
-        });
-        return invalidStateComponents.length > 0;
-      });
-    }
-    var hostNamesSkipped = hostsToSkip.mapProperty('hostName');
-    var message;
-    if (operationData.componentNameFormatted) {
-      message = Em.I18n.t('hosts.bulkOperation.confirmation.hostComponents').format(operationData.message, operationData.componentNameFormatted, hostNames.length);
-    }
-    else {
-      message = Em.I18n.t('hosts.bulkOperation.confirmation.hosts').format(operationData.message, hostNames.length);
-    }
-
-    if (param.loadingPopup) {
-      param.loadingPopup.hide();
-    }
-
-    if (operationData.action === 'SET_RACK_INFO') {
-      self.get('controller').bulkOperation(operationData, hosts);
-      return;
-    }
-
-    App.ModalPopup.show({
-      header: Em.I18n.t('hosts.bulkOperation.confirmation.header'),
-      hostNames: hostNames.join("\n"),
-      visibleHosts: self.showHostNames(hostNames, "\n", 3),
-      hostNamesSkippedVisible: self.showHostNames(hostNamesSkipped, "\n", 3),
-      hostNamesSkipped: function() {
-        if (hostNamesSkipped.length) {
-          return hostNamesSkipped.join("\n");
-        }
-        return false;
-      }.property(),
-      expanded: false,
-      didInsertElement: function() {
-        this.set('expanded', hostNames.length <= 3);
-      },
-      onPrimary: function() {
-        self.get('controller').bulkOperation(operationData, hosts);
-        this._super();
-      },
-      bodyClass: Em.View.extend({
-        templateName: require('templates/main/host/bulk_operation_confirm_popup'),
-        message: message,
-        warningInfo: Em.I18n.t('hosts.bulkOperation.warningInfo.body'),
-        textareaVisible: false,
-        textTrigger: function() {
-          this.set('textareaVisible', !this.get('textareaVisible'));
-        },
-        showAll: function() {
-          this.set('parentView.visibleHosts', this.get('parentView.hostNames'));
-          this.set('parentView.hostNamesSkippedVisible', this.get('parentView.hostNamesSkipped'));
-          this.set('parentView.expanded', true);
-        },
-        putHostNamesToTextarea: function() {
-          var hostNames = this.get('parentView.hostNames');
-          if (this.get('textareaVisible')) {
-            var wrapper = $(".task-detail-log-maintext");
-            $('.task-detail-log-clipboard').html(hostNames).width(wrapper.width()).height(250);
-            Em.run.next(function() {
-              $('.task-detail-log-clipboard').select();
-            });
-          }
-        }.observes('textareaVisible')
-      })
-    });
-  },
 
   sortView: sort.serverWrapperView,
   nameSort: sort.fieldView.extend({
@@ -615,9 +428,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
      * true if host has no components
      * @returns {Boolean}
      */
-    hasNoComponents: function() {
-      return !this.get('content.hostComponents.length');
-    }.property('content.hostComponents.length'),
+    hasNoComponents: Em.computed.empty('content.hostComponents'),
 
     /**
 
@@ -735,9 +546,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
      * Add "active" class for category span-wrapper if current category is selected
      * @type {String}
      */
-    itemClass: function() {
-      return this.get('isActive') ? 'active' : '';
-    }.property('isActive'),
+    itemClass: Em.computed.ifThenElse('isActive', 'active', ''),
 
     /**
      * Text shown on the right of category icon
@@ -764,9 +573,7 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
   /**
    * Category for <code>selected</code> property of each App.Host
    */
-  selectedCategory: function() {
-    return this.get('categories').findProperty('selected', true);
-  }.property('categories.@each.selected'),
+  selectedCategory: Em.computed.findBy('categories', 'selected', true),
 
   statusFilter: Em.View.extend({
     column: 0,
@@ -807,7 +614,13 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
       this.set('value', category.get('healthStatus'));
       this.get('parentView').resetFilterByColumns([0, 7, 8, 9]);
       if (category.get('isHealthStatus')) {
-        this.get('parentView').updateFilter(0, category.get('healthStatus'), 'string');
+        var status = category.get('healthStatus');
+        if (!status) {
+          // only "All" option has no specific status, just refresh
+          this.get('parentView').refresh();
+        } else {
+          this.get('parentView').updateFilter(0, status, 'string');
+        }
       } else {
         this.get('parentView').updateFilter(category.get('column'), category.get('filterValue'), category.get('type'));
       }
@@ -1153,7 +966,22 @@ App.MainHostView = App.TableView.extend(App.TableServerViewMixin, {
    * associations between host property and column index
    * @type {Array}
    */
-  colPropAssoc: function () {
-    return this.get('controller.colPropAssoc');
-  }.property('controller.colPropAssoc')
+  colPropAssoc: Em.computed.alias('controller.colPropAssoc'),
+
+  /**
+   * Run <code>clearFilter</code> in the each child filterView
+   */
+  clearFilters: function() {
+    // clean filters stored in-memory and local storage
+    this.set('filterConditions', []);
+    this.clearFilterConditionsFromLocalStorage();
+    // clean UI
+    this.get('_childViews').forEach(function(childView) {
+      if (childView['clearFilter']) {
+        childView.clearFilter();
+      }
+    });
+    // force refresh
+    this.refresh();
+  }
 });

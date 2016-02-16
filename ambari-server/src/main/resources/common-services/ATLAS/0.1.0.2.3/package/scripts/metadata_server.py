@@ -17,8 +17,11 @@ limitations under the License.
 
 """
 from metadata import metadata
+from resource_management.libraries.functions import conf_select
+from resource_management.libraries.functions import hdp_select
 from resource_management import Execute, check_process_status, Script
 from resource_management.libraries.functions import format
+from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.security_commons import build_expectations, \
   get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_PROPERTIES
@@ -36,24 +39,27 @@ class MetadataServer(Script):
     env.set_params(params)
     metadata()
 
-  # def pre_rolling_restart(self, env):
-  #   import params
-  #   env.set_params(params)
-  #   upgrade.prestart(env, "metadata-server")
-  #
-  def start(self, env, rolling_restart=False):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
+    import params
+    env.set_params(params)
+
+    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.3.0.0') >= 0:
+      # conf_select.select(params.stack_name, "atlas", params.version)
+      hdp_select.select("atlas-server", params.version)
+
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env)
 
-    daemon_cmd = format('source {params.conf_dir}/atlas-env.sh ; {params.metadata_start_script} --port {params.metadata_port}')
+    daemon_cmd = format('source {params.conf_dir}/atlas-env.sh ; {params.metadata_start_script}')
     no_op_test = format('ls {params.pid_file} >/dev/null 2>&1 && ps -p `cat {params.pid_file}` >/dev/null 2>&1')
     Execute(daemon_cmd,
             user=params.metadata_user,
             not_if=no_op_test
     )
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     daemon_cmd = format('source {params.conf_dir}/atlas-env.sh; {params.metadata_stop_script}')
@@ -61,7 +67,6 @@ class MetadataServer(Script):
             user=params.metadata_user,
     )
     Execute (format("rm -f {params.pid_file}"))
-
 
   def status(self, env):
     import status_params

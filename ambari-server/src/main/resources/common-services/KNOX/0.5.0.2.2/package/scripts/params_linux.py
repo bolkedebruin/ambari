@@ -18,15 +18,20 @@ limitations under the License.
 Ambari Agent
 
 """
-from resource_management import *
+from resource_management.core.logger import Logger
+
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.get_port_from_url import get_port_from_url
+from resource_management.libraries.functions.get_hdp_version import get_hdp_version
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.script.script import Script
 from status_params import *
+from resource_management.libraries.resources.hdfs_resource import HdfsResource
+from resource_management.libraries.functions import hdp_select
+from resource_management.libraries.functions import conf_select
 
 # server configurations
 config = Script.get_config()
@@ -35,10 +40,40 @@ tmp_dir = Script.get_tmp_dir()
 stack_name = default("/hostLevelParams/stack_name", None)
 upgrade_direction = default("/commandParams/upgrade_direction", None)
 version = default("/commandParams/version", None)
+# E.g., 2.3.2.0
+version_formatted = format_hdp_stack_version(version)
 
-knox_master_secret_path = '/var/lib/knox/data/security/master'
-knox_cert_store_path = '/var/lib/knox/data/security/keystores/gateway.jks'
+# E.g., 2.3
+stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+
+# This is the version whose state is CURRENT. During an RU, this is the source version.
+# DO NOT format it since we need the build number too.
+upgrade_from_version = default("/hostLevelParams/current_version", None)
+
+# server configurations
+# Default value used in HDP 2.3.0.0 and earlier.
+
+knox_data_dir = '/var/lib/knox/data'
+
+# Important, it has to be strictly greater than 2.3.0.0!!!
+if stack_name and stack_name.upper() == "HDP":
+  Logger.info(format("HDP version to use is {version_formatted}"))
+  if Script.is_hdp_stack_greater(version_formatted, "2.3.0.0"):
+    # This is the current version. In the case of a Rolling Upgrade, it will be the newer version.
+    # In the case of a Downgrade, it will be the version downgrading to.
+    # This is always going to be a symlink to /var/lib/knox/data_${version}
+    knox_data_dir = format('/usr/hdp/{version}/knox/data')
+    Logger.info(format("Detected HDP with stack version {version}, will use knox_data_dir = {knox_data_dir}"))
+
+
+knox_master_secret_path = format('{knox_data_dir}/security/master')
+knox_cert_store_path = format('{knox_data_dir}/security/keystores/gateway.jks')
 knox_user = default("/configurations/knox-env/knox_user", "knox")
+
+# server configurations
+knox_data_dir = '/var/lib/knox/data'
+knox_logs_dir = '/var/log/knox'
 
 # default parameters
 knox_bin = '/usr/bin/gateway'
@@ -53,12 +88,12 @@ if Script.is_hdp_stack_greater_or_equal("2.2"):
   ldap_bin = '/usr/hdp/current/knox-server/bin/ldap.sh'
   knox_client_bin = '/usr/hdp/current/knox-server/bin/knoxcli.sh'
 
+  knox_master_secret_path = '/usr/hdp/current/knox-server/data/security/master'
+  knox_cert_store_path = '/usr/hdp/current/knox-server/data/security/keystores/gateway.jks'
+  knox_data_dir = '/usr/hdp/current/knox-server/data/'
+
 knox_group = default("/configurations/knox-env/knox_group", "knox")
 mode = 0644
-
-# server configurations
-knox_data_dir = '/var/lib/knox/data'
-knox_logs_dir = '/var/log/knox'
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
@@ -183,6 +218,8 @@ knox_host_name = config['clusterHostInfo']['knox_gateway_hosts'][0]
 knox_host_name_in_cluster = config['hostname']
 knox_host_port = config['configurations']['gateway-site']['gateway.port']
 topology_template = config['configurations']['topology']['content']
+admin_topology_template = config['configurations']['admin-topology']['content']
+knoxsso_topology_template = config['configurations']['knoxsso-topology']['content']
 gateway_log4j = config['configurations']['gateway-log4j']['content']
 ldap_log4j = config['configurations']['ldap-log4j']['content']
 users_ldif = config['configurations']['users-ldif']['content']
@@ -238,7 +275,11 @@ if has_ranger_admin:
   elif xa_audit_db_flavor == 'oracle':
     jdbc_jar_name = "ojdbc6.jar"
     jdbc_symlink_name = "oracle-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
+    colon_count = xa_db_host.count(':')
+    if colon_count == 2 or colon_count == 0:
+      audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
+    else:
+      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor == 'postgres':
     jdbc_jar_name = "postgresql.jar"
@@ -279,6 +320,7 @@ if has_ranger_admin:
   
   ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
   xa_audit_db_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+  xa_audit_hdfs_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.destination.hdfs'] if xml_configurations_supported else None
   ssl_keystore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
   ssl_truststore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
@@ -286,3 +328,27 @@ if has_ranger_admin:
   #For SQLA explicitly disable audit to DB for Ranger
   if xa_audit_db_flavor == 'sqla':
     xa_audit_db_is_enabled = False
+
+hdfs_user = config['configurations']['hadoop-env']['hdfs_user'] if has_namenode else None
+hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab'] if has_namenode else None
+hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name'] if has_namenode else None
+hdfs_site = config['configurations']['hdfs-site'] if has_namenode else None
+default_fs = config['configurations']['core-site']['fs.defaultFS'] if has_namenode else None
+hadoop_bin_dir = hdp_select.get_hadoop_dir("bin") if has_namenode else None
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir() if has_namenode else None
+
+import functools
+#create partial functions with common arguments for every HdfsResource call
+#to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
+HdfsResource = functools.partial(
+  HdfsResource,
+  user=hdfs_user,
+  security_enabled = security_enabled,
+  keytab = hdfs_user_keytab,
+  kinit_path_local = kinit_path_local,
+  hadoop_bin_dir = hadoop_bin_dir,
+  hadoop_conf_dir = hadoop_conf_dir,
+  principal_name = hdfs_principal_name,
+  hdfs_site = hdfs_site,
+  default_fs = default_fs
+)

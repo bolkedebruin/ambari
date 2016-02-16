@@ -63,18 +63,14 @@ App.ConfigWidgetView = Em.View.extend(App.SupportsDependentConfigs, App.WidgetPo
    * if not, text-field with config value or label "Undefined" should be shown
    * @type {boolean}
    */
-  doNotShowWidget: function() {
-    return this.get('isPropertyUndefined') || this.get('config.showAsTextBox');
-  }.property('isPropertyUndefined', 'config.showAsTextBox'),
+  doNotShowWidget: Em.computed.or('isPropertyUndefined', 'config.showAsTextBox'),
 
   /**
    * defines if property in not defined in selected version
    * in this case "Undefined" should be shown instead of widget
    * @type {boolean}
    */
-  isPropertyUndefined: function() {
-    return this.get('config.value') === "Undefined";
-  }.property('config.value'),
+  isPropertyUndefined: Em.computed.equal('config.value', 'Undefined'),
 
   /**
    * Tab where current widget placed
@@ -106,9 +102,7 @@ App.ConfigWidgetView = Em.View.extend(App.SupportsDependentConfigs, App.WidgetPo
   /**
    * @type {boolean}
    */
-  showPencil: function () {
-    return this.get('supportSwitchToTextBox') && !this.get('disabled');
-  }.property('supportSwitchToTextBox', 'disabled'),
+  showPencil: Em.computed.and('supportSwitchToTextBox', '!disabled'),
 
   /**
    * Alias to <code>config.isOriginalSCP</code>
@@ -236,9 +230,7 @@ App.ConfigWidgetView = Em.View.extend(App.SupportsDependentConfigs, App.WidgetPo
    * Config name to display.
    * @type {String}
    */
-  configLabel: function() {
-    return this.get('config.stackConfigProperty.displayName') || this.get('config.displayName') || this.get('config.name');
-  }.property('config.name', 'config.displayName'),
+  configLabel: Em.computed.firstNotBlank('config.stackConfigProperty.displayName', 'config.displayName', 'config.name'),
 
 
   /**
@@ -374,6 +366,103 @@ App.ConfigWidgetView = Em.View.extend(App.SupportsDependentConfigs, App.WidgetPo
     }
     this.initIncompatibleWidgetAsTextBox();
   },
+
+  willInsertElement: function() {
+    var configConditions = this.get('config.configConditions');
+    if (configConditions && configConditions.length) {
+      this.configValueObserver();
+
+      //Add Observer to configCondition that depends on another config value
+      var isConditionConfigDependent =  configConditions.filterProperty('resource', 'config').length;
+      if (isConditionConfigDependent) {
+        this.addObserver('config.value', this, this.configValueObserver);
+      }
+    }
+  },
+
+  willDestroyElement: function() {
+    if (this.get('config.configConditions')) {
+      this.removeObserver('config.value', this, this.configValueObserver);
+    }
+  },
+
+  configValueObserver: function() {
+    var configConditions = this.get('config.configConditions');
+    var serviceName = this.get('config.serviceName');
+    var serviceConfigs = this.get('controller.stepConfigs').findProperty('serviceName',serviceName).get('configs');
+    var isConditionTrue;
+    configConditions.forEach(function(configCondition){
+      var ifStatement =  configCondition.get("if");
+      if (configCondition.get("resource") === 'config') {
+        isConditionTrue = App.config.calculateConfigCondition(ifStatement, serviceConfigs);
+        if (configCondition.get("type") === 'subsection' || configCondition.get("type") === 'subsectionTab') {
+          this.changeSubsectionAttribute(configCondition, isConditionTrue);
+        } else {
+          this.changeConfigAttribute(configCondition, isConditionTrue);
+        }
+      } else if (configCondition.get("resource") === 'service') {
+        var service = App.Service.find().findProperty('serviceName', ifStatement);
+        var serviceName;
+        if (service) {
+          isConditionTrue = true;
+        } else if (!service && this.get('controller.allSelectedServiceNames') && this.get('controller.allSelectedServiceNames').length) {
+          isConditionTrue = this.get('controller.allSelectedServiceNames').contains(ifStatement);
+        } else {
+          isConditionTrue = false;
+        }
+        this.changeConfigAttribute(configCondition, isConditionTrue);
+      }
+    }, this);
+  },
+
+
+  /**
+   *
+   * @param configCondition {App.ThemeCondition}
+   * @param isConditionTrue {boolean}
+   */
+  changeConfigAttribute: function(configCondition, isConditionTrue) {
+    var conditionalConfigName = configCondition.get("configName");
+    var conditionalConfigFileName = configCondition.get("fileName");
+    var serviceName = this.get('config.serviceName');
+    var serviceConfigs = this.get('controller.stepConfigs').findProperty('serviceName',serviceName).get('configs');
+    var action = isConditionTrue ? configCondition.get("then") : configCondition.get("else");
+    var valueAttributes = action.property_value_attributes;
+    for (var key in valueAttributes) {
+      if (valueAttributes.hasOwnProperty(key)) {
+        var valueAttribute = App.StackConfigValAttributesMap[key] || key;
+        var conditionalConfig = serviceConfigs.filterProperty('filename',conditionalConfigFileName).findProperty('name', conditionalConfigName);
+        if (conditionalConfig) {
+          conditionalConfig.set(valueAttribute, valueAttributes[key]);
+        }
+      }
+    }
+  },
+
+  /**
+   *
+   * @param subsectionCondition {App.ThemeCondition}
+   * @param isConditionTrue {boolean}
+   */
+  changeSubsectionAttribute: function(subsectionCondition, isConditionTrue) {
+    var subsectionConditionName = subsectionCondition.get('name');
+    var action = isConditionTrue ? subsectionCondition.get("then") : subsectionCondition.get("else");
+    if (subsectionCondition.get('id')) {
+      var valueAttributes = action.property_value_attributes;
+      if (valueAttributes && !Em.none(valueAttributes['visible'])) {
+        var themeResource;
+        if (subsectionCondition.get('type') === 'subsection') {
+          themeResource = App.SubSection.find().findProperty('name', subsectionConditionName);
+        } else if (subsectionCondition.get('type') === 'subsectionTab') {
+          themeResource = App.SubSectionTab.find().findProperty('name', subsectionConditionName);
+        }
+        themeResource.set('isHiddenByConfig', !valueAttributes['visible']);
+        themeResource.get('configs').setEach('hiddenBySection', !valueAttributes['visible']);
+      }
+    }
+  },
+
+
 
   /**
    * set widget value same as config value

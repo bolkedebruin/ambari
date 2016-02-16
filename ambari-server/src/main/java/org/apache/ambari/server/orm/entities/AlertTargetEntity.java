@@ -89,8 +89,7 @@ public class AlertTargetEntity {
   /**
    * Bi-directional many-to-many association to {@link AlertGroupEntity}
    */
-  @ManyToMany(mappedBy = "alertTargets", cascade = { CascadeType.MERGE,
-      CascadeType.REFRESH })
+  @ManyToMany(mappedBy = "alertTargets", cascade = {CascadeType.MERGE, CascadeType.REFRESH})
   private Set<AlertGroupEntity> alertGroups;
 
   /**

@@ -19,9 +19,12 @@ package org.apache.ambari.server.controller;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.utils.SecretReference;
 
 /**
  * This class encapsulates a configuration update request.
@@ -46,6 +49,8 @@ public class ConfigurationResponse {
 
   private Map<String, Map<String, String>> configAttributes;
 
+  private Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes;
+
   public ConfigurationResponse(String clusterName, StackId stackId,
       String type, String versionTag, Long version,
       Map<String, String> configs,
@@ -60,6 +65,23 @@ public class ConfigurationResponse {
     this.configAttributes = configAttributes;
   }
 
+  public ConfigurationResponse(String clusterName, StackId stackId,
+                               String type, String versionTag, Long version,
+                               Map<String, String> configs,
+                               Map<String, Map<String, String>> configAttributes,
+                               Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes) {
+    this.clusterName = clusterName;
+    this.stackId = stackId;
+    this.configs = configs;
+    this.type = type;
+    this.versionTag = versionTag;
+    this.version = version;
+    this.configs = configs;
+    this.configAttributes = configAttributes;
+    this.propertiesTypes = propertiesTypes;
+    SecretReference.replacePasswordsWithReferences(propertiesTypes, configs, type, version);
+  }
+
   /**
    * Constructor.
    *
@@ -69,7 +91,7 @@ public class ConfigurationResponse {
   public ConfigurationResponse(String clusterName, Config config) {
     this(clusterName, config.getStackId(), config.getType(), config.getTag(),
         config.getVersion(), config.getProperties(),
-        config.getPropertiesAttributes());
+        config.getPropertiesAttributes(), config.getPropertiesTypes());
   }
 
   /**
@@ -184,5 +206,13 @@ public class ConfigurationResponse {
 
   public void setServiceConfigVersions(List<Long> serviceConfigVersions) {
     this.serviceConfigVersions = serviceConfigVersions;
+  }
+
+  public Map<PropertyInfo.PropertyType, Set<String>> getPropertiesTypes() {
+    return propertiesTypes;
+  }
+
+  public void setPropertiesTypes(Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes) {
+    this.propertiesTypes = propertiesTypes;
   }
 }

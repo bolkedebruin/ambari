@@ -20,12 +20,16 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>kafka_user</name>
+    <display-name>Kafka User</display-name>
     <value>kafka</value>
     <property-type>USER</property-type>
     <description></description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
   <property>
     <name>kafka_log_dir</name>
@@ -35,7 +39,23 @@
   <property>
     <name>kafka_pid_dir</name>
     <value>/var/run/kafka</value>
+    <display-name>Kafka PID dir</display-name>
     <description></description>
+    <value-attributes>
+      <type>directory</type>
+      <editable-only-at-install>true</editable-only-at-install>
+      <overridable>false</overridable>
+    </value-attributes>
+  </property>
+  <property>
+    <name>kafka_user_nofile_limit</name>
+    <value>32000</value>
+    <description>Max open files limit setting for KAFKA user.</description>
+  </property>
+  <property>
+    <name>kafka_user_nproc_limit</name>
+    <value>16000</value>
+    <description>Max number of processes limit setting for KAFKA user.</description>
   </property>
 
   <!-- kafka-env.sh -->
@@ -62,6 +82,9 @@ if [ -f /etc/kafka/conf/kafka-ranger-env.sh ]; then
 . /etc/kafka/conf/kafka-ranger-env.sh
 fi
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
   <property>
     <name>is_supported_kafka_ranger</name>

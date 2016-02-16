@@ -17,9 +17,9 @@
  */
 package org.apache.ambari.server.orm.entities;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
@@ -50,7 +50,7 @@ import com.google.inject.Provider;
 @Entity
 @Table(name = "repo_version", uniqueConstraints = {
     @UniqueConstraint(columnNames = {"display_name"}),
-    @UniqueConstraint(columnNames = {"stack", "version"})
+    @UniqueConstraint(columnNames = {"stack_id", "version"})
 })
 @TableGenerator(name = "repository_version_id_generator",
     table = "ambari_sequences",
@@ -90,18 +90,15 @@ public class RepositoryVersionEntity {
   @Column(name = "display_name")
   private String displayName;
 
-  @Column(name = "upgrade_package")
-  private String upgradePackage;
-
   @Lob
   @Column(name = "repositories")
   private String operatingSystems;
 
   @OneToMany(cascade = CascadeType.REMOVE, mappedBy = "repositoryVersion")
-  private Collection<ClusterVersionEntity> clusterVersionEntities;
+  private Set<ClusterVersionEntity> clusterVersionEntities;
 
   @OneToMany(cascade = CascadeType.REMOVE, mappedBy = "repositoryVersion")
-  private Collection<HostVersionEntity> hostVersionEntities;
+  private Set<HostVersionEntity> hostVersionEntities;
 
   // ----- RepositoryVersionEntity -------------------------------------------------------
 
@@ -110,12 +107,27 @@ public class RepositoryVersionEntity {
   }
 
   public RepositoryVersionEntity(StackEntity stack, String version,
-      String displayName, String upgradePackage, String operatingSystems) {
+      String displayName, String operatingSystems) {
     this.stack = stack;
     this.version = version;
     this.displayName = displayName;
-    this.upgradePackage = upgradePackage;
     this.operatingSystems = operatingSystems;
+  }
+
+  /**
+   * Update one-to-many relation without rebuilding the whole entity
+   * @param entity many-to-one entity
+   */
+  public void updateClusterVersionEntityRelation(ClusterVersionEntity entity){
+    clusterVersionEntities.add(entity);
+  }
+
+  /**
+   * Update one-to-many relation without rebuilding the whole entity
+   * @param entity many-to-one entity
+   */
+  public void updateHostVersionEntityRelation(HostVersionEntity entity){
+    hostVersionEntities.add(entity);
   }
 
   public Long getId() {
@@ -159,14 +171,6 @@ public class RepositoryVersionEntity {
 
   public void setDisplayName(String displayName) {
     this.displayName = displayName;
-  }
-
-  public String getUpgradePackage() {
-    return upgradePackage;
-  }
-
-  public void setUpgradePackage(String upgradePackage) {
-    this.upgradePackage = upgradePackage;
   }
 
   public String getOperatingSystemsJson() {
@@ -233,9 +237,6 @@ public class RepositoryVersionEntity {
     if (displayName != null ? !displayName.equals(that.displayName) : that.displayName != null) {
       return false;
     }
-    if (upgradePackage != null ? !upgradePackage.equals(that.upgradePackage) : that.upgradePackage != null) {
-      return false;
-    }
     if (operatingSystems != null ? !operatingSystems.equals(that.operatingSystems) : that.operatingSystems != null) {
       return false;
     }
@@ -249,7 +250,6 @@ public class RepositoryVersionEntity {
     result = 31 * result + (stack != null ? stack.hashCode() : 0);
     result = 31 * result + (version != null ? version.hashCode() : 0);
     result = 31 * result + (displayName != null ? displayName.hashCode() : 0);
-    result = 31 * result + (upgradePackage != null ? upgradePackage.hashCode() : 0);
     result = 31 * result + (operatingSystems != null ? operatingSystems.hashCode() : 0);
     return result;
   }
@@ -269,7 +269,7 @@ public class RepositoryVersionEntity {
 
         String leading = stackId.getStackVersion();  // E.g, 2.3
         // In some cases during unit tests, the leading can contain 3 digits, so only the major number (first two parts) are needed.
-        String[] leadingParts = leading.split(".");
+        String[] leadingParts = leading.split("\\.");
         if (null != leadingParts && leadingParts.length > 2) {
           leading = leadingParts[0] + "." + leadingParts[1];
         }

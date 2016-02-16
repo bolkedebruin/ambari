@@ -207,9 +207,12 @@ class Options(Const):
   REPLACE_JH_HOST_NAME_TAG = "REPLACE_JH_HOST"
   REPLACE_RM_HOST_NAME_TAG = "REPLACE_RM_HOST"
   REPLACE_WITH_TAG = "REPLACE_WITH_"
+  PHOENIX_QUERY_SERVER = "PHOENIX_QUERY_SERVER"
   ZK_OPTIONS = "zoo.cfg"
   KAFKA_BROKER_CONF = "kafka-broker"
   RANGER_ADMIN = "admin-properties"
+  RANGER_USERSYNC = "usersync-properties"
+  RANGER_ENV = "ranger-env"
   KAFKA_PORT = "port"
   RANGER_EXTERNAL_URL = "policymgr_external_url"
   ZK_CLIENTPORT = "clientPort"
@@ -225,6 +228,8 @@ class Options(Const):
   """:type : ServerConfigFactory"""
   stack_advisor = None
   """:type : StackAdvisor"""
+  ambari_server = None
+  """:type : AmbariServer"""
 
   # Api constants
   ROOT_URL = None
@@ -234,6 +239,7 @@ class Options(Const):
 
   # Curl options
   CURL_PRINT_ONLY = None
+  CURL_WRITE_ONLY = None
 
   ARGS = None
   OPTIONS = None
@@ -258,6 +264,7 @@ class Options(Const):
   def initialize(cls):
     cls.ROOT_URL = '%s://%s:%s/api/v1' % (cls.API_PROTOCOL, cls.HOST, cls.API_PORT)
     cls.CLUSTER_URL = cls.ROOT_URL + "/clusters/%s" % cls.CLUSTER_NAME
+    cls.COMPONENTS_URL = cls.CLUSTER_URL + "/components?fields=ServiceComponentInfo/total_count"
     cls.COMPONENTS_FORMAT = cls.CLUSTER_URL + "/components/{0}"
     cls.TEZ_VIEW_URL = cls.ROOT_URL + "/views/TEZ"
     cls.STACKS_URL = cls.ROOT_URL + "/stacks"
@@ -269,6 +276,14 @@ class Options(Const):
       cls.SERVICES = set(map(lambda x: x.upper(), get_cluster_services()))
 
     cls.ambari_server = AmbariServer()
+    if not cls.isPropertyAttributesSupported():
+      cls.logger.warning("Property attributes not supported by current Ambari version")
+
+  @classmethod
+  def isPropertyAttributesSupported(cls):
+    if cls.ambari_server.server_version[0] * 10 + cls.ambari_server.server_version[1] >= 17:
+      return True
+    return False
 
   @classmethod
   def initialize_logger(cls, filename=None):
@@ -336,6 +351,16 @@ class AmbariServer(object):
     Options.logger.info("Resolving Ambari server configuration ...")
     self._get_server_info()
     self._get_agents_info()
+    self._get_components()
+
+  def _get_components(self):
+    info = curl(Options.COMPONENTS_URL, parse=True)
+    self._components = []
+    if CatConst.ITEMS_TAG in info:
+      for item in info[CatConst.ITEMS_TAG]:
+        if "ServiceComponentInfo" in item and "total_count" in item["ServiceComponentInfo"] and \
+          int(item["ServiceComponentInfo"]["total_count"]) > 0 and "component_name" in item["ServiceComponentInfo"]:
+          self._components.append(item["ServiceComponentInfo"]["component_name"])
 
   def _get_server_info(self):
     info = curl(Options.AMBARI_SERVER_URL, parse=True)
@@ -355,6 +380,10 @@ class AmbariServer(object):
     if "hostComponents" in info:
       agent_props = info["hostComponents"]
       self._agents = list(map(lambda x: x["RootServiceHostComponents"]["host_name"], agent_props))
+
+  @property
+  def components(self):
+    return self._components
 
   @property
   def server_version(self):
@@ -1203,7 +1232,7 @@ def delete_mr():
 def get_cluster_stackname():
   VERSION_URL_FORMAT = Options.CLUSTER_URL + '?fields=Clusters/version'
 
-  structured_resp = curl(VERSION_URL_FORMAT, simulate=False, validate=True, parse=True)
+  structured_resp = curl(VERSION_URL_FORMAT, validate=True, parse=True)
 
   if 'Clusters' in structured_resp:
     if 'version' in structured_resp['Clusters']:
@@ -1218,7 +1247,7 @@ def has_component_in_stack_def(stack_name, service_name, component_name):
 
   try:
     curl(STACK_COMPONENT_URL_FORMAT.format(stack, stack_version, service_name, component_name),
-         validate=True, simulate=False)
+         validate=True)
     return True
   except FatalException:
     return False
@@ -1271,11 +1300,24 @@ def update_config(properties, config_type, attributes=None):
   curl(Options.CLUSTER_URL, request_type="PUT", data=properties_payload, validate=True, soft_validation=True)
 
 
+def build_all_options(desired_configs):
+  """
+  Get all configs in the old-fashion way ( versions below 1.7.0 doesn't support "properties" filter )
+  """
+  config_url_tpl = Options.CLUSTER_URL + "/configurations?type={0}&tag={1}"
+  all_options = {CatConst.ITEMS_TAG: []}
+  for config in desired_configs:
+    cfg_item = curl(config_url_tpl.format(config, desired_configs[config]["tag"]), parse=True, validate=True)
+    if CatConst.ITEMS_TAG in cfg_item and len(cfg_item[CatConst.ITEMS_TAG]) == 1:
+      all_options[CatConst.ITEMS_TAG].append(cfg_item[CatConst.ITEMS_TAG][0])
+
+  return all_options
+
+
 def get_config_resp_all():
   desired_configs = {}
-  config_all_properties_url = Options.CLUSTER_URL + "/configurations?fields=properties,properties_attributes"
-  desired_configs_resp = curl(Options.CLUSTER_URL + "?fields=Clusters/desired_configs", validate=True, parse=True, simulate=False)
-  all_options = curl(config_all_properties_url, validate=True, parse=True, simulate=False)
+  config_all_properties_url = Options.CLUSTER_URL + "/configurations?fields=properties"
+  desired_configs_resp = curl(Options.CLUSTER_URL + "?fields=Clusters/desired_configs", validate=True, parse=True)
 
   if 'Clusters' in desired_configs_resp:
     if 'desired_configs' in desired_configs_resp['Clusters']:
@@ -1284,6 +1326,12 @@ def get_config_resp_all():
       return None
   else:
     return None
+
+  if Options.isPropertyAttributesSupported():
+    config_all_properties_url += ",properties_attributes"
+    all_options = curl(config_all_properties_url, validate=True, parse=True)
+  else:
+    all_options = build_all_options(desired_configs_resp)
 
   if CatConst.ITEMS_TAG in all_options:
     all_options = all_options[CatConst.ITEMS_TAG]
@@ -1330,7 +1378,7 @@ def is_services_exists(required_services):
 
 def get_cluster_services():
   services_url = Options.CLUSTER_URL + '/services'
-  raw_services = curl(services_url, parse=True, simulate=False)
+  raw_services = curl(services_url, parse=True)
 
   # expected structure:
   # items: [ {"href":"...", "ServiceInfo":{"cluster_name":"..", "service_name":".."}}, ..., ... ]
@@ -1342,7 +1390,7 @@ def get_cluster_services():
 
 
 def get_zookeeper_quorum():
-  zoo_cfg = curl(Options.COMPONENTS_FORMAT.format(Options.ZOOKEEPER_SERVER), validate=False, simulate=False, parse=True)
+  zoo_cfg = curl(Options.COMPONENTS_FORMAT.format(Options.ZOOKEEPER_SERVER), validate=False, parse=True)
   zoo_quorum = []
   zoo_def_port = "2181"
   if Options.server_config_factory is not None and Options.ZK_OPTIONS in Options.server_config_factory.items():
@@ -1359,13 +1407,11 @@ def get_zookeeper_quorum():
 
 def get_tez_history_url_base():
   try:
-    tez_view = curl(Options.TEZ_VIEW_URL, validate=False, simulate=False, parse=True)
+    tez_view = curl(Options.TEZ_VIEW_URL, validate=False, parse=True)
   except HTTPError as e:
     raise TemplateProcessingException(str(e))
 
   version = ""
-
-
   if "versions" in tez_view and \
     len(tez_view['versions']) > 0 and \
     "ViewVersionInfo" in tez_view['versions'][0] and \
@@ -1387,9 +1433,10 @@ def get_kafka_listeners():
 
   return kafka_listeners
 
+
 def get_ranger_xaaudit_hdfs_destination_directory():
   namenode_hostname="localhost"
-  namenode_cfg = curl(Options.COMPONENTS_FORMAT.format(Options.NAMENODE), validate=False, simulate=False, parse=True)
+  namenode_cfg = curl(Options.COMPONENTS_FORMAT.format(Options.NAMENODE), validate=False, parse=True)
   if "host_components" in namenode_cfg:
     namenode_hostname = namenode_cfg["host_components"][0]["HostRoles"]["host_name"]
 
@@ -1469,6 +1516,28 @@ def get_hdfs_batch_filespool_dir(config_name, component):
   return path
 
 
+def get_usersync_sync_source():
+  ug_sync_source = 'org.apache.ranger.unixusersync.process.UnixUserGroupBuilder'
+  sync_source = 'unix'
+  if Options.server_config_factory is not None and Options.RANGER_USERSYNC in Options.server_config_factory.items():
+    props = Options.server_config_factory.get_config(Options.RANGER_USERSYNC)
+    if "SYNC_SOURCE" in props.properties:
+      sync_source = props.properties['SYNC_SOURCE']
+
+    if sync_source == 'ldap':
+      ug_sync_source = 'org.apache.ranger.ldapusersync.process.LdapUserGroupBuilder'
+  return ug_sync_source
+
+def get_audit_check(audit_type):
+  audit_check_flag = "false"
+  if Options.server_config_factory is not None and Options.RANGER_ENV in Options.server_config_factory.items():
+    props = Options.server_config_factory.get_config(Options.RANGER_ENV)
+    audit_property = "xasecure.audit.destination.{0}".format(audit_type)
+    if audit_property in props.properties:
+      audit_check_flag = props.properties[audit_property]
+
+  return audit_check_flag
+
 def get_jt_host(catalog):
   """
   :type catalog: UpgradeCatalog
@@ -1491,7 +1560,7 @@ def get_jh_host(catalog):
   return ""
 
 def get_ranger_host():
-  ranger_config = curl(Options.COMPONENTS_FORMAT.format('RANGER_ADMIN'), validate=False, simulate=False, parse=True)
+  ranger_config = curl(Options.COMPONENTS_FORMAT.format('RANGER_ADMIN'), validate=False, parse=True)
   ranger_host_list = []
   if "host_components" in ranger_config:
     for item in ranger_config["host_components"]:
@@ -1509,11 +1578,13 @@ def get_ranger_service_details():
     data['RANGER_JDBC_DIALECT'] = 'org.eclipse.persistence.platform.database.MySQLPlatform'
     data['RANGER_JDBC_URL'] = 'jdbc:mysql://{0}/{1}'.format(properties_latest['db_host'], properties_latest['db_name'])
     data['RANGER_AUDIT_JDBC_URL'] = 'jdbc:mysql://{0}/{1}'.format(properties_latest['db_host'], properties_latest['audit_db_name'])
+    data['RANGER_ROOT_JDBC_URL'] = 'jdbc:mysql://{0}'.format(properties_latest['db_host'])
   elif properties_latest['DB_FLAVOR'].lower() == 'oracle':
     data['RANGER_JDBC_DRIVER'] = 'oracle.jdbc.OracleDriver'
     data['RANGER_JDBC_DIALECT'] = 'org.eclipse.persistence.platform.database.OraclePlatform'
     data['RANGER_JDBC_URL'] = 'jdbc:oracle:thin:@//{0}'.format(properties_latest['db_host'])
     data['RANGER_AUDIT_JDBC_URL'] = 'jdbc:oracle:thin:@//{0}'.format(properties_latest['db_host'])
+    data['RANGER_ROOT_JDBC_URL'] = 'jdbc:oracle:thin:@//{0}'.format(properties_latest['db_host'])
 
   return data
 
@@ -1575,6 +1646,29 @@ def get_hbase_coprocessmaster_classes():
   return old_value
 
 
+def get_rpc_scheduler_factory_class():
+  if Options.PHOENIX_QUERY_SERVER in Options.ambari_server.components:
+    return "org.apache.hadoop.hbase.ipc.PhoenixRpcSchedulerFactory"
+  else:
+    return ""
+
+
+def get_hbase_rpc_controllerfactory_class():
+  if Options.PHOENIX_QUERY_SERVER in Options.ambari_server.components:
+    return "org.apache.hadoop.hbase.ipc.controller.ServerRpcControllerFactory"
+  else:
+    return ""
+
+
+def get_hbase_regionserver_wal_codec():
+  prop = "phoenix_sql_enabled"
+  scf = Options.server_config_factory
+  if "hbase-env" in scf.items():
+    if prop in scf.get_config("hbase-env").properties and scf.get_config("hbase-env").properties[prop].upper() == "TRUE":
+      return "org.apache.hadoop.hbase.regionserver.wal.IndexedWALEditCodec"
+  return "org.apache.hadoop.hbase.regionserver.wal.WALCellCodec"
+
+
 def get_hbase_coprocessor_region_classes():
   scf = Options.server_config_factory
   prop = "hbase.coprocessor.region.classes"
@@ -1612,6 +1706,12 @@ def _substitute_handler(upgrade_catalog, tokens, value):
       value = value.replace(token, get_jh_host(upgrade_catalog))
     elif token == "{RESOURCEMANAGER_HOST}":
       value = value.replace(token, get_jt_host(upgrade_catalog))
+    elif token == "{HBASE_REGIONSERVER_WAL_CODEC}":
+      value = value.replace(token, get_hbase_regionserver_wal_codec())
+    elif token == "{HBASE_REGION_SERVER_RPC_SCHEDULER_FACTORY_CLASS}":
+      value = value.replace(token, get_rpc_scheduler_factory_class())
+    elif token == "{HBASE_RPC_CONTROLLERFACTORY_CLASS}":
+      value = value.replace(token, get_hbase_rpc_controllerfactory_class())
     elif token == "{ZOOKEEPER_QUORUM}":
       value = value.replace(token, get_zookeeper_quorum())
     elif token == "{HBASE_COPROCESS_MASTER_CLASSES}":
@@ -1688,8 +1788,6 @@ def _substitute_handler(upgrade_catalog, tokens, value):
       value = value.replace(token, get_audit_jdbc_url())
     elif token == "{STORM_AUDIT_JDBC_URL}":
       value = value.replace(token, get_audit_jdbc_url())
-    elif token == "{AUDIT_DB_PASSWD}":
-      value = value.replace(token, get_audit_db_passwd())
     elif token == "{AUDIT_TO_DB_HDFS}":
       value = value.replace(token, get_audit_to_db_enabled("ranger-hdfs-plugin-properties"))
     elif token == "{AUDIT_TO_DB_HBASE}":
@@ -1720,6 +1818,14 @@ def _substitute_handler(upgrade_catalog, tokens, value):
       value = value.replace(token, get_hdfs_batch_filespool_dir("ranger-knox-plugin-properties", "knox"))
     elif token == "{AUDIT_HDFS_FILESPOOL_DIR_STORM}":
       value = value.replace(token, get_hdfs_batch_filespool_dir("ranger-storm-plugin-properties", "storm"))
+    elif token == "{USERSYNC_SYNC_SOURCE}":
+      value = value.replace(token, get_usersync_sync_source())
+    elif token == "{AUDIT_TO_DB}":
+      value =  value.replace(token, get_audit_check("db"))
+    elif token == "{AUDIT_TO_HDFS}":
+      value =  value.replace(token, get_audit_check("hdfs"))
+    elif token == "{RANGER_ROOT_JDBC_URL}":
+      value = value.replace(token, get_ranger_service_details()['RANGER_ROOT_JDBC_URL'])
 
   return value
 
@@ -1856,14 +1962,18 @@ def generate_auth_header(user, password):
 
 
 def curl(url, tokens=None, headers=None, request_type="GET", data=None, parse=False,
-         simulate=None, validate=False, soft_validation=False):
+         validate=False, soft_validation=False):
+  """
+  :rtype type
+  """
   _headers = {}
   handler_chain = []
   post_req = ["POST", "PUT"]
   get_req = ["GET", "DELETE"]
 
-  simulate_only = Options.CURL_PRINT_ONLY is not None or (simulate is not None and simulate is True)
-  print_url = Options.CURL_PRINT_ONLY is not None and simulate is not None
+  print_url = Options.CURL_PRINT_ONLY is not None
+  write_only_print = Options.CURL_WRITE_ONLY is not None
+
   if request_type not in post_req + get_req:
     raise IOError("Wrong request type \"%s\" passed" % request_type)
 
@@ -1894,10 +2004,18 @@ def curl(url, tokens=None, headers=None, request_type="GET", data=None, parse=Fa
   req.get_method = lambda: request_type
 
   if print_url:
-    Options.logger.info(url)
+    if write_only_print:
+      if request_type in post_req:
+        Options.logger.info(url)
+        if data is not None:
+          Options.logger.info("POST Data: \n" + str(data))
+    else:
+      Options.logger.info(url)
+      if request_type in post_req and data is not None:
+        Options.logger.info("POST Data: \n" + str(data))
 
   code = 200
-  if not simulate_only:
+  if not (print_url and request_type in post_req):
     try:
       resp = director.open(req)
       out = resp.read()
@@ -1915,7 +2033,7 @@ def curl(url, tokens=None, headers=None, request_type="GET", data=None, parse=Fa
       Options.logger.info(url)
     out = "{}"
 
-  if validate and not simulate_only and (code > 299 or code < 200):
+  if validate and not print_url and (code > 299 or code < 200):
     if soft_validation:
       Options.logger.warning("Response validation failed, please check previous action result manually.")
     else:
@@ -2112,7 +2230,10 @@ def main():
 
   parser.add_option("-n", "--printonly",
                     action="store_true", dest="printonly", default=False,
-                    help="Prints all the curl commands to be executed (only for write/update actions)")
+                    help="Prints all the curl commands to be executed (no post/update request will be performed)")
+  parser.add_option("-w", "--writeonly",
+                    action="store_true", dest="writeonly", default=False,
+                    help="in the combination with --printonly param will print only post/update requests")
   parser.add_option("-o", "--log", dest="logfile", default=None,
                     help="Log file")
   parser.add_option("--report", dest="report", default=None,
@@ -2178,6 +2299,8 @@ def main():
   if options.printonly:
     Options.CURL_PRINT_ONLY = "yes"
     options.exit_message = "Simulated execution of action '%s'. Verify the list edit calls." % action
+    if options.writeonly:
+      Options.CURL_WRITE_ONLY = "yes"
 
   Options.ARGS = args
   Options.OPTIONS = options

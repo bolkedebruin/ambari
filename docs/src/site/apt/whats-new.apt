@@ -16,26 +16,17 @@
 
 What's New with Ambari?
 
- * The latest release Ambari 2.1.1 is a maintenance release for Ambari 2.1.0.
+  * The latest release of Ambari is Ambari 2.2.1
 
- * Ambari 2.1.0 added the following features:
+  * Ambari 2.2.1 added the following features:
 
-   * Updated Ambari OS Support
+    * The ability to set rack_info within a Blueprint
 
-   * Updated Ambari JDK support
+    * Updates to the Spark stack definition to support Spark 1.6
 
-   * Enhanced Configuration support in the Ambari User Interface
+    * Service check for Spark service
 
-   * Additional Blueprint HA Support (Oozie, Hive, Storm Nimbus)
-
-   * New Dynamic Provisioning model for Blueprint installs
-
-   * Rack Awareness
-
-   * Updated stacks (NFS Gateway, Accumulo)
-
-   * Delivered set of contrib Views
-
+    * The ability to set time ranges for graphs in dashboard widgets
 
 Getting Ambari Source
 
@@ -50,7 +41,7 @@ JIRA
 
 User Guide
 
-  Take a look at {{{https://cwiki.apache.org/confluence/display/AMBARI/Installation+Guide+for+Ambari+2.1.1} how to install a Hadoop cluster using Ambari 2.1.1}}.
+  Take a look at {{{https://cwiki.apache.org/confluence/display/AMBARI/Installation+Guide+for+Ambari+2.2.1} how to install a Hadoop cluster using Ambari 2.2.1}}.
 
 Stay Tuned
 

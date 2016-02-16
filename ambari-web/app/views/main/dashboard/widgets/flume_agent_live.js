@@ -40,9 +40,7 @@ App.FlumeAgentUpView = App.TextDashboardWidgetView.extend({
   thresh2: 70,
   maxValue: 100,
 
-  flumeAgentComponents: function() {
-    return this.get('model.hostComponents').filterProperty('componentName', 'FLUME_HANDLER');
-  }.property('model.hostComponents.length'),
+  flumeAgentComponents: Em.computed.filterBy('model.hostComponents', 'componentName', 'FLUME_HANDLER'),
 
   /**
    * @type {Array}
@@ -62,9 +60,7 @@ App.FlumeAgentUpView = App.TextDashboardWidgetView.extend({
     }
   }.property('model.hostComponents.length', 'flumeAgentsLive'),
 
-  content: function () {
-    return this.get('flumeAgentsLive').length + "/" + this.get('flumeAgentComponents').length;
-  }.property('flumeAgentComponents.length', 'flumeAgentsLive'),
+  content: Em.computed.concat('/', 'flumeAgentsLive.length', 'flumeAgentComponents.length'),
 
   statusObserver: function() {
     Em.run.once(this, 'filterStatusOnce');

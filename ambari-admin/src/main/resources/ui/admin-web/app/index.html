@@ -48,15 +48,15 @@
       <header class="navbar navbar-static-top navbar-inverse">
         <div class="navbar-inner">
           <div class="container">
-            <a href="#/" class="logo"><img src="/img/logo-white.png" alt="Apache Ambari" title="Apache Ambari"></a>
-            <a href="#/" class="brand" title="Apache Ambari">Ambari</a>
+            <a href="/#/main/dashboard" class="logo"><img src="/img/logo-white.png" alt="{{'common.apacheAmbari' | translate}}" title="{{'common.apacheAmbari' | translate}}"></a>
+            <a href="/#/main/dashboard" class="brand" title="{{'common.apacheAmbari' | translate}}">{{'common.ambari' | translate}}</a>
             <ul class="nav navbar-nav navbar-right">
               <li>
                 <div class="btn-group navbar-views-dropdown" dropdown is-open="viewsdropdown.isopen" ng-mouseover="viewsdropdown.isopen=true" ng-mouseout="viewsdropdown.isopen=false">
                   <a href="/#/main/views" ng-click="gotoViewsDashboard()" class="dropdown-toggle"><i class="fa fa-th"></i></a>
                   <ul class="dropdown-menu" role="menu">
                     <li ng-repeat="instance in viewInstances"><a href="/#/main{{instance.context_path}}" ng-click="about()">{{instance.label}}</a></li>
-                    <li ng-show="!viewInstances.length" class="disabled"><a>No Views</a></li>
+                    <li ng-show="!viewInstances.length" class="disabled"><a>{{'common.noViews' | translate}}</a></li>
                   </ul>
                 </div>
               </li>
@@ -66,14 +66,14 @@
                     <i class="fa fa-user"></i> {{currentUser}} <span class="caret"></span>
                   </button>
                   <ul class="dropdown-menu" role="menu">
-                    <li><a href ng-click="about()">About</a></li>
+                    <li><a href ng-click="about()">{{'common.about' | translate}}</a></li>
                     <li class="divider"></li>
-                    <li><a href ng-click="signOut()">Sign out</a></li>
+                    <li><a href ng-click="signOut()">{{'common.signOut' | translate}}</a></li>
                   </ul>
                 </div>
               </li>
             </ul>
-          </div>        
+          </div>
         </div>
       </header>
     </div>
@@ -127,6 +127,9 @@
     <script src="scripts/i18n.config.js"></script>
     <script src="scripts/controllers/mainCtrl.js"></script>
     <script src="scripts/controllers/NavbarCtrl.js"></script>
+    <script src="scripts/controllers/authentication/AuthenticationMainCtrl.js"></script>
+    <script src="scripts/controllers/loginActivities/LoginActivitiesMainCtrl.js"></script>
+    <script src="scripts/controllers/loginActivities/LoginMessageMainCtrl.js"></script>
     <script src="scripts/controllers/users/UsersCreateCtrl.js"></script>
     <script src="scripts/controllers/users/UsersListCtrl.js"></script>
     <script src="scripts/controllers/users/UsersShowCtrl.js"></script>
@@ -137,6 +140,7 @@
     <script src="scripts/controllers/ambariViews/ViewsEditCtrl.js"></script>
     <script src="scripts/controllers/ambariViews/CreateViewInstanceCtrl.js"></script>
     <script src="scripts/controllers/clusters/ClustersManageAccessCtrl.js"></script>
+    <script src="scripts/controllers/clusters/UserAccessListCtrl.js"></script>
     <script src="scripts/controllers/stackVersions/StackVersionsCreateCtrl.js"></script>
     <script src="scripts/controllers/stackVersions/StackVersionsListCtrl.js"></script>
     <script src="scripts/controllers/stackVersions/StackVersionsEditCtrl.js"></script>
@@ -144,6 +148,7 @@
     <script src="scripts/directives/PasswordVerify.js"></script>
     <script src="scripts/directives/disabledTooltip.js"></script>
     <script src="scripts/directives/editableList.js"></script>
+    <script src="scripts/services/UserConstants.js"></script>
     <script src="scripts/services/User.js"></script>
     <script src="scripts/services/Group.js"></script>
     <script src="scripts/services/View.js"></script>

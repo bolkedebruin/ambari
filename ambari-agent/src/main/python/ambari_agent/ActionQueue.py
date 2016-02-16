@@ -98,6 +98,7 @@ class ActionQueue(threading.Thread):
                   command['serviceName'] + " of cluster " + \
                   command['clusterName'] + " to the queue.")
       self.statusCommandQueue.put(command)
+      logger.debug(pprint.pformat(command))
 
   def put(self, commands):
     for command in commands:
@@ -326,7 +327,8 @@ class ActionQueue(threading.Thread):
 
     # let recovery manager know the current state
     if status == self.COMPLETED_STATUS:
-      if self.controller.recovery_manager.enabled() and command.has_key('roleCommand'):
+      if self.controller.recovery_manager.enabled() and command.has_key('roleCommand') \
+          and self.controller.recovery_manager.configured_for_recovery(command['role']):
         if command['roleCommand'] == self.ROLE_COMMAND_START:
           self.controller.recovery_manager.update_current_status(command['role'], LiveStatus.LIVE_STATUS)
           self.controller.recovery_manager.update_config_staleness(command['role'], False)
@@ -441,11 +443,16 @@ class ActionQueue(threading.Thread):
 
       if component_status_result['exitcode'] == 0:
         component_status = LiveStatus.LIVE_STATUS
-        self.controller.recovery_manager.update_current_status(component, component_status)
+        if self.controller.recovery_manager.enabled() \
+            and self.controller.recovery_manager.configured_for_recovery(component):
+          self.controller.recovery_manager.update_current_status(component, component_status)
       else:
         component_status = LiveStatus.DEAD_STATUS
-        self.controller.recovery_manager.update_current_status(component, component_status)
-      request_execution_cmd = self.controller.recovery_manager.requires_recovery(component)
+        if self.controller.recovery_manager.enabled() \
+            and self.controller.recovery_manager.configured_for_recovery(component):
+          self.controller.recovery_manager.update_current_status(component, component_status)
+      request_execution_cmd = self.controller.recovery_manager.requires_recovery(component) and \
+                                not self.controller.recovery_manager.command_exists(component, ActionQueue.EXECUTION_COMMAND)
 
       if component_status_result.has_key('structuredOut'):
         component_extra = component_status_result['structuredOut']

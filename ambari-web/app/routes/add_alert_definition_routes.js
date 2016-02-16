@@ -23,7 +23,7 @@ module.exports = App.WizardRoute.extend({
   route: '/alerts/add',
 
   enter: function (router) {
-    if (App.isAccessible('ADMIN')) {
+    if (App.isAuthorized('SERVICE.TOGGLE_ALERTS')) {
       Em.run.next(function () {
         var addAlertDefinitionController = router.get('addAlertDefinitionController');
         App.router.get('updateController').set('isWorking', false);
@@ -135,7 +135,9 @@ module.exports = App.WizardRoute.extend({
             alwaysCallback: function () {
               controller.get('popup').hide();
               router.transitionTo('main.alerts');
-              location.reload();
+              Em.run.next(function() {
+                location.reload();
+              });
             }
           });
       });

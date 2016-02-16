@@ -27,6 +27,7 @@ from resource_management.libraries.script import Script
 from resource_management.libraries.functions import conf_select
 from resource_management.libraries.functions import hdp_select
 from resource_management.libraries.functions import format
+from resource_management.core.resources.system import Link
 from resource_management.core.resources.system import Execute
 from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
 from resource_management.libraries.functions.security_commons import build_expectations, \
@@ -39,6 +40,10 @@ from resource_management.core.resources.service import Service
 
 
 class UiServer(Script):
+
+  def get_stack_to_component(self):
+    return {"HDP": "storm-client"}
+
   def install(self, env):
     self.install_packages(env)
     self.configure(env)
@@ -70,24 +75,36 @@ class UiServerWindows(UiServer):
 
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
 class UiServerDefault(UiServer):
-  def get_stack_to_component(self):
-    return {"HDP": "storm-client"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
       conf_select.select(params.stack_name, "storm", params.version)
       hdp_select.select("storm-client", params.version)
 
-  def start(self, env, rolling_restart=False):
+  def link_metrics_sink_jar(self):
+    # Add storm metrics reporter JAR to storm-ui-server classpath.
+    # Remove symlinks. They can be there, if you doing upgrade from HDP < 2.2 to HDP >= 2.2
+    Link(format("{storm_lib_dir}/ambari-metrics-storm-sink.jar"),
+         action="delete")
+    # On old HDP 2.1 versions, this symlink may also exist and break EU to newer versions
+    Link("/usr/lib/storm/lib/ambari-metrics-storm-sink.jar", action="delete")
+
+    Execute(format("{sudo} ln -s {metric_collector_sink_jar} {storm_lib_dir}/ambari-metrics-storm-sink.jar"),
+            not_if=format("ls {storm_lib_dir}/ambari-metrics-storm-sink.jar"),
+            only_if=format("ls {metric_collector_sink_jar}")
+            )
+
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env)
-    setup_ranger_storm(rolling_upgrade=rolling_restart)
+    self.link_metrics_sink_jar()
+    setup_ranger_storm(upgrade_type=upgrade_type)
     service("ui", action="start")
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     service("ui", action="stop")

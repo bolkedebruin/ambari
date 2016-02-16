@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -106,6 +106,9 @@ log4j.logger.org.apache.zookeeper.server.NIOServerCnxn=WARN,FA
 log4j.logger.org.apache.zookeeper.ClientCnxnSocketNIO=WARN,FA
 
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
 </configuration>

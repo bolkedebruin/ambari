@@ -78,9 +78,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
   /**
    * @type {boolean}
    */
-  isEditWidget: function () {
-    return this.get('content.controllerName') === 'widgetEditController';
-  }.property('content.controllerName'),
+  isEditWidget: Em.computed.equal('content.controllerName', 'widgetEditController'),
 
   /**
    * metrics filtered by type
@@ -183,9 +181,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
         id: id,
         data: [],
         isInvalid: false,
-        isEmpty: function () {
-          return (this.get('data.length') === 0);
-        }.property('data.length')
+        isEmpty: Em.computed.equal('data.length', 0)
       })
     }));
     return id;
@@ -214,9 +210,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
       data: [],
       alias: '{{' + this.get('EXPRESSION_PREFIX') + id + '}}',
       isInvalid: false,
-      isEmpty: function () {
-        return (this.get('data.length') === 0);
-      }.property('data.length')
+      isEmpty: Em.computed.equal('data.length', 0)
     }));
     return id;
   },

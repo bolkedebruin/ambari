@@ -5,7 +5,7 @@
   "textReplacements": [
     ["hdp-select", "distro-select"]
    ],
-  "preservedText": ["ext-2.2", "HDP-oozie", "hdp.version", "HDP_VERSION"],
+  "preservedText": ["ext-2.2", "HDP-oozie", "hdp.version", "HDP_VERSION", "192.168."],
   "uiMapping": [
     {
       "stackVersionNumber": "1.0",
@@ -20,7 +20,8 @@
     "jdk1.8.url" : "http://DOWNLOAD_NOT_SUPPORTED",
     "jdk1.7.jcpol-url" : "http://DOWNLOAD_NOT_SUPPORTED",
     "jdk1.8.jcpol-url" : "http://DOWNLOAD_NOT_SUPPORTED",
-    "rolling.upgrade.min.stack" : "SAPHD-0.9"
+    "rolling.upgrade.min.stack" : "SAPHD-0.9",
+    "server.setup.default.dbms" : "sqlanywhere"
   },
   "common-services": [
     {
@@ -33,7 +34,7 @@
               "name": "hive-env",
               "properties": {
                 "hive_database_type": "sqlanywhere",
-                "hive_database": "Existing SQLA Database"
+                "hive_database": "Existing SQL Anywhere Database"
               }
             },
             {
@@ -56,7 +57,7 @@
             {
               "name": "oozie-env",
               "properties": {
-                "oozie_database": "Existing SQLA Database"
+                "oozie_database": "Existing SQL Anywhere Database"
               }
             },
             {
@@ -103,7 +104,6 @@
     {
       "version": "0.7",
       "baseVersion": "2.0.6",
-      "family": "redhat6,suse11",
       "active": "false",
       "services": [
         {
@@ -155,7 +155,6 @@
       "version": "0.8",
       "baseVersion": "2.1",
       "active": "false",
-      "family": "redhat6,suse11",
       "services": [
         {
           "name": "KERBEROS"
@@ -220,7 +219,6 @@
       "version": "0.9",
       "baseVersion": "2.2",
       "active": "false",
-      "family": "redhat6,suse11",
       "services": [
         {
           "name": "KERBEROS"
@@ -297,7 +295,6 @@
       "version": "1.0",
       "baseVersion": "2.3",
       "active": "true",
-      "family": "redhat6,redhat7,suse11",
       "services": [
         {
           "name": "KERBEROS"

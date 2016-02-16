@@ -19,7 +19,7 @@
 package org.apache.ambari.server.topology;
 
 import org.apache.ambari.server.controller.RequestStatusResponse;
-import org.apache.ambari.server.state.SecurityType;
+import org.apache.ambari.server.controller.internal.ProvisionAction;
 
 import java.util.Collection;
 import java.util.Map;
@@ -31,11 +31,18 @@ import java.util.Map;
 public interface ClusterTopology {
 
   /**
-   * Get the name of the cluster.
+   * Get the id of the cluster.
    *
-   * @return cluster name
+   * @return cluster id
    */
-  public String getClusterName();
+  public Long getClusterId();
+
+  /**
+   * Set the id of the cluster.
+   *
+   * @param clusterId cluster id
+   */
+  public void setClusterId(Long clusterId);
 
   /**
    * Get the blueprint associated with the cluster.
@@ -146,6 +153,20 @@ public interface ClusterTopology {
    * @return start response
    */
   public RequestStatusResponse startHost(String hostName);
+
+  public void setConfigRecommendationStrategy(ConfigRecommendationStrategy strategy);
+
+  public ConfigRecommendationStrategy getConfigRecommendationStrategy();
+
+  /**
+   * Set request provision action : INSTALL vs INSTALL_AND_START
+   * @param provisionAction @ProvisionAction
+   */
+  public void setProvisionAction(ProvisionAction provisionAction);
+
+  public ProvisionAction getProvisionAction();
+
+  public Map<String, AdvisedConfiguration> getAdvisedConfigurations();
 
   //todo: don't expose ambari context from this class
   public AmbariContext getAmbariContext();

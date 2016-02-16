@@ -23,6 +23,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,18 +33,23 @@ import java.util.Set;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
+import org.apache.ambari.server.state.stack.UpgradePack.PrerequisiteCheckConfig;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
 import org.apache.ambari.server.state.stack.upgrade.ClusterGrouping;
 import org.apache.ambari.server.state.stack.upgrade.ClusterGrouping.ExecuteStage;
 import org.apache.ambari.server.state.stack.upgrade.ConfigureTask;
-import org.apache.ambari.server.state.stack.upgrade.ConfigureTask.Transfer;
 import org.apache.ambari.server.state.stack.upgrade.Direction;
 import org.apache.ambari.server.state.stack.upgrade.Grouping;
+import org.apache.ambari.server.state.stack.upgrade.ParallelScheduler;
+import org.apache.ambari.server.state.stack.upgrade.RestartGrouping;
 import org.apache.ambari.server.state.stack.upgrade.RestartTask;
 import org.apache.ambari.server.state.stack.upgrade.ServiceCheckGrouping;
+import org.apache.ambari.server.state.stack.upgrade.StopGrouping;
 import org.apache.ambari.server.state.stack.upgrade.Task;
-import org.apache.ambari.server.state.stack.upgrade.TransferOperation;
+import org.apache.ambari.server.state.stack.upgrade.UpdateStackGrouping;
+import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -87,9 +93,8 @@ public class UpgradePackTest {
     Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
     assertTrue(upgrades.size() > 0);
     assertTrue(upgrades.containsKey("upgrade_test"));
-
-    UpgradePack up = upgrades.get("upgrade_test");
-    assertEquals("2.2.*", up.getTarget());
+    UpgradePack upgrade = upgrades.get("upgrade_test");
+    assertEquals("2.2.*.*", upgrade.getTarget());
 
     Map<String, List<String>> expectedStages = new LinkedHashMap<String, List<String>>() {{
       put("ZOOKEEPER", Arrays.asList("ZOOKEEPER_SERVER"));
@@ -99,24 +104,24 @@ public class UpgradePackTest {
     // !!! test the tasks
     int i = 0;
     for (Entry<String, List<String>> entry : expectedStages.entrySet()) {
-      assertTrue(up.getTasks().containsKey(entry.getKey()));
-      assertEquals(i++, indexOf(up.getTasks(), entry.getKey()));
+      assertTrue(upgrade.getTasks().containsKey(entry.getKey()));
+      assertEquals(i++, indexOf(upgrade.getTasks(), entry.getKey()));
 
       // check that the number of components matches
-      assertEquals(entry.getValue().size(), up.getTasks().get(entry.getKey()).size());
+      assertEquals(entry.getValue().size(), upgrade.getTasks().get(entry.getKey()).size());
 
       // check component ordering
       int j = 0;
       for (String comp : entry.getValue()) {
-        assertEquals(j++, indexOf(up.getTasks().get(entry.getKey()), comp));
+        assertEquals(j++, indexOf(upgrade.getTasks().get(entry.getKey()), comp));
       }
     }
 
     // !!! test specific tasks
-    assertTrue(up.getTasks().containsKey("HDFS"));
-    assertTrue(up.getTasks().get("HDFS").containsKey("NAMENODE"));
+    assertTrue(upgrade.getTasks().containsKey("HDFS"));
+    assertTrue(upgrade.getTasks().get("HDFS").containsKey("NAMENODE"));
 
-    ProcessingComponent pc = up.getTasks().get("HDFS").get("NAMENODE");
+    ProcessingComponent pc = upgrade.getTasks().get("HDFS").get("NAMENODE");
     assertNotNull(pc.preTasks);
     assertNotNull(pc.postTasks);
     assertNotNull(pc.tasks);
@@ -128,17 +133,17 @@ public class UpgradePackTest {
     assertEquals(RestartTask.class, pc.tasks.get(0).getClass());
 
 
-    assertTrue(up.getTasks().containsKey("ZOOKEEPER"));
-    assertTrue(up.getTasks().get("ZOOKEEPER").containsKey("ZOOKEEPER_SERVER"));
+    assertTrue(upgrade.getTasks().containsKey("ZOOKEEPER"));
+    assertTrue(upgrade.getTasks().get("ZOOKEEPER").containsKey("ZOOKEEPER_SERVER"));
 
-    pc = up.getTasks().get("HDFS").get("DATANODE");
+    pc = upgrade.getTasks().get("HDFS").get("DATANODE");
     assertNotNull(pc.preDowngradeTasks);
     assertEquals(0, pc.preDowngradeTasks.size());
     assertNotNull(pc.postDowngradeTasks);
     assertEquals(1, pc.postDowngradeTasks.size());
 
 
-    pc = up.getTasks().get("ZOOKEEPER").get("ZOOKEEPER_SERVER");
+    pc = upgrade.getTasks().get("ZOOKEEPER").get("ZOOKEEPER_SERVER");
     assertNotNull(pc.preTasks);
     assertEquals(1, pc.preTasks.size());
     assertNotNull(pc.postTasks);
@@ -146,56 +151,43 @@ public class UpgradePackTest {
     assertNotNull(pc.tasks);
     assertEquals(1, pc.tasks.size());
 
-    pc = up.getTasks().get("YARN").get("NODEMANAGER");
+    pc = upgrade.getTasks().get("YARN").get("NODEMANAGER");
     assertNotNull(pc.preTasks);
     assertEquals(2, pc.preTasks.size());
     Task t = pc.preTasks.get(1);
     assertEquals(ConfigureTask.class, t.getClass());
     ConfigureTask ct = (ConfigureTask) t;
-    assertEquals("core-site", ct.getConfigType());
-    assertEquals(4, ct.getTransfers().size());
-
-    /*
-            <transfer operation="COPY" from-key="copy-key" to-key="copy-key-to" />
-            <transfer operation="COPY" from-type="my-site" from-key="my-copy-key" to-key="my-copy-key-to" />
-            <transfer operation="MOVE" from-key="move-key" to-key="move-key-to" />
-            <transfer operation="DELETE" delete-key="delete-key">
-              <keep-key>important-key</keep-key>
-            </transfer>
-    */
-    Transfer t1 = ct.getTransfers().get(0);
-    assertEquals(TransferOperation.COPY, t1.operation);
-    assertEquals("copy-key", t1.fromKey);
-    assertEquals("copy-key-to", t1.toKey);
-
-    Transfer t2 = ct.getTransfers().get(1);
-    assertEquals(TransferOperation.COPY, t2.operation);
-    assertEquals("my-site", t2.fromType);
-    assertEquals("my-copy-key", t2.fromKey);
-    assertEquals("my-copy-key-to", t2.toKey);
-    assertTrue(t2.keepKeys.isEmpty());
-
-    Transfer t3 = ct.getTransfers().get(2);
-    assertEquals(TransferOperation.MOVE, t3.operation);
-    assertEquals("move-key", t3.fromKey);
-    assertEquals("move-key-to", t3.toKey);
-
-    Transfer t4 = ct.getTransfers().get(3);
-    assertEquals(TransferOperation.DELETE, t4.operation);
-    assertEquals("delete-key", t4.deleteKey);
-    assertNull(t4.toKey);
-    assertTrue(t4.preserveEdits);
-    assertEquals(1, t4.keepKeys.size());
-    assertEquals("important-key", t4.keepKeys.get(0));
+    // check that the Configure task successfully parsed id
+    assertEquals("hdp_2_1_1_nm_pre_upgrade", ct.getId());
   }
 
   @Test
-  public void testGroupOrders() {
+  public void testGroupOrdersForRolling() {
     Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
     assertTrue(upgrades.size() > 0);
     assertTrue(upgrades.containsKey("upgrade_test_checks"));
+    UpgradePack upgrade = upgrades.get("upgrade_test_checks");
 
-    UpgradePack up = upgrades.get("upgrade_test_checks");
+    PrerequisiteCheckConfig prerequisiteCheckConfig = upgrade.getPrerequisiteCheckConfig();
+    assertNotNull(prerequisiteCheckConfig);
+    assertNotNull(prerequisiteCheckConfig.globalProperties);
+    assertTrue(prerequisiteCheckConfig.getGlobalProperties().containsKey("global-property-1"));
+    assertEquals("global-value-1", prerequisiteCheckConfig.getGlobalProperties().get("global-property-1"));
+    assertNotNull(prerequisiteCheckConfig.prerequisiteCheckProperties);
+    assertEquals(2, prerequisiteCheckConfig.prerequisiteCheckProperties.size());
+    assertNotNull(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck"));
+    assertTrue(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck").containsKey("dfs-protocols-regex"));
+    assertEquals("^([^:]*dfs|wasb|ecs):.*", prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesMapReduceDistributedCacheCheck").get("dfs-protocols-regex"));
+    assertNotNull(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck"));
+    assertTrue(prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck").containsKey("dfs-protocols-regex"));
+    assertEquals("^([^:]*dfs|wasb|ecs):.*", prerequisiteCheckConfig.getCheckProperties(
+        "org.apache.ambari.server.checks.ServicesTezDistributedCacheCheck").get("dfs-protocols-regex"));
+
 
     List<String> expected_up = Arrays.asList(
         "PRE_CLUSTER",
@@ -218,7 +210,7 @@ public class UpgradePackTest {
     Grouping serviceCheckGroup = null;
 
     int i = 0;
-    List<Grouping> groups = up.getGroups(Direction.UPGRADE);
+    List<Grouping> groups = upgrade.getGroups(Direction.UPGRADE);
     for (Grouping g : groups) {
       assertEquals(expected_up.get(i), g.name);
       i++;
@@ -244,7 +236,7 @@ public class UpgradePackTest {
 
 
     i = 0;
-    groups = up.getGroups(Direction.DOWNGRADE);
+    groups = upgrade.getGroups(Direction.DOWNGRADE);
     for (Grouping g : groups) {
       assertEquals(expected_down.get(i), g.name);
       i++;
@@ -252,15 +244,62 @@ public class UpgradePackTest {
 
   }
 
+
+  // TODO AMBARI-12698, add the Downgrade case
   @Test
-  public void testDirection() throws Exception {
+  public void testGroupOrdersForNonRolling() {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+    assertTrue(upgrades.size() > 0);
+    assertTrue(upgrades.containsKey("upgrade_test_nonrolling"));
+    UpgradePack upgrade = upgrades.get("upgrade_test_nonrolling");
+
+    List<String> expected_up = Arrays.asList(
+      "PRE_CLUSTER",
+      "Stop High-Level Daemons",
+      "Backups",
+      "Stop Low-Level Daemons",
+      "UPDATE_DESIRED_STACK_ID",
+      "ALL_HOST_OPS",
+      "ZOOKEEPER",
+      "HDFS",
+      "MR and YARN",
+      "POST_CLUSTER");
+
+    List<String> expected_down = Arrays.asList(
+      "Restore Backups",
+      "UPDATE_DESIRED_STACK_ID",
+      "ALL_HOST_OPS",
+      "ZOOKEEPER",
+      "HDFS",
+      "MR and YARN",
+      "POST_CLUSTER");
+
+
+    Iterator<String> itr_up = expected_up.iterator();
+    List<Grouping> upgrade_groups = upgrade.getGroups(Direction.UPGRADE);
+    for (Grouping g : upgrade_groups) {
+      assertEquals(true, itr_up.hasNext());
+      assertEquals(itr_up.next(), g.name);
+    }
+
+    Iterator<String> itr_down = expected_down.iterator();
+    List<Grouping> downgrade_groups = upgrade.getGroups(Direction.DOWNGRADE);
+    for (Grouping g : downgrade_groups) {
+      assertEquals(true, itr_down.hasNext());
+      assertEquals(itr_down.next(), g.name);
+    }
+  }
+
+
+  @Test
+  public void testDirectionForRolling() throws Exception {
     Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
     assertTrue(upgrades.size() > 0);
     assertTrue(upgrades.containsKey("upgrade_direction"));
+    UpgradePack upgrade = upgrades.get("upgrade_direction");
+    assertTrue(upgrade.getType() == UpgradeType.ROLLING);
 
-    UpgradePack up = upgrades.get("upgrade_direction");
-
-    List<Grouping> groups = up.getGroups(Direction.UPGRADE);
+    List<Grouping> groups = upgrade.getGroups(Direction.UPGRADE);
     assertEquals(4, groups.size());
     Grouping group = groups.get(2);
     assertEquals(ClusterGrouping.class, group.getClass());
@@ -273,7 +312,7 @@ public class UpgradePackTest {
     assertNotNull(stages.get(0).intendedDirection);
     assertEquals(Direction.DOWNGRADE, stages.get(0).intendedDirection);
 
-    groups = up.getGroups(Direction.DOWNGRADE);
+    groups = upgrade.getGroups(Direction.DOWNGRADE);
     assertEquals(3, groups.size());
     // there are two clustergroupings at the end
     group = groups.get(1);
@@ -283,9 +322,124 @@ public class UpgradePackTest {
     group = groups.get(2);
     assertEquals(ClusterGrouping.class, group.getClass());
     assertEquals("Finalize Upgrade", group.title);
-
   }
 
+  @Test
+  public void testSkippableFailures() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+    Set<String> keys = upgrades.keySet();
+    for (String key : keys) {
+      Assert.assertFalse(upgrades.get(key).isComponentFailureAutoSkipped());
+      Assert.assertFalse(upgrades.get(key).isServiceCheckFailureAutoSkipped());
+    }
+
+    upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.2.0");
+    UpgradePack upgradePack = upgrades.get("upgrade_test_skip_failures");
+    Assert.assertTrue(upgradePack.isComponentFailureAutoSkipped());
+    Assert.assertTrue(upgradePack.isServiceCheckFailureAutoSkipped());
+  }
+
+  /**
+   * Tests that the XML for not auto skipping skippable failures works.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testNoAutoSkipFailure() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.2.0");
+    UpgradePack upgradePack = upgrades.get("upgrade_test_skip_failures");
+
+    List<Grouping> groups = upgradePack.getGroups(Direction.UPGRADE);
+    for (Grouping grouping : groups) {
+      if (grouping.name.equals("SKIPPABLE_BUT_NOT_AUTO_SKIPPABLE")) {
+        Assert.assertFalse(grouping.supportsAutoSkipOnFailure);
+      } else {
+        Assert.assertTrue(grouping.supportsAutoSkipOnFailure);
+      }
+    }
+  }
+
+  @Test
+  public void testDirectionForNonRolling() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+    assertTrue(upgrades.size() > 0);
+    assertTrue(upgrades.containsKey("upgrade_test_nonrolling"));
+    UpgradePack upgrade = upgrades.get("upgrade_test_nonrolling");
+    assertTrue(upgrade.getType() == UpgradeType.NON_ROLLING);
+
+    List<Grouping> groups = upgrade.getGroups(Direction.UPGRADE);
+    assertEquals(10, groups.size());
+
+    Grouping group = null;
+    ClusterGrouping clusterGroup = null;
+    UpdateStackGrouping updateStackGroup = null;
+    StopGrouping stopGroup = null;
+    RestartGrouping restartGroup = null;
+
+    group = groups.get(0);
+    assertEquals(ClusterGrouping.class, group.getClass());
+    clusterGroup = (ClusterGrouping) group;
+    assertEquals("Prepare Upgrade", clusterGroup.title);
+    assertNull(clusterGroup.parallelScheduler);
+
+    group = groups.get(1);
+    assertEquals(StopGrouping.class, group.getClass());
+    stopGroup = (StopGrouping) group;
+    assertEquals("Stop Daemons for High-Level Services", stopGroup.title);
+    assertNotNull(stopGroup.parallelScheduler);
+    assertEquals(ParallelScheduler.DEFAULT_MAX_DEGREE_OF_PARALLELISM, stopGroup.parallelScheduler.maxDegreeOfParallelism);
+
+    group = groups.get(2);
+    assertEquals(ClusterGrouping.class, group.getClass());
+    clusterGroup = (ClusterGrouping) group;
+    assertEquals("Take Backups", clusterGroup.title);
+    assertNull(clusterGroup.parallelScheduler);
+
+    group = groups.get(3);
+    assertEquals(StopGrouping.class, group.getClass());
+    stopGroup = (StopGrouping) group;
+    assertEquals("Stop Daemons for Low-Level Services", stopGroup.title);
+    assertNotNull(stopGroup.parallelScheduler);
+    assertEquals(ParallelScheduler.DEFAULT_MAX_DEGREE_OF_PARALLELISM, stopGroup.parallelScheduler.maxDegreeOfParallelism);
+
+    group = groups.get(4);
+    assertEquals(UpdateStackGrouping.class, group.getClass());
+    updateStackGroup = (UpdateStackGrouping) group;
+    assertEquals("Update Desired Stack Id", updateStackGroup.title);
+    assertNull(updateStackGroup.parallelScheduler);
+
+    group = groups.get(5);
+    assertEquals(ClusterGrouping.class, group.getClass());
+    clusterGroup = (ClusterGrouping) group;
+    assertEquals("Set Version On All Hosts", clusterGroup.title);
+    assertNull(clusterGroup.parallelScheduler);
+
+    group = groups.get(6);
+    assertEquals(RestartGrouping.class, group.getClass());
+    restartGroup = (RestartGrouping) group;
+    assertEquals("Zookeeper", restartGroup.title);
+    assertNull(restartGroup.parallelScheduler);
+
+    group = groups.get(7);
+    assertEquals(RestartGrouping.class, group.getClass());
+    restartGroup = (RestartGrouping) group;
+    assertEquals("HDFS", restartGroup.title);
+    assertNotNull(restartGroup.parallelScheduler);
+    assertEquals(2, restartGroup.parallelScheduler.maxDegreeOfParallelism);
+
+    group = groups.get(8);
+    assertEquals(RestartGrouping.class, group.getClass());
+    restartGroup = (RestartGrouping) group;
+    assertEquals("MR and YARN", restartGroup.title);
+    assertNotNull(restartGroup.parallelScheduler);
+    assertEquals(ParallelScheduler.DEFAULT_MAX_DEGREE_OF_PARALLELISM, restartGroup.parallelScheduler.maxDegreeOfParallelism);
+
+    group = groups.get(9);
+    assertEquals(ClusterGrouping.class, group.getClass());
+    clusterGroup = (ClusterGrouping) group;
+    assertEquals("Finalize {{direction.text.proper}}", clusterGroup.title);
+    assertNull(clusterGroup.parallelScheduler);
+  }
 
   private int indexOf(Map<String, ?> map, String keyToFind) {
     int result = -1;
@@ -300,6 +454,4 @@ public class UpgradePackTest {
 
     return result;
   }
-
-
 }

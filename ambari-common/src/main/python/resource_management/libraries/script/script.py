@@ -21,12 +21,16 @@ import tempfile
 
 __all__ = ["Script"]
 
+import re
 import os
 import sys
 import logging
 import platform
+import inspect
 import tarfile
+import resource_management
 from ambari_commons import OSCheck, OSConst
+from ambari_commons.constants import UPGRADE_TYPE_NON_ROLLING, UPGRADE_TYPE_ROLLING
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from resource_management.libraries.resources import XmlConfig
 from resource_management.libraries.resources import PropertiesFile
@@ -39,6 +43,8 @@ from resource_management.core.resources.packaging import Package
 from resource_management.libraries.functions.version_select_util import get_component_version
 from resource_management.libraries.functions.version import compare_versions
 from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.constants import Direction
+from resource_management.libraries.functions import packages_analyzer
 from resource_management.libraries.script.config_dictionary import ConfigDictionary, UnknownConfiguration
 from resource_management.core.resources.system import Execute
 from contextlib import closing
@@ -60,10 +66,12 @@ USAGE = """Usage: {0} <COMMAND> <JSON_CONFIG> <BASEDIR> <STROUTPUT> <LOGGING_LEV
 <BASEDIR> path to service metadata dir. Ex: /var/lib/ambari-agent/cache/common-services/HDFS/2.1.0.2.0/package
 <STROUTPUT> path to file with structured command output (file will be created). Ex:/tmp/my.txt
 <LOGGING_LEVEL> log level for stdout. Ex:DEBUG,INFO
-<TMP_DIR> temporary directory for executable scripts. Ex: /var/lib/ambari-agent/data/tmp
+<TMP_DIR> temporary directory for executable scripts. Ex: /var/lib/ambari-agent/tmp
 """
 
 _PASSWORD_MAP = {"/configurations/cluster-env/hadoop.user.name":"/configurations/cluster-env/hadoop.user.password"}
+DISTRO_SELECT_PACKAGE_NAME = "hdp-select"
+STACK_VERSION_PLACEHOLDER = "${stack_version}"
 
 def get_path_from_configuration(name, configuration):
   subdicts = filter(None, name.split('/'))
@@ -90,12 +98,12 @@ class Script(object):
   3 path to service metadata dir (Directory "package" inside service directory)
   4 path to file with structured command output (file will be created)
   """
+  stack_version_from_distro_select = None
   structuredOut = {}
   command_data_file = ""
   basedir = ""
   stroutfile = ""
   logging_level = ""
-  logger = None
 
   # Class variable
   tmp_dir = ""
@@ -110,15 +118,16 @@ class Script(object):
   def load_structured_out(self):
     Script.structuredOut = {}
     if os.path.exists(self.stroutfile):
-      with open(self.stroutfile, 'r') as fp:
-        try:
-          Script.structuredOut = json.load(fp)
-        except Exception:
-          errMsg = 'Unable to read structured output from ' + self.stroutfile
-          self.logger.warn(errMsg)
-          pass
+      if os.path.getsize(self.stroutfile) > 0:
+        with open(self.stroutfile, 'r') as fp:
+          try:
+            Script.structuredOut = json.load(fp)
+          except Exception:
+            errMsg = 'Unable to read structured output from ' + self.stroutfile
+            Logger.logger.exception(errMsg)
+            pass
 
-    # version is only set in a specific way and should not be carried 
+    # version is only set in a specific way and should not be carried
     if "version" in Script.structuredOut:
       del Script.structuredOut["version"]
     # reset security issues and errors found on previous runs
@@ -128,24 +137,32 @@ class Script(object):
       del Script.structuredOut["securityStateErrorInfo"]
 
   def put_structured_out(self, sout):
-    curr_content = Script.structuredOut.copy()
     Script.structuredOut.update(sout)
     try:
       with open(self.stroutfile, 'w') as fp:
         json.dump(Script.structuredOut, fp)
     except IOError, err:
       Script.structuredOut.update({"errMsg" : "Unable to write to " + self.stroutfile})
+      
+  def get_component_name(self):
+    stack_name = Script.get_stack_name()
+    stack_to_component = self.get_stack_to_component()
+    
+    if stack_to_component and stack_name:
+      component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
+      return component_name
+    
+    return None
 
   def save_component_version_to_structured_out(self):
     """
     :param stack_name: One of HDP, HDPWIN, PHD, BIGTOP.
     :return: Append the version number to the structured out.
     """
-    from resource_management.libraries.functions.default import default
-    stack_name = default("/hostLevelParams/stack_name", None)
-    stack_to_component = self.get_stack_to_component()
-    if stack_to_component and stack_name:
-      component_name = stack_to_component[stack_name] if stack_name in stack_to_component else None
+    stack_name = Script.get_stack_name()
+    component_name = self.get_component_name()
+    
+    if component_name and stack_name:
       component_version = get_component_version(stack_name, component_name)
 
       if component_version:
@@ -176,15 +193,12 @@ class Script(object):
     Sets up logging;
     Parses command parameters and executes method relevant to command type
     """
-    logger, chout, cherr = Logger.initialize_logger(__name__)
-    
     # parse arguments
     if len(sys.argv) < 7:
-     logger.error("Script expects at least 6 arguments")
+     print "Script expects at least 6 arguments"
      print USAGE.format(os.path.basename(sys.argv[0])) # print to stdout
      sys.exit(1)
-
-    self.logger = logger
+     
     self.command_name = str.lower(sys.argv[1])
     self.command_data_file = sys.argv[2]
     self.basedir = sys.argv[3]
@@ -194,8 +208,7 @@ class Script(object):
     Script.tmp_dir = sys.argv[6]
 
     logging_level_str = logging._levelNames[self.logging_level]
-    chout.setLevel(logging_level_str)
-    logger.setLevel(logging_level_str)
+    Logger.initialize_logger(__name__, logging_level=logging_level_str)
 
     # on windows we need to reload some of env variables manually because there is no default paths for configs(like
     # /etc/something/conf on linux. When this env vars created by one of the Script execution, they can not be updated
@@ -214,7 +227,7 @@ class Script(object):
             Script.passwords[get_path_from_configuration(k, Script.config)] = get_path_from_configuration(v, Script.config)
 
     except IOError:
-      logger.exception("Can not read json file with command parameters: ")
+      Logger.logger.exception("Can not read json file with command parameters: ")
       sys.exit(1)
 
     # Run class method depending on a command type
@@ -236,7 +249,39 @@ class Script(object):
       raise Fail("Script '{0}' has no method '{1}'".format(sys.argv[0], command_name))
     method = getattr(self, command_name)
     return method
+  
+  def get_stack_version_before_packages_installed(self):
+    """
+    This works in a lazy way (calculates the version first time and stores it). 
+    If you need to recalculate the version explicitly set:
+    
+    Script.stack_version_from_distro_select = None
+    
+    before the call. However takes a bit of time, so better to avoid.
 
+    :return: hdp version including the build number. e.g.: 2.3.4.0-1234.
+    """
+    # preferred way is to get the actual selected version of current component
+    component_name = self.get_component_name()
+    if not Script.stack_version_from_distro_select and component_name:
+      from resource_management.libraries.functions import hdp_select
+      Script.stack_version_from_distro_select = hdp_select.get_hdp_version_before_install(component_name)
+      
+    # if hdp-select has not yet been done (situations like first install), we can use hdp-select version itself.
+    if not Script.stack_version_from_distro_select:
+      Script.stack_version_from_distro_select = packages_analyzer.getInstalledPackageVersion(DISTRO_SELECT_PACKAGE_NAME)
+      
+    return Script.stack_version_from_distro_select
+  
+  def format_package_name(self, name):
+    """
+    This function replaces ${stack_version} placeholder into actual version.
+    """
+    package_delimiter = '-' if OSCheck.is_ubuntu_family() else '_'
+    stack_version_package_formatted = self.get_stack_version_before_packages_installed().replace('.', package_delimiter).replace('-', package_delimiter) if STACK_VERSION_PLACEHOLDER in name else name
+    package_name = name.replace(STACK_VERSION_PLACEHOLDER, stack_version_package_formatted)
+    
+    return package_name
 
   @staticmethod
   def get_config():
@@ -305,13 +350,36 @@ class Script(object):
 
     return format_hdp_stack_version(stack_version_unformatted)
 
+
+  @staticmethod
+  def in_stack_upgrade():
+    from resource_management.libraries.functions.default import default
+
+    upgrade_direction = default("/commandParams/upgrade_direction", None)
+    return upgrade_direction is not None and upgrade_direction in [Direction.UPGRADE, Direction.DOWNGRADE]
+
+
+  @staticmethod
+  def is_hdp_stack_greater(formatted_hdp_stack_version, compare_to_version):
+    """
+    Gets whether the provided formatted_hdp_stack_version (normalized)
+    is greater than the specified stack version
+    :param formatted_hdp_stack_version: the version of stack to compare
+    :param compare_to_version: the version of stack to compare to
+    :return: True if the command's stack is greater than the specified version
+    """
+    if formatted_hdp_stack_version is None or formatted_hdp_stack_version == "":
+      return False
+
+    return compare_versions(formatted_hdp_stack_version, compare_to_version) > 0
+
   @staticmethod
   def is_hdp_stack_greater_or_equal(compare_to_version):
     """
     Gets whether the hostLevelParams/stack_version, after being normalized,
     is greater than or equal to the specified stack version
     :param compare_to_version: the version to compare to
-    :return: True if the command's stack is greater than the specified version
+    :return: True if the command's stack is greater than or equal the specified version
     """
     return Script.is_hdp_stack_greater_or_equal_to(Script.get_hdp_stack_version(), compare_to_version)
 
@@ -322,7 +390,7 @@ class Script(object):
     is greater than or equal to the specified stack version
     :param formatted_hdp_stack_version: the version of stack to compare
     :param compare_to_version: the version of stack to compare to
-    :return: True if the command's stack is greater than the specified version
+    :return: True if the command's stack is greater than or equal to the specified version
     """
     if formatted_hdp_stack_version is None or formatted_hdp_stack_version == "":
       return False
@@ -353,11 +421,15 @@ class Script(object):
     """
     self.install_packages(env)
 
-  def install_packages(self, env, exclude_packages=[]):
+  def install_packages(self, env):
     """
     List of packages that are required< by service is received from the server
     as a command parameter. The method installs all packages
     from this list
+    
+    exclude_packages - list of regexes (possibly raw strings as well), the
+    packages which match the regex won't be installed.
+    NOTE: regexes don't have Python syntax, but simple package regexes which support only * and .* and ?
     """
     config = self.get_config()
     if 'host_sys_prepped' in config['hostLevelParams']:
@@ -371,8 +443,8 @@ class Script(object):
       if isinstance(package_list_str, basestring) and len(package_list_str) > 0:
         package_list = json.loads(package_list_str)
         for package in package_list:
-          if not package['name'] in exclude_packages:
-            name = package['name']
+          if Script.check_package_condition(package):
+            name = self.format_package_name(package['name'])
             # HACK: On Windows, only install ambari-metrics packages using Choco Package Installer
             # TODO: Update this once choco packages for hadoop are created. This is because, service metainfo.xml support
             # <osFamily>any<osFamily> which would cause installation failure on Windows.
@@ -392,6 +464,31 @@ class Script(object):
                           hadoop_user, self.get_password(hadoop_user),
                           str(config['hostLevelParams']['stack_version']))
       reload_windows_env()
+      
+  @staticmethod
+  def check_package_condition(package):
+    from resource_management.libraries.functions import package_conditions
+    condition = package['condition']
+    name = package['name']
+    
+    if not condition:
+      return True
+    
+    try:
+      chooser_method = getattr(package_conditions, condition)
+    except AttributeError:
+      raise Fail("Condition with name '{0}', when installing package {1}. Please check package_conditions.py.".format(condition, name))
+
+    return chooser_method()
+      
+  @staticmethod
+  def matches_any_regexp(string, regexp_list):
+    for regex in regexp_list:
+      # we cannot use here Python regex, since * will create some troubles matching plaintext names. 
+      package_regex = '^' + re.escape(regex).replace('\\.\\*','.*').replace("\\?", ".").replace("\\*", ".*") + '$'
+      if re.match(package_regex, string):
+        return True
+    return False
 
   @staticmethod
   def fail_with_error(message):
@@ -403,18 +500,19 @@ class Script(object):
     sys.exit(1)
 
 
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     """
     To be overridden by subclasses
     """
     self.fail_with_error("start method isn't implemented")
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     """
     To be overridden by subclasses
     """
     self.fail_with_error("stop method isn't implemented")
 
+  # TODO, remove after all services have switched to pre_upgrade_restart
   def pre_rolling_restart(self, env):
     """
     To be overridden by subclasses
@@ -435,49 +533,88 @@ class Script(object):
       pass
 
     restart_type = ""
+    direction = None
     if config is not None:
       command_params = config["commandParams"] if "commandParams" in config else None
       if command_params is not None:
         restart_type = command_params["restart_type"] if "restart_type" in command_params else ""
-        if restart_type:
-          restart_type = restart_type.encode('ascii', 'ignore')
+        direction = command_params["upgrade_direction"] if "upgrade_direction" in command_params else None
 
-    rolling_restart = restart_type.lower().startswith("rolling")
+    upgrade_type = None
+    if restart_type.lower() == "rolling_upgrade":
+      upgrade_type = UPGRADE_TYPE_ROLLING
+    elif restart_type.lower() == "nonrolling_upgrade":
+      upgrade_type = UPGRADE_TYPE_NON_ROLLING
+
+    is_stack_upgrade = upgrade_type is not None
+
+    # need this before actually executing so that failures still report upgrade info
+    if is_stack_upgrade:
+      upgrade_info = {"upgrade_type": restart_type}
+      if direction is not None:
+        upgrade_info["direction"] = direction.upper()
+
+      Script.structuredOut.update(upgrade_info)
 
     if componentCategory and componentCategory.strip().lower() == 'CLIENT'.lower():
-      if rolling_restart:
-        self.pre_rolling_restart(env)
+      if is_stack_upgrade:
+        # Remain backward compatible with the rest of the services that haven't switched to using
+        # the pre_upgrade_restart method. Once done. remove the else-block.
+        if "pre_upgrade_restart" in dir(self):
+          self.pre_upgrade_restart(env, upgrade_type=upgrade_type)
+        else:
+          self.pre_rolling_restart(env)
 
       self.install(env)
     else:
-      # To remain backward compatible with older stacks, only pass rolling_restart if True.
-      if rolling_restart:
-        self.stop(env, rolling_restart=rolling_restart)
+      # To remain backward compatible with older stacks, only pass upgrade_type if available.
+      # TODO, remove checking the argspec for "upgrade_type" once all of the services support that optional param.
+      if "upgrade_type" in inspect.getargspec(self.stop).args:
+        self.stop(env, upgrade_type=upgrade_type)
       else:
-        self.stop(env)
+        if is_stack_upgrade:
+          self.stop(env, rolling_restart=(restart_type == "rolling_upgrade"))
+        else:
+          self.stop(env)
 
-      if rolling_restart:
-        self.pre_rolling_restart(env)
+      if is_stack_upgrade:
+        # Remain backward compatible with the rest of the services that haven't switched to using
+        # the pre_upgrade_restart method. Once done. remove the else-block.
+        if "pre_upgrade_restart" in dir(self):
+          self.pre_upgrade_restart(env, upgrade_type=upgrade_type)
+        else:
+          self.pre_rolling_restart(env)
 
-      # To remain backward compatible with older stacks, only pass rolling_restart if True.
-      if rolling_restart:
-        self.start(env, rolling_restart=rolling_restart)
+      # To remain backward compatible with older stacks, only pass upgrade_type if available.
+      # TODO, remove checking the argspec for "upgrade_type" once all of the services support that optional param.
+      if "upgrade_type" in inspect.getargspec(self.start).args:
+        self.start(env, upgrade_type=upgrade_type)
       else:
-        self.start(env)
+        if is_stack_upgrade:
+          self.start(env, rolling_restart=(restart_type == "rolling_upgrade"))
+        else:
+          self.start(env)
 
-      if rolling_restart:
-        self.post_rolling_restart(env)
+      if is_stack_upgrade:
+        # Remain backward compatible with the rest of the services that haven't switched to using
+        # the post_upgrade_restart method. Once done. remove the else-block.
+        if "post_upgrade_restart" in dir(self):
+          self.post_upgrade_restart(env, upgrade_type=upgrade_type)
+        else:
+          self.post_rolling_restart(env)
 
     if self.should_expose_component_version("restart"):
       self.save_component_version_to_structured_out()
 
+
+  # TODO, remove after all services have switched to post_upgrade_restart
   def post_rolling_restart(self, env):
     """
     To be overridden by subclasses
     """
     pass
 
-  def configure(self, env, rolling_restart=False):
+  def configure(self, env, upgrade_type=None):
     """
     To be overridden by subclasses
     """
@@ -535,7 +672,7 @@ class Script(object):
     env_configs_list = config['commandParams']['env_configs_list']
     properties_configs_list = config['commandParams']['properties_configs_list']
 
-    Directory(self.get_tmp_dir(), recursive=True)
+    Directory(self.get_tmp_dir(), create_parents = True)
 
     conf_tmp_dir = tempfile.mkdtemp(dir=self.get_tmp_dir())
     output_filename = os.path.join(self.get_tmp_dir(), config['commandParams']['output_file'])

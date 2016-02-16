@@ -131,17 +131,13 @@ App.AssignMasterComponents = Em.Mixin.create({
    * Check if <code>installerWizard</code> used
    * @type {bool}
    */
-  isInstallerWizard: function () {
-    return this.get('content.controllerName') === 'installerController';
-  }.property('content.controllerName'),
+  isInstallerWizard: Em.computed.equal('content.controllerName', 'installerController'),
 
   /**
    * Master components which could be assigned to multiple hosts
    * @type {string[]}
    */
-  multipleComponents: function () {
-    return App.get('components.multipleMasters');
-  }.property('App.components.multipleMasters'),
+  multipleComponents: Em.computed.alias('App.components.multipleMasters'),
 
   /**
    * Master components which could be assigned to multiple hosts
@@ -311,7 +307,7 @@ App.AssignMasterComponents = Em.Mixin.create({
 
   /**
    * Update submit button status
-   * @metohd updateIsSubmitDisabled
+   * @method updateIsSubmitDisabled
    */
   updateIsSubmitDisabled: function () {
 
@@ -431,8 +427,6 @@ App.AssignMasterComponents = Em.Mixin.create({
    * @method updateValidationsErrorCallback
    */
   updateValidationsErrorCallback: function (jqXHR, ajaxOptions, error, opt) {
-    App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
-    console.log('Load validations failed');
   },
 
   /**
@@ -491,7 +485,6 @@ App.AssignMasterComponents = Em.Mixin.create({
    * @method loadStep
    */
   loadStep: function () {
-    console.log("WizardStep5Controller: Loading step5: Assign Masters");
     this.clearStep();
     this.renderHostInfo();
     this.loadComponentsRecommendationsFromServer(this.loadStepCallback);
@@ -508,7 +501,6 @@ App.AssignMasterComponents = Em.Mixin.create({
       self.updateComponent(componentName);
     }, self);
     if (self.thereIsNoMasters()) {
-      console.log('no master components to add');
       App.router.send('next');
     }
   },
@@ -650,76 +642,66 @@ App.AssignMasterComponents = Em.Mixin.create({
    * @return {Object[]}
    */
   createComponentInstallationObjects: function() {
-    var self = this;
+    var stackMasterComponentsMap = {},
+        masterHosts = this.get('content.masterComponentHosts'), //saved to local storage info
+        servicesToAdd = this.get('content.services').filterProperty('isSelected').filterProperty('isInstalled', false).mapProperty('serviceName'),
+        recommendations = this.get('content.recommendations'),
+        resultComponents = [],
+        multipleComponentHasBeenAdded = {},
+        hostGroupsMap = {};
 
-    var masterComponents = [];
-    if (self.get('isInstallerWizard')) {
-      masterComponents = App.StackServiceComponent.find().filterProperty('isShownOnInstallerAssignMasterPage');
-    } else {
-      masterComponents = App.StackServiceComponent.find().filter(function(component){
-        return component.get('isShownOnAddServiceAssignMasterPage') || self.get('mastersToShow').contains(component.get('componentName'));
-      });
-    }
-    var masterComponentsMap = {};
-    masterComponents.forEach(function(masterComponent) {
-      masterComponentsMap[masterComponent.get('componentName')] = masterComponent;
-    });
+    App.StackServiceComponent.find().forEach(function(component) {
+      if (this.get('isInstallerWizard')) {
+        if (component.get('isShownOnInstallerAssignMasterPage')) {
+          stackMasterComponentsMap[component.get('componentName')] = component;
+        }
+      } else {
+        if (component.get('isShownOnAddServiceAssignMasterPage') || this.get('mastersToShow').contains(component.get('componentName'))) {
+          stackMasterComponentsMap[component.get('componentName')] = component;
+        }
+      }
+    }, this);
 
-    var masterHosts = self.get('content.masterComponentHosts'); //saved to local storage info
-    var selectedNotInstalledServices = self.get('content.services').filterProperty('isSelected').filterProperty('isInstalled', false).mapProperty('serviceName');
-    var recommendations = this.get('content.recommendations');
-
-    var resultComponents = [];
-    var multipleComponentHasBeenAdded = {};
-
-    var existingHostComponentsMap = {};
-    App.HostComponent.find().forEach(function(c) {
-      existingHostComponentsMap[c.get('componentName')] = c;
-    });
-
-    var hostGroupsMap = {};
     recommendations.blueprint_cluster_binding.host_groups.forEach(function(group) {
       hostGroupsMap[group.name] = group;
     });
+
     recommendations.blueprint.host_groups.forEach(function(host_group) {
       var hosts = hostGroupsMap[host_group.name] ? hostGroupsMap[host_group.name].hosts : [];
 
       hosts.forEach(function(host) {
         host_group.components.forEach(function(component) {
-          var willBeAdded = true;
-          //var fullComponent = masterComponents.findProperty('componentName', component.name);
-          var fullComponent = masterComponentsMap[component.name];
-          // If it's master component which should be shown
-          if (fullComponent) {
+          var willBeDisplayed = true;
+          var stackMasterComponent = stackMasterComponentsMap[component.name];
+          if (stackMasterComponent) {
             // If service is already installed and not being added as a new service then render on UI only those master components
             // that have already installed hostComponents.
             // NOTE: On upgrade there might be a prior installed service with non-installed newly introduced serviceComponent
-            var isNotSelectedService = !selectedNotInstalledServices.contains(fullComponent.get('serviceName'));
-            if (isNotSelectedService) {
-              willBeAdded = existingHostComponentsMap[component.name];
+            if (!servicesToAdd.contains(stackMasterComponent.get('serviceName'))) {
+              willBeDisplayed = masterHosts.someProperty('component', component.name);
             }
 
-            if (willBeAdded) {
+            if (willBeDisplayed) {
               var savedComponents = masterHosts.filterProperty('component', component.name);
 
-              if (self.get('multipleComponents').contains(component.name) && savedComponents.length > 0) {
+              if (this.get('multipleComponents').contains(component.name) && savedComponents.length > 0) {
                 if (!multipleComponentHasBeenAdded[component.name]) {
                   multipleComponentHasBeenAdded[component.name] = true;
 
                   savedComponents.forEach(function(saved) {
-                    resultComponents.push(self.createComponentInstallationObject(fullComponent, host.fqdn.toLowerCase(), saved));
-                  });
+                    resultComponents.push(this.createComponentInstallationObject(stackMasterComponent, host.fqdn.toLowerCase(), saved));
+                  }, this);
                 }
               }
               else {
                 var savedComponent = masterHosts.findProperty('component', component.name);
-                resultComponents.push(self.createComponentInstallationObject(fullComponent, host.fqdn.toLowerCase(), savedComponent));
+                resultComponents.push(this.createComponentInstallationObject(stackMasterComponent, host.fqdn.toLowerCase(), savedComponent));
               }
             }
           }
-        });
-      });
-    });
+        }, this);
+      }, this);
+    }, this);
     return resultComponents;
   },
 
@@ -762,7 +744,6 @@ App.AssignMasterComponents = Em.Mixin.create({
    */
   loadRecommendationsErrorCallback: function (jqXHR, ajaxOptions, error, opt) {
     App.ajax.defaultErrorHandler(jqXHR, opt.url, opt.method, jqXHR.status);
-    console.log('Load recommendations failed');
   },
 
   /**
@@ -781,7 +762,6 @@ App.AssignMasterComponents = Em.Mixin.create({
       var masterComponent = App.StackServiceComponent.find().findProperty('componentName', item.component_name);
       var componentObj = Em.Object.create(item);
       var showRemoveControl;
-      console.log("TRACE: render master component name is: " + item.component_name);
       if (masterComponent.get('isMasterWithMultipleInstances')) {
         showRemoveControl = installedServices.contains(masterComponent.get('stackService.serviceName')) &&
             (masterComponents.filterProperty('component_name', item.component_name).length > 1);
@@ -987,7 +967,6 @@ App.AssignMasterComponents = Em.Mixin.create({
         lastMaster = null;
 
     if (!currentMasters.length) {
-      console.log('ALERT: Zookeeper service was not selected');
       return false;
     }
 
@@ -1090,18 +1069,21 @@ App.AssignMasterComponents = Em.Mixin.create({
 
   /**
    * Submit button click handler
+   * Disable 'Next' button while it is already under process. (using Router's property 'nextBtnClickInProgress')
    * @method submit
    */
   submit: function () {
     var self = this;
-    if (!this.get('submitButtonClicked')) {
+    if (!this.get('submitButtonClicked') && !App.router.get('nextBtnClickInProgress')) {
       this.set('submitButtonClicked', true);
+      App.router.set('nextBtnClickInProgress', true);
 
       var goNextStepIfValid = function () {
         if (!self.get('submitDisabled')) {
           App.router.send('next');
+        }else{
+          App.router.set('nextBtnClickInProgress', false);
         }
-        self.set('submitButtonClicked', false);
       };
 
       if (this.get('useServerValidation')) {
@@ -1111,6 +1093,7 @@ App.AssignMasterComponents = Em.Mixin.create({
       } else {
         self.updateIsSubmitDisabled();
         goNextStepIfValid();
+        self.set('submitButtonClicked', false);
       }
     }
   },
@@ -1121,18 +1104,31 @@ App.AssignMasterComponents = Em.Mixin.create({
    */
   showValidationIssuesAcceptBox: function(callback) {
     var self = this;
-    if (self.get('anyWarning') || self.get('anyError')) {
-      App.ModalPopup.show({
-        primary: Em.I18n.t('common.continueAnyway'),
-        header: Em.I18n.t('installer.step5.validationIssuesAttention.header'),
-        body: Em.I18n.t('installer.step5.validationIssuesAttention'),
-        onPrimary: function () {
-          this.hide();
-          callback();
-        }
-      });
-    } else {
+
+    // If there are no warnings and no errors, return
+    if (!self.get('anyWarning') && !self.get('anyError')) {
       callback();
+      self.set('submitButtonClicked', false);
+      return;
     }
+
+    App.ModalPopup.show({
+      primary: Em.I18n.t('common.continueAnyway'),
+      header: Em.I18n.t('installer.step5.validationIssuesAttention.header'),
+      body: Em.I18n.t('installer.step5.validationIssuesAttention'),
+      onPrimary: function () {
+        this._super();
+        callback();
+        self.set('submitButtonClicked', false);
+      },
+      onSecondary: function () {
+        this._super();
+        self.set('submitButtonClicked', false);
+      },
+      onClose: function () {
+        this._super();
+        self.set('submitButtonClicked', false);
+      }
+    });
   }
 });

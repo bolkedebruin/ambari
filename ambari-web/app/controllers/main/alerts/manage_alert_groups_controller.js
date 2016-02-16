@@ -76,9 +76,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
    * List of all global Alert Notifications
    * @type {App.AlertNotification[]}
    */
-  alertGlobalNotifications: function () {
-    return this.get('alertNotifications').filterProperty('global');
-  }.property('alertNotifications'),
+  alertGlobalNotifications: Em.computed.filterBy('alertNotifications', 'global', true),
 
   /**
    * @type {boolean}
@@ -256,11 +254,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
         name: group.get('name'),
         default: group.get('default'),
         displayName: function () {
-          var name = this.get('name');
-          if (name && name.length > App.config.CONFIG_GROUP_NAME_MAX_LENGTH) {
-            var middle = Math.floor(App.config.CONFIG_GROUP_NAME_MAX_LENGTH / 2);
-            name = name.substring(0, middle) + "..." + name.substring(name.length - middle);
-          }
+          var name = App.config.truncateGroupName(this.get('name'));
           return this.get('default') ? (name + ' Default') : name;
         }.property('name', 'default'),
         label: function () {
@@ -339,6 +333,8 @@ App.ManageAlertGroupsController = Em.Controller.extend({
     var usedDefinitionsMap = {};
     var availableDefinitions = [];
     var sharedDefinitions = App.AlertDefinition.find();
+
+    usedDefinitionsMap = selectedAlertGroup.get('definitions').toWickMapByProperty('name');
 
     selectedAlertGroup.get('definitions').forEach(function (def) {
       usedDefinitionsMap[def.name] = true;
@@ -427,7 +423,6 @@ App.ManageAlertGroupsController = Em.Controller.extend({
           return;
         }
         callback(arrayOfSelectedDefs);
-        console.debug('(new-selectedDefs)=', arrayOfSelectedDefs);
         this.hide();
       },
 
@@ -435,9 +430,7 @@ App.ManageAlertGroupsController = Em.Controller.extend({
        * Primary button should be disabled while alert definitions are not loaded
        * @type {boolean}
        */
-      disablePrimary: function () {
-        return !this.get('isLoaded');
-      }.property('isLoaded'),
+      disablePrimary: Em.computed.not('isLoaded'),
 
       onSecondary: function () {
         callback(null);
@@ -515,7 +508,6 @@ App.ManageAlertGroupsController = Em.Controller.extend({
         if (callback) {
           callback(xhr, text, errorThrown);
         }
-        console.error('Error in creating new Alert Group');
       }
     };
     sendData.sender = sendData;
@@ -747,17 +739,13 @@ App.ManageAlertGroupsController = Em.Controller.extend({
           name: this.get('alertGroupName').trim(),
           default: false,
           displayName: function () {
-            var name = this.get('name');
-            if (name && name.length > App.config.CONFIG_GROUP_NAME_MAX_LENGTH) {
-              var middle = Math.floor(App.config.CONFIG_GROUP_NAME_MAX_LENGTH / 2);
-              name = name.substring(0, middle) + "..." + name.substring(name.length - middle);
-            }
+            var name = App.config.truncateGroupName(this.get('name'));
             return this.get('default') ? (name + ' Default') : name;
           }.property('name', 'default'),
           label: function () {
             return this.get('displayName') + ' (' + this.get('definitions.length') + ')';
           }.property('displayName', 'definitions.length'),
-          definitions: self.get('selectedAlertGroup.definitions').slice(0),
+          definitions: duplicated ? self.get('selectedAlertGroup.definitions').slice(0) : [],
           notifications: self.get('alertGlobalNotifications'),
           isAddDefinitionsDisabled: false
         });

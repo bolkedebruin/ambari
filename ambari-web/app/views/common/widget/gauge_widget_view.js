@@ -77,22 +77,14 @@ App.GaugeWidgetView = Em.View.extend(App.WidgetMixin, {
      */
     MAX_VALUE: 100,
 
-    warningThreshold: function(){
-      return this.get('parentView.content.properties.warning_threshold');
-    }.property('parentView.content.properties.warning_threshold'),
+    warningThreshold: Em.computed.alias('parentView.content.properties.warning_threshold'),
 
-    errorThreshold: function(){
-      return this.get('parentView.content.properties.error_threshold');
-    }.property('parentView.content.properties.error_threshold'),
+    errorThreshold: Em.computed.alias('parentView.content.properties.error_threshold'),
 
-    id: function() {
-      return 'gauge-widget-' + this.get('parentView.content.id');
-    }.property('parentView.content.id'),
+    id: Em.computed.format('gauge-widget-{0}', 'parentView.content.id'),
 
     existCenterText: true,
-    centerTextColor: function () {
-      return this.get('contentColor');
-    }.property('contentColor'),
+    centerTextColor: Em.computed.alias('contentColor'),
 
     palette: new Rickshaw.Color.Palette({
       scheme: [ '#FFFFFF', '#D6DDDF'].reverse()

@@ -50,18 +50,19 @@ def webhcat():
             owner=params.webhcat_user,
             mode=0755,
             group=params.user_group,
-            recursive=True)
+            create_parents = True)
 
   Directory(params.templeton_log_dir,
             owner=params.webhcat_user,
             mode=0755,
             group=params.user_group,
-            recursive=True)
+            create_parents = True)
 
   Directory(params.config_dir,
-            recursive=True,
+            create_parents = True,
             owner=params.webhcat_user,
-            group=params.user_group)
+            group=params.user_group,
+            cd_access="a")
 
   if params.security_enabled:
     kinit_if_needed = format("{kinit_path_local} -kt {hdfs_user_keytab} {hdfs_principal_name};")
@@ -94,13 +95,17 @@ def webhcat():
       conf_dir = format("/usr/hdp/{version}/hive/conf"),
       configurations = params.config['configurations']['hive-site'],
       configuration_attributes = params.config['configuration_attributes']['hive-site'],
-      owner = params.hive_user)
+      owner = params.hive_user,
+      group = params.user_group,
+      )
 
     XmlConfig("yarn-site.xml",
       conf_dir = format("/usr/hdp/{version}/hadoop/conf"),
       configurations = params.config['configurations']['yarn-site'],
       configuration_attributes = params.config['configuration_attributes']['yarn-site'],
-      owner = params.yarn_user)
+      owner = params.yarn_user,
+      group = params.user_group,    
+  )
   
 
   File(format("{config_dir}/webhcat-env.sh"),
@@ -111,7 +116,7 @@ def webhcat():
   
   Directory(params.webhcat_conf_dir,
        cd_access='a',
-       recursive=True
+       create_parents = True
   )
 
   log4j_webhcat_filename = 'webhcat-log4j.properties'

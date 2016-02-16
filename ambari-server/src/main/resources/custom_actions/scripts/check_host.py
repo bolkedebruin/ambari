@@ -34,9 +34,12 @@ from resource_management import Script, Execute, format
 from ambari_agent.HostInfo import HostInfo
 from ambari_agent.HostCheckReportFileHandler import HostCheckReportFileHandler
 from resource_management.core.resources import Directory, File
+from resource_management.core.exceptions import Fail
 from ambari_commons.constants import AMBARI_SUDO_BINARY
 from resource_management.core import shell
 
+# WARNING. If you are adding a new host check that is used by cleanup, add it to BEFORE_CLEANUP_HOST_CHECKS
+# It is used by HostCleanup.py
 CHECK_JAVA_HOME = "java_home_check"
 CHECK_DB_CONNECTION = "db_connection_check"
 CHECK_HOST_RESOLUTION = "host_resolution_check"
@@ -44,6 +47,11 @@ CHECK_LAST_AGENT_ENV = "last_agent_env_check"
 CHECK_INSTALLED_PACKAGES = "installed_packages"
 CHECK_EXISTING_REPOS = "existing_repos"
 CHECK_TRANSPARENT_HUGE_PAGE = "transparentHugePage"
+
+BEFORE_CLEANUP_HOST_CHECKS = ','.join([CHECK_LAST_AGENT_ENV, CHECK_INSTALLED_PACKAGES, CHECK_EXISTING_REPOS, CHECK_TRANSPARENT_HUGE_PAGE])
+
+# If exit_code for some of these checks is not 0 task will be failed
+FALLIBLE_CHECKS = [CHECK_DB_CONNECTION]
 
 DB_MYSQL = "mysql"
 DB_ORACLE = "oracle"
@@ -69,15 +77,16 @@ JARS_PATH_IN_ARCHIVE_SQLA = "/sqla-client-jdbc/java"
 LIBS_PATH_IN_ARCHIVE_SQLA = "/sqla-client-jdbc/native/lib64"
 JDBC_DRIVER_SQLA_JAR_PATH_IN_ARCHIVE = "/sqla-client-jdbc/java/" + JDBC_DRIVER_SQLA_JAR
 
-THP_FILE = "/sys/kernel/mm/redhat_transparent_hugepage/enabled"
+THP_FILE_REDHAT = "/sys/kernel/mm/redhat_transparent_hugepage/enabled"
+THP_FILE_UBUNTU = "/sys/kernel/mm/transparent_hugepage/enabled"
 
 class CheckHost(Script):
-  # Packages that are used to find repos (then repos are used to find other packages)
+  # Package prefixes that are used to find repos (then repos are used to find other packages)
   PACKAGES = [
     "hadoop", "zookeeper", "webhcat", "oozie", "ambari", "*-manager-server-db",
     "*-manager-daemons", "mahout", "spark", "falcon", "hbase", "kafka", "knox",
-    "slider", "sqoop", "storm", "pig", "flume","hcatalog", "phoenix", "ranger",
-    "accumulo", "hive_*"
+    "slider", "sqoop", "storm", "flume","hcatalog", "phoenix", "ranger", "accumulo", "hive_*",
+    "pig_", "pig-", "pig." # there's a default 'pigz' package which we should avoid
   ]
   
 
@@ -89,18 +98,19 @@ class CheckHost(Script):
 
   # ignore required packages
   IGNORE_PACKAGES = [
-    "epel-release", "ambari-server", "ambari-agent"
+    "epel-release", "ambari-server", "ambari-agent", "nagios",
+    # ganglia related:
+    "ganglia", "libganglia", "libconfuse", "perl", "rrdtool", "python-rrdtool", "gmetad", "librrd", "rrdcached"
   ]
   
   # Additional packages to look for (search packages that start with these)
   ADDITIONAL_PACKAGES = [
-    "rrdtool", "rrdtool-python", "ganglia", "gmond", "gweb", "libconfuse",
     "ambari-log4j"
   ]
   
   # ignore repos from the list of repos to be cleaned
   IGNORE_REPOS = [
-    "HDP-UTILS", "AMBARI", "BASE"
+    "HDP-UTILS", "AMBARI", "BASE", "EXTRAS"
   ]
   
   def __init__(self):
@@ -114,6 +124,8 @@ class CheckHost(Script):
     #print "CONFIG: " + str(config)
 
     check_execute_list = config['commandParams']['check_execute_list']
+    if check_execute_list == '*BEFORE_CLEANUP_HOST_CHECKS*':
+      check_execute_list = BEFORE_CLEANUP_HOST_CHECKS
     structured_output = {}
 
     # check each of the commands; if an unknown exception wasn't handled
@@ -164,10 +176,14 @@ class CheckHost(Script):
     # Here we are checking transparent huge page if CHECK_TRANSPARENT_HUGE_PAGE is in check_execute_list
     if CHECK_TRANSPARENT_HUGE_PAGE in check_execute_list:
       try :
-        # This file exist only on redhat 6
         thp_regex = "\[(.+)\]"
-        if os.path.isfile(THP_FILE):
-          with open(THP_FILE) as f:
+        file_name = None
+        if OSCheck.is_ubuntu_family():
+          file_name = THP_FILE_UBUNTU
+        elif OSCheck.is_redhat_family():
+          file_name = THP_FILE_REDHAT
+        if file_name and os.path.isfile(file_name):
+          with open(file_name) as f:
             file_content = f.read()
             structured_output[CHECK_TRANSPARENT_HUGE_PAGE] = {"exit_code" : 0, "message": str(re.search(thp_regex,
                                                                                             file_content).groups()[0])}
@@ -181,6 +197,19 @@ class CheckHost(Script):
     self.reportFileHandler.writeHostChecksCustomActionsFile(structured_output)
     
     self.put_structured_out(structured_output)
+
+    error_message = ""
+    for check_name in FALLIBLE_CHECKS:
+      if check_name in structured_output and "exit_code" in structured_output[check_name] \
+          and structured_output[check_name]["exit_code"] != 0:
+        error_message += "Check {0} was unsuccessful. Exit code: {1}.".format(check_name, \
+                                                                             structured_output[check_name]["exit_code"])
+        if "message" in structured_output[check_name]:
+          error_message += " Message: {0}".format(structured_output[check_name]["message"])
+        error_message += "\n"
+
+    if error_message:
+      raise Fail(error_message)
 
   def execute_existing_repos_and_installed_packages_check(self, config):
       installedPackages = []
@@ -327,7 +356,7 @@ class CheckHost(Script):
           Execute(chmod_cmd, not_if = format("test -e {java_exec}"), sudo = True)
           Execute(install_cmd, not_if = format("test -e {java_exec}"))
           File(format("{java_home}/bin/java"), mode=0755, cd_access="a")
-          Execute(("chown","-R", getpass.getuser(), java_home), sudo = True)
+          Directory(java_home, user=getpass.getuser(), recursive_ownership=True)
         except Exception, e:
           message = "Error installing java.\n" + str(e)
           print message
@@ -365,11 +394,14 @@ class CheckHost(Script):
       db_connection_check_structured_output = {"exit_code" : 1, "message": message}
       return db_connection_check_structured_output
 
+    # For Oracle connection as SYS should be as SYSDBA
+    if db_name == DB_ORACLE and user_name.upper() == "SYS":
+      user_name = "SYS AS SYSDBA"
 
     # try to connect to db
     db_connection_check_command = format("{java_exec} -cp {check_db_connection_path}{class_path_delimiter}" \
            "{jdbc_jar_path} -Djava.library.path={java_library_path} org.apache.ambari.server.DBConnectionVerification \"{db_connection_url}\" " \
-           "{user_name} {user_passwd!p} {jdbc_driver_class}")
+           "\"{user_name}\" {user_passwd!p} {jdbc_driver_class}")
 
     if db_name == DB_SQLA:
       db_connection_check_command = "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:{0}{1} {2}".format(agent_cache_dir,
@@ -436,7 +468,7 @@ class CheckHost(Script):
     print "Last Agent Env check started."
     hostInfo = HostInfo()
     last_agent_env_check_structured_output = { }
-    hostInfo.register(last_agent_env_check_structured_output)
+    hostInfo.register(last_agent_env_check_structured_output, False, False)
     print "Last Agent Env check completed successfully."
 
     return last_agent_env_check_structured_output

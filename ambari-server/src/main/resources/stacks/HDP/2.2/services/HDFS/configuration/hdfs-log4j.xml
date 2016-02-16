@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -146,7 +146,8 @@ log4j.appender.DRFAAUDIT.DatePattern=.yyyy-MM-dd
 # NameNode metrics logging.
 # The default is to retain two namenode-metrics.log files up to 64MB each.
 #
-log4j.logger.NameNodeMetricsLog=INFO,NNMETRICSRFA
+namenode.metrics.logger=INFO,NullAppender
+log4j.logger.NameNodeMetricsLog=${namenode.metrics.logger}
 log4j.additivity.NameNodeMetricsLog=false
 log4j.appender.NNMETRICSRFA=org.apache.log4j.RollingFileAppender
 log4j.appender.NNMETRICSRFA.File=${hadoop.log.dir}/namenode-metrics.log
@@ -216,6 +217,10 @@ log4j.logger.org.apache.hadoop.conf.Configuration.deprecation=WARN
 # messages from BlockManager in NameNode.
 #log4j.logger.BlockStateChange=WARN
     </value>
+    <value-attributes>
+      <type>content</type>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 
 </configuration>

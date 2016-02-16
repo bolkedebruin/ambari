@@ -23,13 +23,19 @@ require('utils/string_utils');
 require('views/wizard/step6_view');
 var view;
 
+function getView() {
+  return App.WizardStep6View.create({
+    controller: App.WizardStep6Controller.create()
+  });
+}
+
 describe('App.WizardStep6View', function() {
 
   beforeEach(function() {
-    view = App.WizardStep6View.create({
-      controller: App.WizardStep6Controller.create()
-    });
+    view = getView();
   });
+
+  App.TestAliases.testAsComputedAlias(getView(), 'filteredContent', 'content', 'array');
 
   describe('#content', function() {
     it('should be same to controller.hosts', function() {
@@ -37,15 +43,6 @@ describe('App.WizardStep6View', function() {
       var d = [{}, {}];
       view.set('controller.hosts', d);
       expect(view.get('content')).to.eql(d);
-    });
-  });
-
-  describe('#filteredContent', function() {
-    it('should be same to content', function() {
-      view.set('content', []);
-      var d = [{}, {}];
-      view.set('controller.hosts', d);
-      expect(view.get('filteredContent')).to.eql(d);
     });
   });
 
@@ -113,6 +110,51 @@ describe('App.WizardStep6View', function() {
     });
   });
 
+  describe("#checkboxClick()", function() {
+    var e;
+    beforeEach(function() {
+      sinon.stub(view.get('controller'), 'checkCallback', Em.K);
+      sinon.stub(view.get('controller'), 'callValidation', Em.K);
+      e = {
+        context: {
+          checked: true,
+          component: 'c1'
+        }
+      };
+      view.checkboxClick(e);
+    });
+    afterEach(function() {
+      view.get('controller').checkCallback.restore();
+      view.get('controller').callValidation.restore();
+    });
+
+    it("checked is false", function() {
+      expect(e.context.checked).to.be.false;
+    });
+
+    it("checkCallback is called with correct data", function() {
+      expect(view.get('controller').checkCallback.calledWith('c1')).to.be.true;
+    });
+
+    it("callValidation is called once", function() {
+      expect(view.get('controller').callValidation.calledOnce).to.be.true;
+    });
+  });
+
+  describe("#columnCount", function() {
+    it("hosts present", function() {
+      view.set('controller.hosts', [
+        Em.Object.create({checkboxes: [{}, {}, {}]})
+      ]);
+      view.propertyDidChange('columnCount');
+      expect(view.get('columnCount')).to.equal(4);
+    });
+    it("hosts absent", function() {
+      view.set('controller.hosts', []);
+      view.propertyDidChange('columnCount');
+      expect(view.get('columnCount')).to.equal(1);
+    });
+  });
 });
 
 describe('App.WizardStep6HostView', function() {
@@ -124,25 +166,31 @@ describe('App.WizardStep6HostView', function() {
   });
 
   describe('#didInsertElement', function() {
+
+    var data = [];
+
     beforeEach(function() {
       sinon.stub(App, 'popover', Em.K);
+      sinon.stub(view.get('controller'), 'getMasterComponentsForHost', function() {return data;});
     });
+
     afterEach(function() {
       App.popover.restore();
+      view.get('controller').getMasterComponentsForHost.restore();
     });
+
     it('should create popover if not controller.isMasters', function() {
-      sinon.stub(view.get('controller'), 'getMasterComponentsForHost', function() {return [{}, {}];});
+      data = [{}, {}];
       view.set('controller.isMasters', false);
       view.didInsertElement();
       expect(App.popover.calledOnce).to.equal(true);
-      view.get('controller').getMasterComponentsForHost.restore();
     });
+
     it('should create popover even if controller.getMasterComponentsForHost is an empty array', function() {
-      sinon.stub(view.get('controller'), 'getMasterComponentsForHost', function() {return [];});
+      data = [{}];
       view.set('controller.isMasters', true);
       view.didInsertElement();
       expect(App.popover.calledOnce).to.equal(true);
-      view.get('controller').getMasterComponentsForHost.restore();
     });
   });
 

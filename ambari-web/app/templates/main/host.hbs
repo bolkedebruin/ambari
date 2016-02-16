@@ -20,9 +20,9 @@
 
   <div class="box-header row">
     <div class="hosts-actions pull-left">
-      {{#isAccessible ADMIN}}
+      {{#isAuthorized "HOST.ADD_DELETE_COMPONENTS, HOST.TOGGLE_MAINTENANCE, HOST.ADD_DELETE_HOSTS"}}
         {{view App.HostTableMenuView}}
-      {{/isAccessible}}
+      {{/isAuthorized}}
     </div>
     <div class="health-status-bar pull-left">
       {{#view view.statusFilter categoriesBinding="view.categories"}}
@@ -54,7 +54,7 @@
       {{/view}}
     </div>
   </div>
-
+  {{outlet}}
   <table class="table advanced-header-table table-bordered table-striped" id="hosts-table">
     <thead>
       {{#view view.sortView classNames="label-row" contentBinding="view.filteredContent"}}
@@ -161,7 +161,7 @@
   </table>
 
   <div {{bindAttr class="view.filteringComplete:hidden :table-overlay"}}>
-    <div class="spinner"></div>
+    {{view App.SpinnerView}}
   </div>
 
   <div class="page-bar">

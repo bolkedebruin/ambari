@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p/>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p/>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -32,7 +32,7 @@ public interface Resource {
    *
    * @return the resource type
    */
-  public Type getType();
+  Type getType();
 
   /**
    * Obtain the properties contained by this group in a map structure.
@@ -42,7 +42,7 @@ public interface Resource {
    *
    * @return resource properties map
    */
-  public Map<String, Map<String, Object>> getPropertiesMap();
+  Map<String, Map<String, Object>> getPropertiesMap();
 
   /**
    * Set a property value for the given property id on this resource.
@@ -50,14 +50,14 @@ public interface Resource {
    * @param id    the property id
    * @param value the value
    */
-  public void setProperty(String id, Object value);
+  void setProperty(String id, Object value);
 
   /**
    * Add an empty category to this resource.
    *
    * @param id the category id
    */
-  public void addCategory(String id);
+  void addCategory(String id);
 
   /**
    * Get a property value for the given property id from this resource.
@@ -65,7 +65,7 @@ public interface Resource {
    * @param id the property id
    * @return the property value
    */
-  public Object getPropertyValue(String id);
+  Object getPropertyValue(String id);
 
 
   // ----- Enum : InternalType -----------------------------------------------
@@ -73,9 +73,10 @@ public interface Resource {
   /**
    * Enum of internal types.
    */
-  public enum InternalType {
+  enum InternalType {
     Cluster,
     Service,
+    Setting,
     Host,
     Component,
     HostComponent,
@@ -144,7 +145,12 @@ public interface Resource {
     WidgetLayout,
     ActiveWidgetLayout,
     Theme,
-    HostKerberosIdentity;
+    QuickLink,
+    HostKerberosIdentity,
+    Credential,
+    KerberosDescriptor,
+    RoleAuthorization,
+    UserAuthorization;
 
     /**
      * Get the {@link Type} that corresponds to this InternalType.
@@ -164,7 +170,7 @@ public interface Resource {
   /**
    * Resource types.  Allows for the addition of external types.
    */
-  public final class Type implements Comparable<Type>{
+  final class Type implements Comparable<Type>{
 
     /**
      * Map of all registered types.
@@ -181,6 +187,7 @@ public interface Resource {
      */
     public static final Type Cluster = InternalType.Cluster.getType();
     public static final Type Service = InternalType.Service.getType();
+    public static final Type Setting = InternalType.Setting.getType();
     public static final Type Host = InternalType.Host.getType();
     public static final Type Component = InternalType.Component.getType();
     public static final Type HostComponent = InternalType.HostComponent.getType();
@@ -246,10 +253,15 @@ public interface Resource {
     public static final Type StackArtifact = InternalType.StackArtifact.getType();
     public static final Type Artifact = InternalType.Artifact.getType();
     public static final Type Theme = InternalType.Theme.getType();
+    public static final Type QuickLink = InternalType.QuickLink.getType();
     public static final Type Widget = InternalType.Widget.getType();
     public static final Type WidgetLayout = InternalType.WidgetLayout.getType();
     public static final Type ActiveWidgetLayout = InternalType.ActiveWidgetLayout.getType();
     public static final Type HostKerberosIdentity = InternalType.HostKerberosIdentity.getType();
+    public static final Type Credential = InternalType.Credential.getType();
+    public static final Type KerberosDescriptor = InternalType.KerberosDescriptor.getType();
+    public static final Type RoleAuthorization = InternalType.RoleAuthorization.getType();
+    public static final Type UserAuthorization = InternalType.UserAuthorization.getType();
 
     /**
      * The type name.

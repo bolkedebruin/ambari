@@ -115,6 +115,9 @@
     <description>
       Oozie DataBase Name
     </description>
+    <value-attributes>
+      <type>database</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -231,6 +234,7 @@
   <property require-input = "true">
     <name>oozie.service.JPAService.jdbc.password</name>
     <value> </value>
+    <display-name>Database Password</display-name>
     <property-type>PASSWORD</property-type>
     <description>
       DB user password.
@@ -238,6 +242,10 @@
       IMPORTANT: if password is emtpy leave a 1 space string, the service trims the value,
       if empty Configuration assumes it is NULL.
     </description>
+    <value-attributes>
+      <type>password</type>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <property>

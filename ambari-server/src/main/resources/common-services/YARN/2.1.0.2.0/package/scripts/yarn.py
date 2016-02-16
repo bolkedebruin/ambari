@@ -71,6 +71,14 @@ def yarn(name = None):
                            mode=0777,
                            recursive_chmod=True
       )
+      
+
+    params.HdfsResource(params.entity_file_history_directory,
+                           action="create_on_execute",
+                           type="directory",
+                           owner=params.yarn_user,
+                           group=params.user_group
+    )
     params.HdfsResource("/mapred",
                          type="directory",
                          action="create_on_execute",
@@ -93,52 +101,79 @@ def yarn(name = None):
     Directory(params.jhs_leveldb_state_store_dir,
               owner=params.mapred_user,
               group=params.user_group,
-              recursive=True,
+              create_parents = True,
               cd_access="a",
+              recursive_ownership = True,
               )
 
   if name == "nodemanager":
-    Directory(params.nm_local_dirs.split(',') + params.nm_log_dirs.split(','),
+
+    # First start after enabling/disabling security
+    if params.toggle_nm_security:
+      Directory(params.nm_local_dirs_list + params.nm_log_dirs_list,
+                action='delete'
+      )
+
+      # If yarn.nodemanager.recovery.dir exists, remove this dir
+      if params.yarn_nodemanager_recovery_dir:
+        Directory(InlineTemplate(params.yarn_nodemanager_recovery_dir).get_content(),
+                  action='delete'
+        )
+
+      # Setting NM marker file
+      if params.security_enabled:
+        Directory(params.nm_security_marker_dir)
+        File(params.nm_security_marker,
+             content="Marker file to track first start after enabling/disabling security. "
+                     "During first start yarn local, log dirs are removed and recreated"
+             )
+      elif not params.security_enabled:
+        File(params.nm_security_marker, action="delete")
+
+
+    if not params.security_enabled or params.toggle_nm_security:
+      Directory(params.nm_log_dirs_list,
+                owner=params.yarn_user,
+                group=params.user_group,
+                create_parents = True,
+                cd_access="a",
+                ignore_failures=True,
+                mode=0775)
+      Directory(params.nm_local_dirs_list,
+                owner=params.yarn_user,
+                group=params.user_group,
+                create_parents = True,
+                cd_access="a",
+                ignore_failures=True,
+                mode=0775,
+                recursive_mode_flags = {'f': 'a+rw', 'd': 'a+rwx'},
+                )
+
+  if params.yarn_nodemanager_recovery_dir:
+    Directory(InlineTemplate(params.yarn_nodemanager_recovery_dir).get_content(),
               owner=params.yarn_user,
               group=params.user_group,
-              recursive=True,
-              cd_access="a",
-              ignore_failures=True,
-              mode=0775
-              )
+              create_parents = True,
+              mode=0755,
+              cd_access = 'a',
+    )
 
-    smokeuser_directories = [os.path.join(dir, 'usercache' ,params.smokeuser)
-                             for dir in params.nm_local_dirs.split(',')]
-
-    if not params.security_enabled:
-      for directory in smokeuser_directories:
-        Execute(('chown', '-R', params.yarn_user, directory),
-            only_if=format("test -d {directory}"),
-            sudo=True)
-
-
-    if params.security_enabled:
-      for directory in smokeuser_directories:
-        Execute(('chown', '-R', params.smokeuser, directory),
-                only_if=format("test -d {directory}"),
-                sudo=True,
-        )
   Directory([params.yarn_pid_dir_prefix, params.yarn_pid_dir, params.yarn_log_dir],
             owner=params.yarn_user,
             group=params.user_group,
-            recursive=True,
+            create_parents = True,
             cd_access = 'a',
   )
 
   Directory([params.mapred_pid_dir_prefix, params.mapred_pid_dir, params.mapred_log_dir_prefix, params.mapred_log_dir],
             owner=params.mapred_user,
             group=params.user_group,
-            recursive=True,
+            create_parents = True,
             cd_access = 'a',
   )
   Directory([params.yarn_log_dir_prefix],
             owner=params.yarn_user,
-            recursive=True,
+            create_parents = True,
             ignore_failures=True,
             cd_access = 'a',
   )
@@ -155,14 +190,15 @@ def yarn(name = None):
   # During RU, Core Masters and Slaves need hdfs-site.xml
   # TODO, instead of specifying individual configs, which is susceptible to breaking when new configs are added,
   # RU should rely on all available in /usr/hdp/<version>/hadoop/conf
-  XmlConfig("hdfs-site.xml",
-            conf_dir=params.hadoop_conf_dir,
-            configurations=params.config['configurations']['hdfs-site'],
-            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
-            owner=params.hdfs_user,
-            group=params.user_group,
-            mode=0644
-  )
+  if 'hdfs-site' in params.config['configurations']:
+    XmlConfig("hdfs-site.xml",
+              conf_dir=params.hadoop_conf_dir,
+              configurations=params.config['configurations']['hdfs-site'],
+              configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
+              owner=params.hdfs_user,
+              group=params.user_group,
+              mode=0644
+    )
 
   XmlConfig("mapred-site.xml",
             conf_dir=params.hadoop_conf_dir,
@@ -206,11 +242,13 @@ def yarn(name = None):
                            mode=0700
       )
       params.HdfsResource(None, action="execute")
+
+
   elif name == 'apptimelineserver':
     Directory(params.ats_leveldb_dir,
        owner=params.yarn_user,
        group=params.user_group,
-       recursive=True,
+       create_parents = True,
        cd_access="a",
     )
 
@@ -219,9 +257,45 @@ def yarn(name = None):
       Directory(params.ats_leveldb_state_store_dir,
        owner=params.yarn_user,
        group=params.user_group,
-       recursive=True,
+       create_parents = True,
        cd_access="a",
       )
+    # app timeline server 1.5 directories
+    if not is_empty(params.entity_groupfs_store_dir):
+      parent_path = os.path.dirname(params.entity_groupfs_store_dir)
+      params.HdfsResource(parent_path,
+                          type="directory",
+                          action="create_on_execute",
+                          change_permissions_for_parents=True,
+                          owner=params.yarn_user,
+                          group=params.user_group,
+                          mode=0755
+                          )
+      params.HdfsResource(params.entity_groupfs_store_dir,
+                          type="directory",
+                          action="create_on_execute",
+                          owner=params.yarn_user,
+                          group=params.user_group,
+                          mode=params.entity_groupfs_store_dir_mode
+                          )
+    if not is_empty(params.entity_groupfs_active_dir):
+      parent_path = os.path.dirname(params.entity_groupfs_active_dir)
+      params.HdfsResource(parent_path,
+                          type="directory",
+                          action="create_on_execute",
+                          change_permissions_for_parents=True,
+                          owner=params.yarn_user,
+                          group=params.user_group,
+                          mode=0755
+                          )
+      params.HdfsResource(params.entity_groupfs_active_dir,
+                          type="directory",
+                          action="create_on_execute",
+                          owner=params.yarn_user,
+                          group=params.user_group,
+                          mode=params.entity_groupfs_active_dir_mode
+                          )
+    params.HdfsResource(None, action="execute")
 
   File(params.rm_nodes_exclude_path,
        owner=params.yarn_user,
@@ -259,7 +333,7 @@ def yarn(name = None):
 
   Directory(params.cgroups_dir,
             group=params.user_group,
-            recursive=True,
+            create_parents = True,
             mode=0755,
             cd_access="a")
 
@@ -272,6 +346,7 @@ def yarn(name = None):
 
   File(format("{hadoop_conf_dir}/mapred-env.sh"),
        owner=tc_owner,
+       mode=0755,
        content=InlineTemplate(params.mapred_env_sh_template)
   )
 
@@ -321,7 +396,7 @@ def yarn(name = None):
     )
 
     Directory(params.hadoop_conf_secure_dir,
-              recursive=True,
+              create_parents = True,
               owner='root',
               group=params.user_group,
               cd_access='a',

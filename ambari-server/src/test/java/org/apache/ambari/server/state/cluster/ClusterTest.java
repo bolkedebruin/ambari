@@ -62,6 +62,7 @@ import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.ResourceTypeDAO;
 import org.apache.ambari.server.orm.dao.StackDAO;
 import org.apache.ambari.server.orm.entities.ClusterConfigEntity;
+import org.apache.ambari.server.orm.entities.ClusterConfigMappingEntity;
 import org.apache.ambari.server.orm.entities.ClusterEntity;
 import org.apache.ambari.server.orm.entities.ClusterServiceEntity;
 import org.apache.ambari.server.orm.entities.ClusterStateEntity;
@@ -75,6 +76,7 @@ import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.ResourceTypeEntity;
 import org.apache.ambari.server.orm.entities.ServiceDesiredStateEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.security.authorization.ResourceType;
 import org.apache.ambari.server.state.AgentVersion;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -101,8 +103,10 @@ import org.apache.ambari.server.state.configgroup.ConfigGroupFactory;
 import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
 import org.apache.ambari.server.state.host.HostHealthyHeartbeatEvent;
 import org.apache.ambari.server.state.host.HostRegistrationRequestEvent;
+import org.apache.commons.lang.StringUtils;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -213,11 +217,11 @@ public class ClusterTest {
 
     String clusterName = "c1";
 
-    ResourceTypeEntity resourceTypeEntity = resourceTypeDAO.findById(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
+    ResourceTypeEntity resourceTypeEntity = resourceTypeDAO.findById(ResourceType.CLUSTER.getId());
     if (resourceTypeEntity == null) {
       resourceTypeEntity = new ResourceTypeEntity();
-      resourceTypeEntity.setId(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
-      resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
+      resourceTypeEntity.setId(ResourceType.CLUSTER.getId());
+      resourceTypeEntity.setName(ResourceType.CLUSTER.name());
       resourceTypeEntity = resourceTypeDAO.merge(resourceTypeEntity);
     }
     ResourceEntity resourceEntity = new ResourceEntity();
@@ -896,12 +900,12 @@ public class ClusterTest {
     Assert.assertTrue("Expect desired config contain " + config1.getType(), desiredConfigs.containsKey("global"));
     Assert.assertTrue("Expect desired config contain " + config3.getType(), desiredConfigs.containsKey("core-site"));
     Assert.assertEquals("Expect desired config for global should be " + config1.getTag(),
-        config1.getTag(), desiredConfigs.get(config1.getType()).getTag());
+      config1.getTag(), desiredConfigs.get(config1.getType()).getTag());
     Assert.assertEquals("_test1", desiredConfigs.get(config1.getType()).getUser());
     Assert.assertEquals("_test3", desiredConfigs.get(config3.getType()).getUser());
     DesiredConfig dc = desiredConfigs.get(config1.getType());
     Assert.assertTrue("Expect no host-level overrides",
-        (null == dc.getHostOverrides() || dc.getHostOverrides().size() == 0));
+      (null == dc.getHostOverrides() || dc.getHostOverrides().size() == 0));
 
     c1.addDesiredConfig("_test2", Collections.singleton(config2));
     Assert.assertEquals("_test2", c1.getDesiredConfigs().get(config2.getType()).getUser());
@@ -920,6 +924,10 @@ public class ClusterTest {
   }
 
   @Test
+  @Ignore
+  // Test clearly depends on a detached reference used to create
+  // in-memory objects. Based on the timeline this is a very old test with
+  // assertions that are not too meaningful.
   public void testClusterRecovery() throws AmbariException {
     ClusterEntity entity = createDummyData();
     ClusterStateEntity clusterStateEntity = new ClusterStateEntity();
@@ -928,7 +936,7 @@ public class ClusterTest {
     ClusterImpl cluster = new ClusterImpl(entity, injector);
     Service service = cluster.getService("HDFS");
     /* make sure the services are recovered */
-    Assert.assertEquals("HDFS",service.getName());
+    Assert.assertEquals("HDFS", service.getName());
     Map<String, Service> services = cluster.getServices();
     Assert.assertNotNull(services.get("HDFS"));
   }
@@ -1008,6 +1016,79 @@ public class ClusterTest {
     assertEquals(1, c1.getServices().size());
     assertEquals(1, injector.getProvider(EntityManager.class).get().
         createQuery("SELECT service FROM ClusterServiceEntity service").getResultList().size());
+  }
+
+  @Test
+  public void testDeleteServiceWithConfigHistory() throws Exception {
+    createDefaultCluster();
+
+    c1.addService("HDFS").persist();
+
+    Config config1 = configFactory.createNew(c1, "hdfs-site",
+      new HashMap<String, String>() {{ put("a", "b"); }}, new HashMap<String, Map<String,String>>());
+    config1.setTag("version1");
+
+    Config config2 = configFactory.createNew(c1, "core-site",
+      new HashMap<String, String>() {{ put("x", "y"); }}, new HashMap<String, Map<String,String>>());
+    config2.setTag("version2");
+
+    config1.persist();
+    c1.addConfig(config1);
+    config2.persist();
+    c1.addConfig(config2);
+
+    Set<Config> configs = new HashSet<Config>();
+    configs.add(config1);
+    configs.add(config2);
+
+    c1.addDesiredConfig("admin", configs);
+    List<ServiceConfigVersionResponse> serviceConfigVersions = c1.getServiceConfigVersions();
+    Assert.assertNotNull(serviceConfigVersions);
+    // Single serviceConfigVersion for multiple configs
+    Assert.assertEquals(1, serviceConfigVersions.size());
+    Assert.assertEquals(Long.valueOf(1), serviceConfigVersions.get(0).getVersion());
+    Assert.assertEquals(2, c1.getDesiredConfigs().size());
+    Assert.assertEquals("version1", c1.getDesiredConfigByType("hdfs-site").getTag());
+    Assert.assertEquals("version2", c1.getDesiredConfigByType("core-site").getTag());
+
+    Map<String, Collection<ServiceConfigVersionResponse>> activeServiceConfigVersions =
+      c1.getActiveServiceConfigVersions();
+    Assert.assertEquals(1, activeServiceConfigVersions.size());
+
+    c1.deleteService("HDFS");
+
+    Assert.assertEquals(0, c1.getServices().size());
+    Assert.assertEquals(0, c1.getServiceConfigVersions().size());
+
+    EntityManager em = injector.getProvider(EntityManager.class).get();
+
+    // ServiceConfig
+    Assert.assertEquals(0,
+      em.createQuery("SELECT serviceConfig from ServiceConfigEntity serviceConfig").getResultList().size());
+    // ClusterConfig
+    Assert.assertEquals(2,
+      em.createQuery("SELECT config from ClusterConfigEntity config").getResultList().size());
+    // ClusterConfigMapping
+    List<ClusterConfigMappingEntity> configMappingEntities =
+        em.createQuery("SELECT configmapping from ClusterConfigMappingEntity configmapping",
+        ClusterConfigMappingEntity.class).getResultList();
+
+    Assert.assertEquals(2, configMappingEntities.size());
+
+    for (ClusterConfigMappingEntity configMappingEntity : configMappingEntities) {
+      if (StringUtils.equals(configMappingEntity.getType(), "core-site")) {
+        assertEquals("core-site is not part of HDFS in test stack, should remain mapped to cluster",
+            1, configMappingEntity.isSelected());
+      }
+      if (StringUtils.equals(configMappingEntity.getType(), "hdfs-site")) {
+        assertEquals("hdfs-site should be unmapped from cluster when HDFS service is removed",
+            0, configMappingEntity.isSelected());
+      }
+    }
+
+    // ServiceConfigMapping
+    Assert.assertEquals(0,
+      em.createNativeQuery("SELECT * from serviceconfigmapping").getResultList().size());
   }
 
   @Test
@@ -1525,12 +1606,12 @@ public class ClusterTest {
     List<HostVersionEntity> otherHostVersions = hostVersionDAO.findByClusterAndHost("c1",
         hostNotInMaintenanceMode.getHostName());
 
-    // verify the MM host is in INSTALL_FAILED still
+    // verify the MM host has moved to OUT_OF_SYNC
     for (HostVersionEntity hostVersionEntity : hostInMaintModeVersions) {
       StackEntity repoVersionStackEntity = hostVersionEntity.getRepositoryVersion().getStack();
       if (repoVersionStackEntity.getStackName().equals("HDP")
           && repoVersionStackEntity.getStackVersion().equals("0.2")) {
-        assertEquals(RepositoryVersionState.INSTALL_FAILED, hostVersionEntity.getState());
+        assertEquals(RepositoryVersionState.OUT_OF_SYNC, hostVersionEntity.getState());
       }
     }
 
@@ -1583,14 +1664,35 @@ public class ClusterTest {
     c1.transitionClusterVersion(stackId, stackVersion,
         RepositoryVersionState.INSTALLING);
 
+    // Installation on one host fails (other is continuing)
+    hv1.setState(RepositoryVersionState.INSTALL_FAILED);
+    hostVersionDAO.merge(hv1);
+    // Check that cluster version is still in a non-final state
+    c1.recalculateClusterVersionState(repositoryVersionEntity);
+    checkStackVersionState(stackId, stackVersion,
+      RepositoryVersionState.INSTALLING);
+
+    h2.setState(HostState.HEALTHY);
+    hv2.setState(RepositoryVersionState.INSTALLED);
+    hostVersionDAO.merge(hv2);
+    // Now both cluster versions are in a final state, so
+    // cluster version state changes to final state
+    c1.recalculateClusterVersionState(repositoryVersionEntity);
+    checkStackVersionState(stackId, stackVersion,
+        RepositoryVersionState.INSTALL_FAILED);
+
+    // Retry by going back to INSTALLING
+    c1.transitionClusterVersion(stackId, stackVersion,
+      RepositoryVersionState.INSTALLING);
+
     h2.setState(HostState.HEALTHY);
     hv2.setState(RepositoryVersionState.INSTALLED);
     hostVersionDAO.merge(hv2);
     c1.recalculateClusterVersionState(repositoryVersionEntity);
     checkStackVersionState(stackId, stackVersion,
-        RepositoryVersionState.INSTALLING);
+      RepositoryVersionState.INSTALLING);
 
-    // Make one host fail
+    // Make the last host fail
     hv1.setState(RepositoryVersionState.INSTALL_FAILED);
     hostVersionDAO.merge(hv1);
     c1.recalculateClusterVersionState(repositoryVersionEntity);
@@ -1613,6 +1715,14 @@ public class ClusterTest {
     c1.recalculateClusterVersionState(repositoryVersionEntity);
     checkStackVersionState(stackId, stackVersion,
         RepositoryVersionState.UPGRADING);
+
+    hv1.setState(RepositoryVersionState.UPGRADED);
+    hostVersionDAO.merge(hv1);
+    c1.recalculateClusterVersionState(repositoryVersionEntity);
+    checkStackVersionState(stackId, stackVersion,
+        RepositoryVersionState.UPGRADING);
+    // reset host1 state
+    hv1.setState(RepositoryVersionState.UPGRADING);
 
     hv2.setState(RepositoryVersionState.UPGRADING);
     hostVersionDAO.merge(hv2);
@@ -2176,6 +2286,189 @@ public class ClusterTest {
     assertTrue(clusterConfigEntity.getData().contains("two"));
     assertTrue(clusterConfigEntity.getData().contains("three"));
     assertTrue(clusterConfigEntity.getData().contains("four"));
+  }
 
+  /**
+   * Tests that {@link Cluster#applyLatestConfigurations(StackId)} sets the
+   * right configs to enabled.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testApplyLatestConfigurations() throws Exception {
+    createDefaultCluster();
+    Cluster cluster = clusters.getCluster("c1");
+    ClusterEntity clusterEntity = clusterDAO.findByName("c1");
+    StackId stackId = cluster.getCurrentStackVersion();
+    StackId newStackId = new StackId("HDP-2.0.6");
+
+    StackEntity currentStack = stackDAO.find(stackId.getStackName(), stackId.getStackVersion());
+    StackEntity newStack = stackDAO.find(newStackId.getStackName(), newStackId.getStackVersion());
+
+    Assert.assertFalse( stackId.equals(newStackId) );
+
+    String configType = "foo-type";
+
+    ClusterConfigEntity clusterConfig = new ClusterConfigEntity();
+    clusterConfig.setClusterEntity(clusterEntity);
+    clusterConfig.setConfigId(1L);
+    clusterConfig.setStack(currentStack);
+    clusterConfig.setTag("version-1");
+    clusterConfig.setData("{}");
+    clusterConfig.setType(configType);
+    clusterConfig.setTimestamp(1L);
+    clusterConfig.setVersion(1L);
+
+    clusterDAO.createConfig(clusterConfig);
+    clusterEntity.getClusterConfigEntities().add(clusterConfig);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    ClusterConfigEntity newClusterConfig = new ClusterConfigEntity();
+    newClusterConfig.setClusterEntity(clusterEntity);
+    newClusterConfig.setConfigId(2L);
+    newClusterConfig.setStack(newStack);
+    newClusterConfig.setTag("version-2");
+    newClusterConfig.setData("{}");
+    newClusterConfig.setType(configType);
+    newClusterConfig.setTimestamp(2L);
+    newClusterConfig.setVersion(2L);
+
+    clusterDAO.createConfig(newClusterConfig);
+    clusterEntity.getClusterConfigEntities().add(newClusterConfig);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    // config mapping set to 1
+    ClusterConfigMappingEntity configMapping = new ClusterConfigMappingEntity();
+    configMapping.setClusterEntity(clusterEntity);
+    configMapping.setCreateTimestamp(1L);
+    configMapping.setSelected(1);
+    configMapping.setTag("version-1");
+    configMapping.setType(configType);
+    configMapping.setUser("admin");
+
+    // new config mapping set to 0
+    ClusterConfigMappingEntity newConfigMapping = new ClusterConfigMappingEntity();
+    newConfigMapping.setClusterEntity(clusterEntity);
+    newConfigMapping.setCreateTimestamp(2L);
+    newConfigMapping.setSelected(0);
+    newConfigMapping.setTag("version-2");
+    newConfigMapping.setType(configType);
+    newConfigMapping.setUser("admin");
+
+    clusterDAO.persistConfigMapping(configMapping);
+    clusterDAO.persistConfigMapping(newConfigMapping);
+    clusterEntity.getConfigMappingEntities().add(configMapping);
+    clusterEntity.getConfigMappingEntities().add(newConfigMapping);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    // check that the original mapping is enabled
+    Collection<ClusterConfigMappingEntity> clusterConfigMappings = clusterEntity.getConfigMappingEntities();
+    Assert.assertEquals(2, clusterConfigMappings.size());
+    for (ClusterConfigMappingEntity clusterConfigMapping : clusterConfigMappings) {
+      if (clusterConfigMapping.getTag().equals("version-1")) {
+        Assert.assertEquals(1, clusterConfigMapping.isSelected());
+      } else {
+        Assert.assertEquals(0, clusterConfigMapping.isSelected());
+      }
+    }
+
+    cluster.applyLatestConfigurations(newStackId);
+    clusterEntity = clusterDAO.findByName("c1");
+
+    // now check that the new config mapping is enabled
+    clusterConfigMappings = clusterEntity.getConfigMappingEntities();
+    Assert.assertEquals(2, clusterConfigMappings.size());
+    for (ClusterConfigMappingEntity clusterConfigMapping : clusterConfigMappings) {
+      if (clusterConfigMapping.getTag().equals("version-1")) {
+        Assert.assertEquals(0, clusterConfigMapping.isSelected());
+      } else {
+        Assert.assertEquals(1, clusterConfigMapping.isSelected());
+      }
+    }
+  }
+
+  /**
+   * Tests removing configurations and configuration mappings by stack.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testRemoveConfigurations() throws Exception {
+    createDefaultCluster();
+    Cluster cluster = clusters.getCluster("c1");
+    ClusterEntity clusterEntity = clusterDAO.findByName("c1");
+    StackId stackId = cluster.getCurrentStackVersion();
+    StackId newStackId = new StackId("HDP-2.0.6");
+
+    StackEntity currentStack = stackDAO.find(stackId.getStackName(), stackId.getStackVersion());
+    StackEntity newStack = stackDAO.find(newStackId.getStackName(), newStackId.getStackVersion());
+
+    Assert.assertFalse(stackId.equals(newStackId));
+
+    String configType = "foo-type";
+
+    ClusterConfigEntity clusterConfig = new ClusterConfigEntity();
+    clusterConfig.setClusterEntity(clusterEntity);
+    clusterConfig.setConfigId(1L);
+    clusterConfig.setStack(currentStack);
+    clusterConfig.setTag("version-1");
+    clusterConfig.setData("{}");
+    clusterConfig.setType(configType);
+    clusterConfig.setTimestamp(1L);
+    clusterConfig.setVersion(1L);
+
+    clusterDAO.createConfig(clusterConfig);
+    clusterEntity.getClusterConfigEntities().add(clusterConfig);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    ClusterConfigEntity newClusterConfig = new ClusterConfigEntity();
+    newClusterConfig.setClusterEntity(clusterEntity);
+    newClusterConfig.setConfigId(2L);
+    newClusterConfig.setStack(newStack);
+    newClusterConfig.setTag("version-2");
+    newClusterConfig.setData("{}");
+    newClusterConfig.setType(configType);
+    newClusterConfig.setTimestamp(2L);
+    newClusterConfig.setVersion(2L);
+
+    clusterDAO.createConfig(newClusterConfig);
+    clusterEntity.getClusterConfigEntities().add(newClusterConfig);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    // config mapping set to 1
+    ClusterConfigMappingEntity configMapping = new ClusterConfigMappingEntity();
+    configMapping.setClusterEntity(clusterEntity);
+    configMapping.setCreateTimestamp(1L);
+    configMapping.setSelected(1);
+    configMapping.setTag("version-1");
+    configMapping.setType(configType);
+    configMapping.setUser("admin");
+
+    // new config mapping set to 0
+    ClusterConfigMappingEntity newConfigMapping = new ClusterConfigMappingEntity();
+    newConfigMapping.setClusterEntity(clusterEntity);
+    newConfigMapping.setCreateTimestamp(2L);
+    newConfigMapping.setSelected(0);
+    newConfigMapping.setTag("version-2");
+    newConfigMapping.setType(configType);
+    newConfigMapping.setUser("admin");
+
+    clusterDAO.persistConfigMapping(configMapping);
+    clusterDAO.persistConfigMapping(newConfigMapping);
+    clusterEntity.getConfigMappingEntities().add(configMapping);
+    clusterEntity.getConfigMappingEntities().add(newConfigMapping);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    // get back the cluster configs for the new stack
+    List<ClusterConfigEntity> clusterConfigs = clusterDAO.getAllConfigurations(
+        cluster.getClusterId(), newStackId);
+
+    Assert.assertEquals(1, clusterConfigs.size());
+
+    // remove the configs
+    cluster.removeConfigurations(newStackId);
+
+    clusterConfigs = clusterDAO.getAllConfigurations(cluster.getClusterId(), newStackId);
+    Assert.assertEquals(0, clusterConfigs.size());
   }
 }

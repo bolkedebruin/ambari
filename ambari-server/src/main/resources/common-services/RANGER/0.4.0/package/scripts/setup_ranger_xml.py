@@ -18,6 +18,7 @@ limitations under the License.
 
 """
 import os
+import re
 from resource_management.core.logger import Logger
 from resource_management.core.resources.system import File, Directory, Execute
 from resource_management.core.source import DownloadSource, InlineTemplate
@@ -32,17 +33,17 @@ from resource_management.core.shell import as_sudo
 # This file contains functions used for setup/configure of Ranger Admin and Ranger Usersync.
 # The design is to mimic what is done by the setup.sh script bundled by Ranger component currently.
 
-def ranger(name=None, rolling_upgrade=False):
+def ranger(name=None, upgrade_type=None):
   """
   parameter name: name of ranger service component
   """
   if name == 'ranger_admin':
-    setup_ranger_admin(rolling_upgrade=rolling_upgrade)
+    setup_ranger_admin(upgrade_type=upgrade_type)
 
   if name == 'ranger_usersync':
-    setup_usersync()
+    setup_usersync(upgrade_type=upgrade_type)
 
-def setup_ranger_admin(rolling_upgrade=False):
+def setup_ranger_admin(upgrade_type=None):
   import params
 
   ranger_home = params.ranger_home
@@ -51,10 +52,10 @@ def setup_ranger_admin(rolling_upgrade=False):
   Directory(ranger_conf,
     owner = params.unix_user,
     group = params.unix_group,
-    recursive = True
+    create_parents = True
   )
 
-  if rolling_upgrade:
+  if upgrade_type is not None:
     ranger_home = format("/usr/hdp/{version}/ranger-admin")
     ranger_conf = format("/usr/hdp/{version}/ranger-admin/conf")
 
@@ -84,7 +85,7 @@ def setup_ranger_admin(rolling_upgrade=False):
     only_if=format("ls {ranger_home}/ews/webapp/WEB-INF/classes/conf"),
     sudo=True)
 
-  if rolling_upgrade:
+  if upgrade_type is not None:
     src_file = format('{ranger_home}/ews/webapp/WEB-INF/classes/conf.dist/ranger-admin-default-site.xml')
     dst_file = format('{ranger_home}/conf/ranger-admin-default-site.xml')
     Execute(('cp', '-f', src_file, dst_file), sudo=True)
@@ -94,15 +95,34 @@ def setup_ranger_admin(rolling_upgrade=False):
 
     Execute(('cp', '-f', src_file, dst_file), sudo=True)
 
-  Execute(('chown','-R',format('{unix_user}:{unix_group}'), format('{ranger_home}/')), sudo=True)
+  Directory(format('{ranger_home}/'),
+            owner = params.unix_user,
+            group = params.unix_group,
+            recursive_ownership = True,
+  )
 
   Directory(params.admin_log_dir,
     owner = params.unix_user,
     group = params.unix_group
   )
 
-  File(params.ranger_admin_default_file, owner=params.unix_user, group=params.unix_group)
-  File(params.security_app_context_file, owner=params.unix_user, group=params.unix_group)
+  if os.path.isfile(params.ranger_admin_default_file):
+    File(params.ranger_admin_default_file, owner=params.unix_user, group=params.unix_group)
+  else:
+    Logger.warning('Required file {0} does not exist, copying the file to {1} path'.format(params.ranger_admin_default_file, ranger_conf))
+    src_file = format('{ranger_home}/ews/webapp/WEB-INF/classes/conf.dist/ranger-admin-default-site.xml')
+    dst_file = format('{ranger_home}/conf/ranger-admin-default-site.xml')
+    Execute(('cp', '-f', src_file, dst_file), sudo=True)
+    File(params.ranger_admin_default_file, owner=params.unix_user, group=params.unix_group)
+
+  if os.path.isfile(params.security_app_context_file):
+    File(params.security_app_context_file, owner=params.unix_user, group=params.unix_group)
+  else:
+    Logger.warning('Required file {0} does not exist, copying the file to {1} path'.format(params.security_app_context_file, ranger_conf))
+    src_file = format('{ranger_home}/ews/webapp/WEB-INF/classes/conf.dist/security-applicationContext.xml')
+    dst_file = format('{ranger_home}/conf/security-applicationContext.xml')
+    Execute(('cp', '-f', src_file, dst_file), sudo=True)
+    File(params.security_app_context_file, owner=params.unix_user, group=params.unix_group)
 
   Execute(('ln','-sf', format('{ranger_home}/ews/ranger-admin-services.sh'),'/usr/bin/ranger-admin'),
     not_if=format("ls /usr/bin/ranger-admin"),
@@ -123,10 +143,10 @@ def setup_ranger_admin(rolling_upgrade=False):
     group=params.unix_group,
   )
 
-  do_keystore_setup(rolling_upgrade=rolling_upgrade)
+  do_keystore_setup(upgrade_type=upgrade_type)
 
 
-def setup_ranger_db(rolling_upgrade=False):
+def setup_ranger_db(upgrade_type=None):
   import params
   
   File(params.downloaded_custom_connector,
@@ -136,7 +156,7 @@ def setup_ranger_db(rolling_upgrade=False):
 
   Directory(params.java_share_dir,
     mode=0755,
-    recursive=True,
+    create_parents = True,
     cd_access="a"
   )
 
@@ -148,7 +168,7 @@ def setup_ranger_db(rolling_upgrade=False):
     File(params.driver_curl_target, mode=0644)
 
   ranger_home = params.ranger_home
-  if rolling_upgrade:
+  if upgrade_type is not None:
     ranger_home = format("/usr/hdp/{version}/ranger-admin")
 
   if params.db_flavor.lower() == 'sqla':
@@ -160,7 +180,7 @@ def setup_ranger_db(rolling_upgrade=False):
 
     Directory(params.jdbc_libs_dir,
       cd_access="a",
-      recursive=True)
+      create_parents = True)
 
     Execute(as_sudo(['yes', '|', 'cp', params.libs_path_in_archive, params.jdbc_libs_dir], auto_escape=False),
             path=["/bin", "/usr/bin/"])
@@ -173,6 +193,11 @@ def setup_ranger_db(rolling_upgrade=False):
 
   ModifyPropertiesFile(format("{ranger_home}/install.properties"),
     properties = params.config['configurations']['admin-properties'],
+    owner = params.unix_user,
+  )
+
+  ModifyPropertiesFile(format("{ranger_home}/install.properties"),
+    properties = {'audit_store': params.ranger_audit_source_type},
     owner = params.unix_user,
   )
 
@@ -189,7 +214,7 @@ def setup_ranger_db(rolling_upgrade=False):
   # User wants us to setup the DB user and DB?
   if params.create_db_dbuser:
     Logger.info('Setting up Ranger DB and DB User')
-    dba_setup = format('python {ranger_home}/dba_script.py -q')
+    dba_setup = format('ambari-python-wrap {ranger_home}/dba_script.py -q')
     Execute(dba_setup, 
             environment=env_dict,
             logoutput=True,
@@ -198,7 +223,7 @@ def setup_ranger_db(rolling_upgrade=False):
   else:
     Logger.info('Separate DBA property not set. Assuming Ranger DB and DB User exists!')
 
-  db_setup = format('python {ranger_home}/db_setup.py')
+  db_setup = format('ambari-python-wrap {ranger_home}/db_setup.py')
   Execute(db_setup, 
           environment=env_dict,
           logoutput=True,
@@ -206,18 +231,18 @@ def setup_ranger_db(rolling_upgrade=False):
   )
 
 
-def setup_java_patch(rolling_upgrade=False):
+def setup_java_patch(upgrade_type=None):
   import params
 
   ranger_home = params.ranger_home
-  if rolling_upgrade:
+  if upgrade_type is not None:
     ranger_home = format("/usr/hdp/{version}/ranger-admin")
 
   env_dict = {'RANGER_ADMIN_HOME':ranger_home, 'JAVA_HOME':params.java_home}
   if params.db_flavor.lower() == 'sqla':
     env_dict = {'RANGER_ADMIN_HOME':ranger_home, 'JAVA_HOME':params.java_home, 'LD_LIBRARY_PATH':params.ld_lib_path}
 
-  setup_java_patch = format('python {ranger_home}/db_setup.py -javapatch')
+  setup_java_patch = format('ambari-python-wrap {ranger_home}/db_setup.py -javapatch')
   Execute(setup_java_patch, 
           environment=env_dict,
           logoutput=True,
@@ -225,14 +250,14 @@ def setup_java_patch(rolling_upgrade=False):
   )
 
 
-def do_keystore_setup(rolling_upgrade=False): 
+def do_keystore_setup(upgrade_type=None):
   import params
 
   ranger_home = params.ranger_home
   cred_lib_path = params.cred_lib_path
   cred_setup_prefix = params.cred_setup_prefix
 
-  if rolling_upgrade:
+  if upgrade_type is not None:
     ranger_home = format("/usr/hdp/{version}/ranger-admin")
     cred_lib_path = os.path.join(ranger_home,"cred","lib","*")
     cred_setup_prefix = (format('{ranger_home}/ranger_credential_helper.py'), '-l', cred_lib_path)
@@ -267,9 +292,29 @@ def do_keystore_setup(rolling_upgrade=False):
       mode = 0640
     )
 
- 
-def setup_usersync():
+def password_validation(password):
   import params
+  if password.strip() == "":
+    raise Fail("Blank password is not allowed for Bind user. Please enter valid password.")
+  if re.search("[\\\`'\"]",password):
+    raise Fail("LDAP/AD bind password contains one of the unsupported special characters like \" ' \ `")
+  else:
+    Logger.info("password validated")
+ 
+def setup_usersync(upgrade_type=None):
+  import params
+
+  usersync_home = params.usersync_home
+  ranger_home = params.ranger_home
+  ranger_ugsync_conf = params.ranger_ugsync_conf
+
+  if not is_empty(params.ranger_usersync_ldap_ldapbindpassword) and params.ug_sync_source == 'org.apache.ranger.ldapusersync.process.LdapUserGroupBuilder':
+    password_validation(params.ranger_usersync_ldap_ldapbindpassword)
+
+  if upgrade_type is not None:
+    usersync_home = format("/usr/hdp/{version}/ranger-usersync")
+    ranger_home = format("/usr/hdp/{version}/ranger-admin")
+    ranger_ugsync_conf = format("/usr/hdp/{version}/ranger-usersync/conf")
 
   Directory(params.ranger_pid_dir,
     mode=0750,
@@ -286,29 +331,47 @@ def setup_usersync():
        owner = params.unix_user
   )
 
+  if upgrade_type is not None:
+    src_file = format('{usersync_home}/conf.dist/ranger-ugsync-default.xml')
+    dst_file = format('{usersync_home}/conf/ranger-ugsync-default.xml')
+    Execute(('cp', '-f', src_file, dst_file), sudo=True)
+
+    src_file = format('{usersync_home}/conf.dist/log4j.xml')
+    dst_file = format('{usersync_home}/conf/log4j.xml')
+    Execute(('cp', '-f', src_file, dst_file), sudo=True)
+
   XmlConfig("ranger-ugsync-site.xml",
-    conf_dir=params.ranger_ugsync_conf,
+    conf_dir=ranger_ugsync_conf,
     configurations=params.config['configurations']['ranger-ugsync-site'],
     configuration_attributes=params.config['configuration_attributes']['ranger-ugsync-site'],
     owner=params.unix_user,
     group=params.unix_group,
     mode=0644)
 
-  File(params.ranger_ugsync_default_file, owner=params.unix_user, group=params.unix_group)
-  File(params.usgsync_log4j_file, owner=params.unix_user, group=params.unix_group)
-  File(params.cred_validator_file, group=params.unix_group, mode=04555)
+  if os.path.isfile(params.ranger_ugsync_default_file):
+    File(params.ranger_ugsync_default_file, owner=params.unix_user, group=params.unix_group)
 
-  cred_lib = os.path.join(params.usersync_home,"lib","*")
-  cred_setup_prefix = (format('{ranger_home}/ranger_credential_helper.py'), '-l', cred_lib)
+  if os.path.isfile(params.usgsync_log4j_file):
+    File(params.usgsync_log4j_file, owner=params.unix_user, group=params.unix_group)
+
+  if os.path.isfile(params.cred_validator_file):
+    File(params.cred_validator_file, group=params.unix_group, mode=04555)
+
+  cred_file = format('{ranger_home}/ranger_credential_helper.py')
+  if os.path.isfile(format('{usersync_home}/ranger_credential_helper.py')):
+    cred_file = format('{usersync_home}/ranger_credential_helper.py')
+
+  cred_lib = os.path.join(usersync_home,"lib","*")
+  cred_setup_prefix = (cred_file, '-l', cred_lib)
 
   cred_setup = cred_setup_prefix + ('-f', params.ugsync_jceks_path, '-k', 'usersync.ssl.key.password', '-v', PasswordString(params.ranger_usersync_keystore_password), '-c', '1')
-  Execute(cred_setup, environment={'RANGER_ADMIN_HOME':params.ranger_home, 'JAVA_HOME': params.java_home}, logoutput=True, sudo=True)
+  Execute(cred_setup, environment={'JAVA_HOME': params.java_home}, logoutput=True, sudo=True)
 
   cred_setup = cred_setup_prefix + ('-f', params.ugsync_jceks_path, '-k', 'ranger.usersync.ldap.bindalias', '-v', PasswordString(params.ranger_usersync_ldap_ldapbindpassword), '-c', '1')
-  Execute(cred_setup, environment={'RANGER_ADMIN_HOME':params.ranger_home, 'JAVA_HOME': params.java_home}, logoutput=True, sudo=True)
+  Execute(cred_setup, environment={'JAVA_HOME': params.java_home}, logoutput=True, sudo=True)
 
   cred_setup = cred_setup_prefix + ('-f', params.ugsync_jceks_path, '-k', 'usersync.ssl.truststore.password', '-v', PasswordString(params.ranger_usersync_truststore_password), '-c', '1')
-  Execute(cred_setup, environment={'RANGER_ADMIN_HOME':params.ranger_home, 'JAVA_HOME': params.java_home}, logoutput=True, sudo=True)
+  Execute(cred_setup, environment={'JAVA_HOME': params.java_home}, logoutput=True, sudo=True)
 
   File(params.ugsync_jceks_path,
        owner = params.unix_user,

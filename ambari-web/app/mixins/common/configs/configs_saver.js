@@ -50,7 +50,7 @@ App.ConfigsSaverMixin = Em.Mixin.create({
    * List of heapsize properties not to be parsed
    * @type {string[]}
    */
-  heapsizeException: ['hadoop_heapsize', 'yarn_heapsize', 'nodemanager_heapsize', 'resourcemanager_heapsize', 'apptimelineserver_heapsize', 'jobhistory_heapsize', 'nfsgateway_heapsize', 'accumulo_master_heapsize', 'accumulo_tserver_heapsize', 'accumulo_monitor_heapsize', 'accumulo_gc_heapsize', 'accumulo_other_heapsize'],
+  heapsizeException: ['hadoop_heapsize', 'yarn_heapsize', 'nodemanager_heapsize', 'resourcemanager_heapsize', 'apptimelineserver_heapsize', 'jobhistory_heapsize', 'nfsgateway_heapsize', 'accumulo_master_heapsize', 'accumulo_tserver_heapsize', 'accumulo_monitor_heapsize', 'accumulo_gc_heapsize', 'accumulo_other_heapsize', 'hbase_master_heapsize', 'hbase_regionserver_heapsize', 'metrics_collector_heapsize'],
 
   /**
    * Regular expression for heapsize properties detection
@@ -296,11 +296,12 @@ App.ConfigsSaverMixin = Em.Mixin.create({
     if (serviceName === 'YARN') {
       configs = App.config.textareaIntoFileConfigs(configs, 'capacity-scheduler.xml');
     }
-    /**
-     * generates list of properties that was changed
-     * @type {Array}
-     */
+
+    //generates list of properties that was changed
     var modifiedConfigs = this.getModifiedConfigs(configs);
+    var serviceFilenames = Object.keys(App.StackService.find(serviceName).get('configTypes')).map(function (type) {
+      return App.config.getOriginalFileName(type);
+    });
 
     // save modified original configs that have no group
     modifiedConfigs = this.saveSiteConfigs(modifiedConfigs.filter(function (config) {
@@ -309,7 +310,9 @@ App.ConfigsSaverMixin = Em.Mixin.create({
 
     if (!Em.isArray(modifiedConfigs) || modifiedConfigs.length == 0) return null;
 
-    var fileNamesToSave = modifiedConfigs.mapProperty('filename').concat(this.get('modifiedFileNames')).uniq();
+    var fileNamesToSave = modifiedConfigs.mapProperty('filename').concat(this.get('modifiedFileNames')).filter(function(filename) {
+      return serviceFilenames.contains(filename);
+    }).uniq();
 
     var configsToSave = this.generateDesiredConfigsJSON(modifiedConfigs, fileNamesToSave, this.get('serviceConfigVersionNote'));
 
@@ -331,8 +334,6 @@ App.ConfigsSaverMixin = Em.Mixin.create({
    * @method saveSiteConfigs
    */
   saveSiteConfigs: function (configs) {
-    //configs = this.setHiveHostName(configs);
-    //configs = this.setOozieHostName(configs);
     this.formatConfigValues(configs);
     return configs;
   },
@@ -348,109 +349,6 @@ App.ConfigsSaverMixin = Em.Mixin.create({
       if (typeof _config.get('value') === "boolean") _config.set('value', _config.value.toString());
       _config.set('value', App.config.trimProperty(_config, true));
     });
-  },
-
-  /*********************************** 2.1 PREPARE DATABASE CONFIGS ****************************/
-
-  /**
-   * set hive hostnames in configs
-   * @param configs
-   * @private
-   * @method setHiveHostName
-   */
-  setHiveHostName: function (configs) {
-    var dbHostPropertyName = null, configsToRemove = [];
-    if (configs.someProperty('name', 'hive_database')) {
-      var hiveDb = configs.findProperty('name', 'hive_database');
-
-      switch(hiveDb.value) {
-        case 'New MySQL Database':
-        case 'New PostgreSQL Database':
-          dbHostPropertyName = configs.someProperty('name', 'hive_ambari_host') ? 'hive_ambari_host' : dbHostPropertyName;
-          configsToRemove = ['hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'];
-          break;
-        case 'Existing MySQL Database':
-          dbHostPropertyName = configs.someProperty('name', 'hive_existing_mysql_host') ? 'hive_existing_mysql_host' : dbHostPropertyName;
-          configsToRemove = ['hive_ambari_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'];
-          break;
-        case 'Existing PostgreSQL Database':
-          dbHostPropertyName = configs.someProperty('name', 'hive_existing_postgresql_host') ? 'hive_existing_postgresql_host' : dbHostPropertyName;
-          configsToRemove = ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'];
-          break;
-        case 'Existing Oracle Database':
-          dbHostPropertyName = configs.someProperty('name', 'hive_existing_oracle_host') ? 'hive_existing_oracle_host' : dbHostPropertyName;
-          configsToRemove = ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'];
-          break;
-        case 'Existing MSSQL Server database with SQL authentication':
-          dbHostPropertyName = configs.someProperty('name', 'hive_existing_mssql_server_host') ? 'hive_existing_mssql_server_host' : dbHostPropertyName;
-          configsToRemove = ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_mssql_server_2_database', 'hive_existing_mssql_server_2_host'];
-          break;
-        case 'Existing MSSQL Server database with integrated authentication':
-          dbHostPropertyName = configs.someProperty('name', 'hive_existing_mssql_server_2_host') ? 'hive_existing_mssql_server_2_host' : dbHostPropertyName;
-          configsToRemove = ['hive_ambari_database', 'hive_existing_mysql_host', 'hive_existing_mysql_database', 'hive_existing_postgresql_host', 'hive_existing_postgresql_database', 'hive_existing_oracle_host', 'hive_existing_oracle_database', 'hive_existing_mssql_server_database', 'hive_existing_mssql_server_host'];
-          break;
-      }
-      configs = dataManipulationUtils.rejectPropertyValues(configs, 'name', configsToRemove);
-    }
-    if (dbHostPropertyName) {
-      var hiveHostNameProperty = App.ServiceConfigProperty.create(App.config.get('preDefinedSiteProperties').findProperty('name', 'hive_hostname'));
-      hiveHostNameProperty.set('value', configs.findProperty('name', dbHostPropertyName).get('value'));
-      configs.pushObject(hiveHostNameProperty);
-    }
-    return configs;
-  },
-
-  /**
-   * set oozie hostnames in configs
-   * @param configs
-   * @private
-   * @method setOozieHostName
-   */
-  setOozieHostName: function (configs) {
-    var dbHostPropertyName = null, configsToRemove = [];
-    if (configs.someProperty('name', 'oozie_database')) {
-      var oozieDb = configs.findProperty('name', 'oozie_database');
-      switch (oozieDb.value) {
-        case 'New Derby Database':
-          configsToRemove = ['oozie_ambari_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'];
-          break;
-        case 'New MySQL Database':
-          var ambariHost = configs.findProperty('name', 'oozie_ambari_host');
-          if (ambariHost) {
-            ambariHost.name = 'oozie_hostname';
-          }
-          configsToRemove = ['oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'];
-          break;
-        case 'Existing MySQL Database':
-          dbHostPropertyName = configs.someProperty('name', 'oozie_existing_mysql_host') ? 'oozie_existing_mysql_host' : dbHostPropertyName;
-          configsToRemove = ['oozie_ambari_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'];
-          break;
-        case 'Existing PostgreSQL Database':
-          dbHostPropertyName = configs.someProperty('name', 'oozie_existing_postgresql_host') ? 'oozie_existing_postgresql_host' : dbHostPropertyName;
-          configsToRemove = ['oozie_ambari_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'];
-          break;
-        case 'Existing Oracle Database':
-          dbHostPropertyName = configs.someProperty('name', 'oozie_existing_oracle_host') ? 'oozie_existing_oracle_host' : dbHostPropertyName;
-          configsToRemove = ['oozie_ambari_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_derby_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'];
-          break;
-        case 'Existing MSSQL Server database with SQL authentication':
-          dbHostPropertyName = configs.someProperty('name', 'oozie_existing_mssql_server_host') ? 'oozie_existing_mssql_server_host' : dbHostPropertyName;
-          configsToRemove = ['oozie_ambari_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_mssql_server_2_database', 'oozie_existing_mssql_server_2_host'];
-          break;
-        case 'Existing MSSQL Server database with integrated authentication':
-          dbHostPropertyName = configs.someProperty('name', 'oozie_existing_mssql_server_2_host') ? 'oozie_existing_mssql_server_2_host' : dbHostPropertyName;
-          configsToRemove = ['oozie_ambari_database', 'oozie_existing_oracle_host', 'oozie_existing_oracle_database', 'oozie_derby_database', 'oozie_existing_postgresql_host', 'oozie_existing_postgresql_database', 'oozie_existing_mysql_host', 'oozie_existing_mysql_database', 'oozie_existing_mssql_server_database', 'oozie_existing_mssql_server_host'];
-          break;
-      }
-      configs = dataManipulationUtils.rejectPropertyValues(configs, 'name', configsToRemove);
-    }
-
-    if (dbHostPropertyName) {
-      var oozieHostNameProperty = App.ServiceConfigProperty.create(App.config.get('preDefinedSiteProperties').findProperty('name', 'oozie_hostname'));
-      oozieHostNameProperty.set('value', configs.findProperty('name', dbHostPropertyName).get('value'));
-      configs.pushObject(oozieHostNameProperty);
-    }
-    return configs;
   },
 
   /*********************************** 3. GENERATING JSON TO SAVE *****************************/
@@ -491,7 +389,9 @@ App.ConfigsSaverMixin = Em.Mixin.create({
       case 'mapred-queue-acls.xml':
         return false;
       case 'core-site.xml':
-        return ['HDFS', 'GLUSTERFS', 'RANGER_KMS'].contains(this.get('content.serviceName'));
+        var serviceName = this.get('content.serviceName');
+        var serviceType = App.StackService.find().findProperty('serviceName',serviceName).get('serviceType');
+        return ['HDFS', 'GLUSTERFS', 'RANGER_KMS'].contains(this.get('content.serviceName')) || serviceType === 'HCFS';
       default :
         return true;
     }
@@ -547,6 +447,7 @@ App.ConfigsSaverMixin = Em.Mixin.create({
   formatValueBeforeSave: function(property) {
     var name = property.get('name');
     var value = property.get('value');
+    var kdcTypesMap = App.router.get('mainAdminKerberosController.kdcTypesValues');
     //TODO check for core-site
     if (this.get('heapsizeRegExp').test(name) && !this.get('heapsizeException').contains(name) && !(value).endsWith("m")) {
       return value += "m";
@@ -556,7 +457,9 @@ App.ConfigsSaverMixin = Em.Mixin.create({
     }
     switch (name) {
       case 'kdc_type':
-        return App.router.get('mainAdminKerberosController.kdcTypesValues')[property.get('value')];
+        return Em.keys(kdcTypesMap).filter(function(key) {
+            return kdcTypesMap[key] === property.get('value');
+        })[0];
       case 'storm.zookeeper.servers':
       case 'nimbus.seeds':
         if (Em.isArray(value)) {
@@ -716,8 +619,12 @@ App.ConfigsSaverMixin = Em.Mixin.create({
       App.QuickViewLinks.proto().set('content', currentService);
       App.QuickViewLinks.proto().loadTags();
     }
+
+    //  update configs for service actions
+    App.router.get('mainServiceItemController').loadConfigs();
+
     this.showSaveConfigsPopup(header, flag, message, messageClass, value, status, urlParams);
-    this.clearDependentConfigs();
+    this.clearAllRecommendations();
   },
 
   /**
@@ -729,7 +636,6 @@ App.ConfigsSaverMixin = Em.Mixin.create({
   showSaveConfigsPopup: function (header, flag, message, messageClass, value, status, urlParams) {
     var self = this;
     if (flag) {
-      this.set('forceTransition', flag);
       self.loadStep();
     }
     return App.ModalPopup.show({
@@ -891,13 +797,9 @@ App.ConfigsSaverMixin = Em.Mixin.create({
 
         }.property('siteProperties'),
 
-        runningHostsMessage: function () {
-          return Em.I18n.t('services.service.config.stopService.runningHostComponents').format(this.get('runningComponentCount'), this.get('runningHosts.length'));
-        }.property('runningComponentCount', 'runningHosts.length'),
+        runningHostsMessage: Em.computed.i18nFormat('services.service.config.stopService.runningHostComponents', 'runningComponentCount', 'runningHosts.length'),
 
-        unknownHostsMessage: function () {
-          return Em.I18n.t('services.service.config.stopService.unknownHostComponents').format(this.get('unknownComponentCount'), this.get('unknownHosts.length'));
-        }.property('unknownComponentCount', 'unknownHosts.length'),
+        unknownHostsMessage: Em.computed.i18nFormat('services.service.config.stopService.unknownHostComponents', 'unknownComponentCount', 'unknownHosts.length'),
 
         templateName: require('templates/main/service/info/configs_save_popup')
       })
@@ -913,22 +815,30 @@ App.ConfigsSaverMixin = Em.Mixin.create({
    * @return {App.ModalPopup}
    * @method showSavePopup
    */
-  showSavePopup: function (path, callback) {
+  showSavePopup: function (transitionCallback, callback) {
     var self = this;
+    var passwordWasChanged = this.get('passwordConfigsAreChanged');
     return App.ModalPopup.show({
       header: Em.I18n.t('common.warning'),
       bodyClass: Em.View.extend({
         templateName: require('templates/common/configs/save_configuration'),
         showSaveWarning: true,
+        showPasswordChangeWarning: passwordWasChanged,
         notesArea: Em.TextArea.extend({
+          value: passwordWasChanged ? Em.I18n.t('dashboard.configHistory.info-bar.save.popup.notesForPasswordChange') : '',
           classNames: ['full-width'],
           placeholder: Em.I18n.t('dashboard.configHistory.info-bar.save.popup.placeholder'),
+          didInsertElement: function () {
+            if (this.get('value')) {
+              this.onChangeValue();
+            }
+          },
           onChangeValue: function() {
             this.get('parentView.parentView').set('serviceConfigNote', this.get('value'));
           }.observes('value')
         })
       }),
-      footerClass: Ember.View.extend({
+      footerClass: Em.View.extend({
         templateName: require('templates/main/service/info/save_popup_footer'),
         isSaveDisabled: function() {
           return self.get('isSubmitDisabled');
@@ -943,9 +853,8 @@ App.ConfigsSaverMixin = Em.Mixin.create({
       },
       onDiscard: function () {
         self.set('preSelectedConfigVersion', null);
-        if (path) {
-          self.set('forceTransition', true);
-          App.router.route(path);
+        if (transitionCallback) {
+          transitionCallback();
         } else if (callback) {
           self.doCancel();
           // Prevent multiple popups
@@ -958,123 +867,6 @@ App.ConfigsSaverMixin = Em.Mixin.create({
         this.hide();
       }
     });
-  },
-
-  /**
-   * TODO the methods below are not used as the logic was changed
-   * check and delete if this methods is not required
-   */
-
-  /**
-   * filter out unchanged configurationsisPropertiesChanged
-   * @param {Array} configsToSave
-   * @private
-   * @method filterChangedConfiguration
-   */
-  filterChangedConfiguration: function (configsToSave) {
-    var changedConfigs = [];
-
-    configsToSave.forEach(function (configSite) {
-      var oldConfig = App.router.get('configurationController').getConfigsByTags([
-        {siteName: configSite.type, tagName: this.loadedClusterSiteToTagMap[configSite.type]}
-      ]);
-      oldConfig = oldConfig[0] || {};
-      var oldProperties = oldConfig.properties || {};
-      var oldAttributes = oldConfig["properties_attributes"] || {};
-      var newProperties = configSite.properties || {};
-      var newAttributes = configSite["properties_attributes"] || {};
-      if (this.isAttributesChanged(oldAttributes, newAttributes) || this.isConfigChanged(oldProperties, newProperties) || this.get('modifiedFileNames').contains(App.config.getOriginalFileName(configSite.type))) {
-        changedConfigs.push(configSite);
-      }
-    }, this);
-    return changedConfigs;
-  },
-
-  /**
-   * Compares the loaded config values with the saving config values.
-   * @param {Object} loadedConfig -
-   * loadedConfig: {
-   *      configName1: "configValue1",
-   *      configName2: "configValue2"
-   *   }
-   * @param {Object} savingConfig
-   * savingConfig: {
-   *      configName1: "configValue1",
-   *      configName2: "configValue2"
-   *   }
-   * @returns {boolean}
-   * @private
-   * @method isConfigChanged
-   */
-  isConfigChanged: function (loadedConfig, savingConfig) {
-    if (loadedConfig != null && savingConfig != null) {
-      var seenLoadKeys = [];
-      for (var loadKey in loadedConfig) {
-        if (!loadedConfig.hasOwnProperty(loadKey)) continue;
-        seenLoadKeys.push(loadKey);
-        var loadValue = loadedConfig[loadKey];
-        var saveValue = savingConfig[loadKey];
-        if ("boolean" == typeof(saveValue)) {
-          saveValue = saveValue.toString();
-        }
-        if (saveValue == null) {
-          saveValue = "null";
-        }
-        if (loadValue !== saveValue) {
-          return true;
-        }
-      }
-      for (var saveKey in savingConfig) {
-        if (seenLoadKeys.indexOf(saveKey) < 0) {
-          return true;
-        }
-      }
-    }
-    return false;
-  },
-
-  /**
-   * Compares the loaded config properties attributes with the saving config properties attributes.
-   * @param {Object} oldAttributes -
-   * oldAttributes: {
-   *   supports: {
-   *     final: {
-   *       "configValue1" : "true",
-   *       "configValue2" : "true"
-   *     }
-   *   }
-   * }
-   * @param {Object} newAttributes
-   * newAttributes: {
-   *   supports: {
-   *     final: {
-   *       "configValue1" : "true",
-   *       "configValue2" : "true"
-   *     }
-   *   }
-   * }
-   * @returns {boolean}
-   * @private
-   * @method isAttributesChanged
-   */
-  isAttributesChanged: function (oldAttributes, newAttributes) {
-    oldAttributes = oldAttributes.final || {};
-    newAttributes = newAttributes.final || {};
-
-    var key;
-    for (key in oldAttributes) {
-      if (oldAttributes.hasOwnProperty(key)
-        && (!newAttributes.hasOwnProperty(key) || newAttributes[key] !== oldAttributes[key])) {
-        return true;
-      }
-    }
-    for (key in newAttributes) {
-      if (newAttributes.hasOwnProperty(key)
-        && (!oldAttributes.hasOwnProperty(key) || newAttributes[key] !== oldAttributes[key])) {
-        return true;
-      }
-    }
-    return false;
   },
 
   /**

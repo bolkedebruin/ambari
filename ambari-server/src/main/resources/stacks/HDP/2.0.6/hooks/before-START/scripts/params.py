@@ -27,12 +27,18 @@ from resource_management.libraries.functions import format
 from resource_management.libraries.functions.version import format_hdp_stack_version, compare_versions
 from ambari_commons.os_check import OSCheck
 from resource_management.libraries.script.script import Script
-
+from resource_management.libraries.functions import get_kinit_path
+from resource_management.libraries.resources.hdfs_resource import HdfsResource
 
 config = Script.get_config()
 
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+
+dfs_type = default("/commandParams/dfs_type", "")
+hadoop_conf_dir = "/etc/hadoop/conf"
+
+component_list = default("/localComponents", [])
 
 # hadoop default params
 mapreduce_libs_path = "/usr/lib/hadoop-mapreduce/*"
@@ -81,9 +87,9 @@ ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
 has_namenode = not len(namenode_host) == 0
 has_resourcemanager = not len(rm_host) == 0
 has_slaves = not len(slave_hosts) == 0
-has_oozie_server = not len(oozie_servers)  == 0
-has_hcat_server_host = not len(hcat_server_hosts)  == 0
-has_hive_server_host = not len(hive_server_host)  == 0
+has_oozie_server = not len(oozie_servers) == 0
+has_hcat_server_host = not len(hcat_server_hosts) == 0
+has_hive_server_host = not len(hive_server_host) == 0
 has_hbase_masters = not len(hbase_master_hosts) == 0
 has_zk_host = not len(zk_hosts) == 0
 has_ganglia_server = not len(ganglia_server_hosts) == 0
@@ -98,15 +104,27 @@ is_slave = hostname in slave_hosts
 if has_ganglia_server:
   ganglia_server_host = ganglia_server_hosts[0]
 if has_metric_collector:
-  metric_collector_host = ams_collector_hosts[0]
-  metric_collector_port = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
-  if metric_collector_port and metric_collector_port.find(':') != -1:
-    metric_collector_port = metric_collector_port.split(':')[1]
+  if 'cluster-env' in config['configurations'] and \
+      'metrics_collector_vip_host' in config['configurations']['cluster-env']:
+    metric_collector_host = config['configurations']['cluster-env']['metrics_collector_vip_host']
+  else:
+    metric_collector_host = ams_collector_hosts[0]
+  if 'cluster-env' in config['configurations'] and \
+      'metrics_collector_vip_port' in config['configurations']['cluster-env']:
+    metric_collector_port = config['configurations']['cluster-env']['metrics_collector_vip_port']
+  else:
+    metric_collector_web_address = default("/configurations/ams-site/timeline.metrics.service.webapp.address", "0.0.0.0:6188")
+    if metric_collector_web_address.find(':') != -1:
+      metric_collector_port = metric_collector_web_address.split(':')[1]
+    else:
+      metric_collector_port = '6188'
   pass
+metrics_report_interval = default("/configurations/ams-site/timeline.metrics.sink.report.interval", 60)
+metrics_collection_period = default("/configurations/ams-site/timeline.metrics.sink.collection.period", 10)
 
 #hadoop params
 
-if has_namenode:
+if has_namenode or dfs_type == 'HCFS':
   hadoop_tmp_dir = format("/tmp/hadoop-{hdfs_user}")
   hadoop_conf_dir = conf_select.get_hadoop_conf_dir(force_latest_on_upgrade=True)
   task_log4j_properties_location = os.path.join(hadoop_conf_dir, "task-log4j.properties")
@@ -141,11 +159,7 @@ else:
 #hadoop-env.sh
 java_home = config['hostLevelParams']['java_home']
 
-if hdp_stack_version != "" and compare_versions(hdp_stack_version, '2.0') >= 0 and compare_versions(hdp_stack_version, '2.1') < 0 and not OSCheck.is_suse_family():
-  # deprecated rhel jsvc_path
-  jsvc_path = "/usr/libexec/bigtop-utils"
-else:
-  jsvc_path = "/usr/lib/bigtop-utils"
+jsvc_path = "/usr/lib/bigtop-utils"
 
 hadoop_heapsize = config['configurations']['hadoop-env']['hadoop_heapsize']
 namenode_heapsize = config['configurations']['hadoop-env']['namenode_heapsize']
@@ -197,3 +211,34 @@ net_topology_script_file_path = "/etc/hadoop/conf/topology_script.py"
 net_topology_script_dir = os.path.dirname(net_topology_script_file_path)
 net_topology_mapping_data_file_name = 'topology_mappings.data'
 net_topology_mapping_data_file_path = os.path.join(net_topology_script_dir, net_topology_mapping_data_file_name)
+
+#Added logic to create /tmp and /user directory for HCFS stack.  
+has_core_site = 'core-site' in config['configurations']
+hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab']
+kinit_path_local = get_kinit_path()
+stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
+hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+hadoop_bin_dir = hdp_select.get_hadoop_dir("bin")
+hdfs_principal_name = default('/configurations/hadoop-env/hdfs_principal_name', None)
+hdfs_site = config['configurations']['hdfs-site']
+default_fs = config['configurations']['core-site']['fs.defaultFS']
+smoke_user =  config['configurations']['cluster-env']['smokeuser']
+smoke_hdfs_user_dir = format("/user/{smoke_user}")
+smoke_hdfs_user_mode = 0770
+
+import functools
+#create partial functions with common arguments for every HdfsResource call
+#to create/delete/copyfromlocal hdfs directories/files we need to call params.HdfsResource in code
+HdfsResource = functools.partial(
+  HdfsResource,
+  user=hdfs_user,
+  security_enabled = security_enabled,
+  keytab = hdfs_user_keytab,
+  kinit_path_local = kinit_path_local,
+  hadoop_bin_dir = hadoop_bin_dir,
+  hadoop_conf_dir = hadoop_conf_dir,
+  principal_name = hdfs_principal_name,
+  hdfs_site = hdfs_site,
+  default_fs = default_fs,
+  dfs_type = dfs_type
+)

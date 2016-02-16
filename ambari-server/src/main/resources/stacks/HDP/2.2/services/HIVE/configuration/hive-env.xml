@@ -20,11 +20,20 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>hive.heapsize</name>
-    <value>1024</value>
+    <value>512</value>
     <description>Hive Java heap size</description>
+    <display-name>HiveServer2 Heap Size</display-name>
+    <value-attributes>
+      <type>int</type>
+      <minimum>512</minimum>
+      <maximum>2048</maximum>
+      <unit>MB</unit>
+      <increment-step>512</increment-step>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
 
   <!-- hive-env.sh -->
@@ -41,12 +50,14 @@
  fi
 
 # The heap size of the jvm stared by hive shell script can be controlled via:
-export SERVICE=$SERVICE
+
 if [ "$SERVICE" = "metastore" ]; then
-  export HADOOP_HEAPSIZE="{{hive_metastore_heapsize}}"
+  export HADOOP_HEAPSIZE={{hive_metastore_heapsize}} # Setting for HiveMetastore
 else
-  export HADOOP_HEAPSIZE="{{hive_heapsize}}"
+  export HADOOP_HEAPSIZE={{hive_heapsize}} # Setting for HiveServer2 and Client
 fi
+
+export HADOOP_CLIENT_OPTS="$HADOOP_CLIENT_OPTS  -Xmx${HADOOP_HEAPSIZE}m"
 
 # Larger heap size may be required when running queries over large number of files or partitions.
 # By default hive shell scripts use a heap size of 256 (MB).  Larger heap size would also be
@@ -73,6 +84,9 @@ fi
 export METASTORE_PORT={{hive_metastore_port}}
 
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -116,29 +130,15 @@ export METASTORE_PORT={{hive_metastore_port}}
   </property>
 
   <property>
-    <name>cost_based_optimizer</name>
-    <display-name>Cost Based Optimizer</display-name>
-    <value>Off</value>
-    <value-attributes>
-      <type>value-list</type>
-      <entries>
-        <entry>
-          <value>On</value>
-          <label>On</label>
-        </entry>
-        <entry>
-          <value>Off</value>
-          <label>Off</label>
-        </entry>
-      </entries>
-      <selection-cardinality>1</selection-cardinality>
-    </value-attributes>
-  </property>
-
-  <property>
     <name>hive_security_authorization</name>
     <display-name>Choose Authorization</display-name>
     <value>None</value>
+    <depends-on>
+      <property>
+        <type>ranger-env</type>
+        <name>ranger-hive-plugin-enabled</name>
+      </property>
+    </depends-on>
     <value-attributes>
       <type>value-list</type>
       <entries>

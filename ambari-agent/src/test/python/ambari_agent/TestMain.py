@@ -26,6 +26,7 @@ import os
 import socket
 import tempfile
 import ConfigParser
+import ambari_agent.hostname as hostname
 
 from ambari_commons import OSCheck
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
@@ -80,7 +81,7 @@ class TestMain(unittest.TestCase):
   @patch("logging.basicConfig")
   def test_setup_logging(self, basicConfig_mock, rfh_mock, setLevel_mock, addHandler_mock):
     # Testing silent mode
-    main.setup_logging(False)
+    main.setup_logging(logging.getLogger(), '/var/log/ambari-agent/ambari-agent.log', 20)
     self.assertTrue(addHandler_mock.called)
     setLevel_mock.assert_called_with(logging.INFO)
 
@@ -88,7 +89,7 @@ class TestMain(unittest.TestCase):
     setLevel_mock.reset_mock()
 
     # Testing verbose mode
-    main.setup_logging(True)
+    main.setup_logging(logging.getLogger(), '/var/log/ambari-agent/ambari-agent.log', 10)
     self.assertTrue(addHandler_mock.called)
     setLevel_mock.assert_called_with(logging.DEBUG)
 
@@ -231,7 +232,7 @@ class TestMain(unittest.TestCase):
       main.stop_agent()
       kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-15', pid])
       kill_mock.assert_any_call(['ambari-sudo.sh', 'kill', '-9', pid])
-      sys_exit_mock.assert_called_with(1)
+      sys_exit_mock.assert_called_with(0)
 
     # Restore
     ProcessHelper.pidfile = oldpid
@@ -322,7 +323,7 @@ class TestMain(unittest.TestCase):
     ping_port_init_mock.return_value = None
     options = MagicMock()
     parse_args_mock.return_value = (options, MagicMock)
-    try_to_connect_mock.return_value = (0, True)
+    try_to_connect_mock.return_value = (0, True, False)  # (retries, connected, stopped)
     # use default unix config
     ambari_config_mock.return_value = self.init_ambari_config_mock()
     #testing call without command-line arguments
@@ -332,12 +333,11 @@ class TestMain(unittest.TestCase):
     self.assertTrue(setup_logging_mock.called)
     if OSCheck.get_os_family() != OSConst.WINSRV_FAMILY:
       self.assertTrue(stop_mock.called)
-    #self.assertTrue(resolve_ambari_config_mock.called)
     self.assertTrue(perform_prestart_checks_mock.called)
     if OSCheck.get_os_family() != OSConst.WINSRV_FAMILY:
       self.assertTrue(daemonize_mock.called)
     self.assertTrue(update_log_level_mock.called)
-    try_to_connect_mock.assert_called_once_with(ANY, -1, ANY)
+    try_to_connect_mock.assert_called_once_with(ANY, main.MAX_RETRIES, ANY)
     self.assertTrue(start_mock.called)
     self.assertTrue(data_clean_init_mock.called)
     self.assertTrue(data_clean_start_mock.called)
@@ -351,4 +351,26 @@ class TestMain(unittest.TestCase):
     options.expected_hostname = "test.hst"
     main.main()
     perform_prestart_checks_mock.assert_called_once_with(options.expected_hostname)
+
+    # Test with multiple server hostnames
+    default_server_hostnames = hostname.cached_server_hostnames
+    hostname.cached_server_hostnames = ['host1', 'host2', 'host3']
+    def try_to_connect_impl(*args, **kwargs):
+      for server_hostname in hostname.cached_server_hostnames:
+        if (args[0].find(server_hostname) != -1):
+          if server_hostname == 'host1':
+            return 0, False, False
+          elif server_hostname == 'host2':
+            return 0, False, False
+          elif server_hostname == 'host3':
+            return 0, True, False
+          else:
+            return 0, True, False
+      pass
+
+    try_to_connect_mock.reset_mock()
+    try_to_connect_mock.side_effect = try_to_connect_impl
+    active_server = main.main()
+    self.assertEquals(active_server, 'host3')
+    hostname.cached_server_hostnames = default_server_hostnames
     pass

@@ -24,27 +24,26 @@ module.exports =
     configCategories: [
       App.ServiceConfigCategory.create({ name: 'HDFS', displayName: 'HDFS'}),
       App.ServiceConfigCategory.create({ name: 'HBASE', displayName: 'HBase'}),
-      App.ServiceConfigCategory.create({ name: 'ACCUMULO', displayName: 'Accumulo'})
+      App.ServiceConfigCategory.create({ name: 'ACCUMULO', displayName: 'Accumulo'}),
+      App.ServiceConfigCategory.create({ name: 'AMBARI_METRICS', displayName: 'Ambari Metrics'}),
+      App.ServiceConfigCategory.create({ name: 'HAWQ', displayName: 'HAWQ'})
     ],
-    sites: ['core-site', 'hdfs-site', 'hbase-site', 'accumulo-site'],
+    sites: ['core-site', 'hdfs-site', 'hbase-site', 'accumulo-site', 'ams-hbase-site', 'hawq-site', 'hdfs-client'],
     configs: [
     /**********************************************HDFS***************************************/
       {
-        "id": "site property",
         "name": "dfs.journalnode.edits.dir",
         "displayName": "dfs.journalnode.edits.dir",
         "description": "The Directory where the JournalNode will store its local state.",
         "isReconfigurable": true,
         "recommendedValue": "/hadoop/hdfs/journal",
         "value": "/hadoop/hdfs/journal",
-        "defaultDirectory": "/hadoop/hdfs/journal",
         "displayType": "directory",
         "category": "HDFS",
         "filename": "hdfs-site",
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "fs.defaultFS",
         "displayName": "fs.defaultFS",
         "description": "The default path prefix used by the Hadoop FS client when none is given.",
@@ -56,7 +55,6 @@ module.exports =
         serviceName: 'MISC'
       },
       {
-        "id": "site property",
         "name": "ha.zookeeper.quorum",
         "displayName": "ha.zookeeper.quorum",
         "isReconfigurable": false,
@@ -68,7 +66,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.nameservices",
         "displayName": "dfs.nameservices",
         "description": "Comma-separated list of nameservices.",
@@ -80,7 +77,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.ha.namenodes.${dfs.nameservices}",
         "displayName": "dfs.ha.namenodes.${dfs.nameservices}",
         "description": "The prefix for a given nameservice, contains a comma-separated list of namenodes for a given nameservice.",
@@ -92,7 +88,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.rpc-address.${dfs.nameservices}.nn1",
         "displayName": "dfs.namenode.rpc-address.${dfs.nameservices}.nn1",
         "description": "RPC address that handles all clients requests for nn1.",
@@ -104,7 +99,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.rpc-address.${dfs.nameservices}.nn2",
         "displayName": "dfs.namenode.rpc-address.${dfs.nameservices}.nn2",
         "description": "RPC address that handles all clients requests for nn2.",
@@ -116,7 +110,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.http-address.${dfs.nameservices}.nn1",
         "displayName": "dfs.namenode.http-address.${dfs.nameservices}.nn1",
         "description": "The fully-qualified HTTP address for nn1 NameNode.",
@@ -128,7 +121,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.http-address.${dfs.nameservices}.nn2",
         "displayName": "dfs.namenode.http-address.${dfs.nameservices}.nn2",
         "description": "The fully-qualified HTTP address for nn2 NameNode.",
@@ -140,7 +132,6 @@ module.exports =
         serviceName: 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.https-address.${dfs.nameservices}.nn1",
         "displayName": "dfs.namenode.https-address.${dfs.nameservices}.nn1",
         "description": "The fully-qualified HTTP address for nn1 NameNode.",
@@ -152,7 +143,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.https-address.${dfs.nameservices}.nn2",
         "displayName": "dfs.namenode.https-address.${dfs.nameservices}.nn2",
         "description": "The fully-qualified HTTP address for nn2 NameNode.",
@@ -164,7 +154,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.client.failover.proxy.provider.${dfs.nameservices}",
         "displayName": "dfs.client.failover.proxy.provider.${dfs.nameservices}",
         "description": "The Java class that HDFS clients use to contact the Active NameNode.",
@@ -176,7 +165,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.shared.edits.dir",
         "displayName": "dfs.namenode.shared.edits.dir",
         "description": " The URI which identifies the group of JNs where the NameNodes will write/read edits.",
@@ -188,7 +176,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.ha.fencing.methods",
         "displayName": "dfs.ha.fencing.methods",
         "description": "A list of scripts or Java classes which will be used to fence the Active NameNode during a failover.",
@@ -200,7 +187,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.ha.automatic-failover.enabled",
         "displayName": "dfs.ha.automatic-failover.enabled",
         "description": "Enable Automatic failover.",
@@ -213,7 +199,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "dfs.namenode.safemode.threshold-pct",
         "displayName": "dfs.namenode.safemode.threshold-pct",
         "description": "Specifies the percentage of blocks that should satisfy\n        the minimal replication requirement defined by dfs.namenode.replication.min.\n        Values less than or equal to 0 mean not to start in safe mode.\n        Values greater than 1 will make safe mode permanent.\n ",
@@ -225,7 +210,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "hbase.rootdir",
         "displayName": "hbase.rootdir",
         "description": "The directory shared by region servers and into which HBase persists.",
@@ -237,7 +221,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "instance.volumes",
         "displayName": "instance.volumes",
         "isReconfigurable": false,
@@ -248,7 +231,6 @@ module.exports =
         "serviceName": 'MISC'
       },
       {
-        "id": "site property",
         "name": "instance.volumes.replacements",
         "displayName": "instance.volumes.replacements",
         "isReconfigurable": false,
@@ -256,6 +238,96 @@ module.exports =
         "value": "/hadoop/hdfs/journal",
         "category": "ACCUMULO",
         "filename": "accumulo-site",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "hbase.rootdir",
+        "displayName": "hbase.rootdir",
+        "description": "Ambari Metrics service uses HBase as default storage backend. Set the rootdir for HBase to either local filesystem path if using Ambari Metrics in embedded mode or to a HDFS dir, example: hdfs://namenode.example.org:8020/amshbase.",
+        "isReconfigurable": false,
+        "recommendedValue": "file:///var/lib/ambari-metrics-collector/hbase",
+        "value": "file:///var/lib/ambari-metrics-collector/hbase",
+        "category": "AMBARI_METRICS",
+        "isVisible": false,
+        "filename": "ams-hbase-site",
+        "serviceName": 'MISC'
+      },
+    /**********************************************HAWQ***************************************/
+      {
+        "name": "hawq_dfs_url",
+        "displayName": "hawq_dfs_url",
+        "description": "URL for Accessing HDFS",
+        "isReconfigurable": false,
+        "recommendedValue": "haCluster/hawq_default",
+        "value": "haCluster/hawq_default",
+        "category": "HAWQ",
+        "filename": "hawq-site",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "dfs.nameservices",
+        "displayName": "dfs.nameservices",
+        "description": "Comma-separated list of nameservices.",
+        "isReconfigurable": false,
+        "recommendedValue": "haCluster",
+        "value": "haCluster",
+        "category": "HAWQ",
+        "filename": "hdfs-client",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "dfs.ha.namenodes.${dfs.nameservices}",
+        "displayName": "dfs.ha.namenodes.${dfs.nameservices}",
+        "description": "The prefix for a given nameservice, contains a comma-separated list of namenodes for a given nameservice.",
+        "isReconfigurable": false,
+        "recommendedValue": "nn1,nn2",
+        "value": "nn1,nn2",
+        "category": "HAWQ",
+        "filename": "hdfs-client",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "dfs.namenode.rpc-address.${dfs.nameservices}.nn1",
+        "displayName": "dfs.namenode.rpc-address.${dfs.nameservices}.nn1",
+        "description": "RPC address that handles all clients requests for nn1.",
+        "isReconfigurable": false,
+        "recommendedValue": "0.0.0.0:8020",
+        "value": "0.0.0.0:8020",
+        "category": "HAWQ",
+        "filename": "hdfs-client",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "dfs.namenode.rpc-address.${dfs.nameservices}.nn2",
+        "displayName": "dfs.namenode.rpc-address.${dfs.nameservices}.nn2",
+        "description": "RPC address that handles all clients requests for nn2.",
+        "isReconfigurable": false,
+        "recommendedValue": "0.0.0.0:8020",
+        "value": "0.0.0.0:8020",
+        "category": "HAWQ",
+        "filename": "hdfs-client",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "dfs.namenode.http-address.${dfs.nameservices}.nn1",
+        "displayName": "dfs.namenode.http-address.${dfs.nameservices}.nn1",
+        "description": "The fully-qualified HTTP address for nn1 NameNode.",
+        "isReconfigurable": false,
+        "recommendedValue": "0.0.0.0:50070",
+        "value": "0.0.0.0:50070",
+        "category": "HAWQ",
+        "filename": "hdfs-client",
+        "serviceName": 'MISC'
+      },
+      {
+        "name": "dfs.namenode.http-address.${dfs.nameservices}.nn2",
+        "displayName": "dfs.namenode.http-address.${dfs.nameservices}.nn2",
+        "description": "The fully-qualified HTTP address for nn2 NameNode.",
+        "isReconfigurable": false,
+        "recommendedValue": "0.0.0.0:50070",
+        "value": "0.0.0.0:50070",
+        "category": "HAWQ",
+        "filename": "hdfs-client",
         "serviceName": 'MISC'
       }
     ]

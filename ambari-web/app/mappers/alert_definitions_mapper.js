@@ -17,14 +17,13 @@
 
 var App = require('app');
 
-var stringUtils = require('utils/string_utils');
-
 App.alertDefinitionsMapper = App.QuickDataMapper.create({
 
   model: App.AlertDefinition,
   reportModel: App.AlertReportDefinition,
   metricsSourceModel: App.AlertMetricsSourceDefinition,
   metricsUriModel: App.AlertMetricsUriDefinition,
+  parameterModel: App.AlertDefinitionParameter,
 
   config: {
     id: 'AlertDefinition.id',
@@ -41,6 +40,11 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
     reporting_key: 'reporting',
     reporting_type: 'array',
     reporting: {
+      item: 'id'
+    },
+    parameters_key: 'parameters',
+    parameters_type: 'array',
+    parameters: {
       item: 'id'
     }
   },
@@ -66,33 +70,31 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
     http: 'AlertDefinition.source.uri.http',
     https: 'AlertDefinition.source.uri.https',
     https_property: 'AlertDefinition.source.uri.https_property',
-    https_property_value: 'AlertDefinition.source.uri.https_property_value'
+    https_property_value: 'AlertDefinition.source.uri.https_property_value',
+    connection_timeout: 'AlertDefinition.source.uri.connection_timeout'
   },
 
   map: function (json) {
     console.time('App.alertDefinitionsMapper execution time');
     if (json && json.items) {
       var self = this,
+          parameters = [],
           alertDefinitions = [],
           alertReportDefinitions = [],
           alertMetricsSourceDefinitions = [],
           alertMetricsUriDefinitions = [],
-          alertGroupsMap = App.cache['previousAlertGroupsMap'],
+          alertGroupsMap = App.cache.previousAlertGroupsMap,
           existingAlertDefinitions = App.AlertDefinition.find(),
-          existingAlertDefinitionsMap = {},
+          existingAlertDefinitionsMap = existingAlertDefinitions.toArray().toMapByProperty('id'),
           alertDefinitionsToDelete = existingAlertDefinitions.mapProperty('id'),
           rawSourceData = {};
-
-      existingAlertDefinitions.forEach(function (d) {
-        existingAlertDefinitionsMap[d.get('id')] = d;
-      });
 
       json.items.forEach(function (item) {
         var convertedReportDefinitions = [];
         var reporting = item.AlertDefinition.source.reporting;
         for (var report in reporting) {
           if (reporting.hasOwnProperty(report)) {
-            if (report == "units") {
+            if (report === "units") {
               convertedReportDefinitions.push({
                 id: item.AlertDefinition.id + report,
                 type: report,
@@ -109,8 +111,27 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
           }
         }
 
+        var convertedParameters = [];
+        var sourceParameters = item.AlertDefinition.source.parameters;
+        if (Array.isArray(sourceParameters)) {
+          sourceParameters.forEach(function (parameter) {
+            convertedParameters.push({
+              id: item.AlertDefinition.id + parameter.name,
+              name: parameter.name,
+              display_name: parameter.display_name,
+              units: parameter.units,
+              value: parameter.value,
+              description: parameter.description,
+              type: parameter.type,
+              threshold: parameter.threshold
+            });
+          });
+        }
+
         alertReportDefinitions = alertReportDefinitions.concat(convertedReportDefinitions);
+        parameters = parameters.concat(convertedParameters);
         item.reporting = convertedReportDefinitions;
+        item.parameters = convertedParameters;
 
         rawSourceData[item.AlertDefinition.id] = item.AlertDefinition.source;
         item.AlertDefinition.description = item.AlertDefinition.description || '';
@@ -126,6 +147,7 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
           // new values will be parsed in the another mapper, so for now just use old values
           alertDefinition.summary = oldAlertDefinition.get('summary');
           alertDefinition.last_triggered = oldAlertDefinition.get('lastTriggered');
+          alertDefinition.last_triggered_raw = oldAlertDefinition.get('lastTriggeredRaw');
         }
 
         alertDefinitionsToDelete = alertDefinitionsToDelete.without(alertDefinition.id);
@@ -178,6 +200,9 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
           case 'SERVER':
             alertDefinitions.push($.extend(alertDefinition, this.parseIt(item, this.get('serverConfig'))));
             break;
+          case 'RECOVERY':
+            alertDefinitions.push($.extend(alertDefinition, this.parseIt(item, this.get('uriConfig'))));
+            break;
           default:
             console.error('Incorrect Alert Definition type:', item.AlertDefinition);
         }
@@ -189,6 +214,7 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
 
       // load all mapped data to model
       App.store.loadMany(this.get('reportModel'), alertReportDefinitions);
+      App.store.loadMany(this.get('parameterModel'), parameters);
       App.store.loadMany(this.get('metricsSourceModel'), alertMetricsSourceDefinitions);
       this.setMetricsSourcePropertyLists(this.get('metricsSourceModel'), alertMetricsSourceDefinitions);
       App.store.loadMany(this.get('metricsUriModel'), alertMetricsUriDefinitions);
@@ -206,10 +232,7 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
    * @param data
    */
   setMetricsSourcePropertyLists: function (model, data) {
-    var modelsMap = {};
-    model.find().forEach(function (m) {
-      modelsMap[m.get('id')] = m;
-    });
+    var modelsMap = model.find().toArray().toMapByProperty('id');
     data.forEach(function (record) {
       var m = modelsMap[record.id];
       if (m) {
@@ -224,10 +247,7 @@ App.alertDefinitionsMapper = App.QuickDataMapper.create({
    */
   setAlertDefinitionsRawSourceData: function (rawSourceData) {
     var allDefinitions = App.AlertDefinition.find();
-    var allDefinitionsMap = {};
-    allDefinitions.forEach(function(d) {
-      allDefinitionsMap[d.get('id')] = d;
-    });
+    var allDefinitionsMap = allDefinitions.toArray().toMapByProperty('id');
     for (var alertDefinitionId in rawSourceData) {
       if (rawSourceData.hasOwnProperty(alertDefinitionId)) {
         var m = allDefinitionsMap[+alertDefinitionId];

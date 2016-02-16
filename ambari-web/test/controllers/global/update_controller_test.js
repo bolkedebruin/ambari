@@ -20,6 +20,7 @@
 var App = require('app');
 require('utils/updater');
 require('controllers/global/update_controller');
+var testHelpers = require('test/helpers');
 
 describe('App.UpdateController', function () {
   var controller = App.UpdateController.create({
@@ -28,20 +29,17 @@ describe('App.UpdateController', function () {
     updateServiceMetric: function(){}
   });
 
+  App.TestAliases.testAsComputedAlias(App.UpdateController.create(), 'clusterName', 'App.router.clusterController.clusterName', 'string');
+
+  App.TestAliases.testAsComputedAnd(App.UpdateController.create(), 'updateAlertInstances', ['isWorking', '!App.router.mainAlertInstancesController.isUpdating']);
+
   describe('#getUrl()', function () {
 
-    it('testMode = true', function () {
-      App.set('testMode', true);
-      expect(controller.getUrl('test', '/real')).to.equal('test');
-    });
-
     it('testMode = false', function () {
-      App.set('testMode', false);
       expect(controller.getUrl('test', '/real')).to.equal('/api/v1/clusters//real');
     });
 
-    it('testMode = false', function () {
-      App.set('testMode', false);
+    it('testMode = false (2)', function () {
       controller.set('clusterName', 'mycluster');
       expect(controller.getUrl('test', '/real')).to.equal('/api/v1/clusters/mycluster/real');
     });
@@ -49,12 +47,6 @@ describe('App.UpdateController', function () {
 
   describe('#updateAll()', function () {
 
-    beforeEach(function () {
-      sinon.stub(App.updater, 'run', Em.K);
-    });
-    afterEach(function () {
-      App.updater.run.restore();
-    });
     it('isWorking = false', function () {
       controller.set('isWorking', false);
       expect(App.updater.run.called).to.equal(false);
@@ -62,7 +54,7 @@ describe('App.UpdateController', function () {
 
     it('isWorking = true', function () {
       controller.set('isWorking', true);
-      expect(App.updater.run.callCount).to.equal(11);
+      expect(App.updater.run.callCount).to.equal(12);
     });
   });
 
@@ -72,7 +64,7 @@ describe('App.UpdateController', function () {
       {
         title: 'No services exist',
         services: [],
-        result: []
+        result: ['metrics/1']
       },
       {
         title: 'HDFS service',
@@ -83,7 +75,7 @@ describe('App.UpdateController', function () {
             }
           }
         ],
-        result: []
+        result: ['metrics/1']
       },
       {
         title: 'FLUME service',
@@ -94,7 +86,7 @@ describe('App.UpdateController', function () {
             }
           }
         ],
-        result: ["host_components/processes/HostComponentProcess"]
+        result: ['metrics/1', "host_components/processes/HostComponentProcess"]
       },
       {
         title: 'YARN service',
@@ -105,7 +97,7 @@ describe('App.UpdateController', function () {
             }
           }
         ],
-        result: ["host_components/metrics/yarn/Queue," +
+        result: ['metrics/1', "host_components/metrics/yarn/Queue," +
         "host_components/metrics/yarn/ClusterMetrics/NumActiveNMs," +
         "host_components/metrics/yarn/ClusterMetrics/NumLostNMs," +
         "host_components/metrics/yarn/ClusterMetrics/NumUnhealthyNMs," +
@@ -121,7 +113,7 @@ describe('App.UpdateController', function () {
             }
           }
         ],
-        result: ["host_components/metrics/hbase/master/IsActiveMaster," +
+        result: ['metrics/1', "host_components/metrics/hbase/master/IsActiveMaster," +
         "host_components/metrics/hbase/master/MasterStartTime," +
         "host_components/metrics/hbase/master/MasterActiveTime," +
         "host_components/metrics/hbase/master/AverageLoad," +
@@ -136,9 +128,9 @@ describe('App.UpdateController', function () {
             }
           }
         ],
-        result: ["metrics/api/v1/cluster/summary," +
-                 "metrics/api/v1/topology/summary," +
-                 "metrics/api/v1/nimbus/summary"]
+        result: ['metrics/1', "metrics/api/v1/cluster/summary," +
+        "metrics/api/v1/topology/summary," +
+        "metrics/api/v1/nimbus/summary"]
       }
     ];
 
@@ -153,7 +145,7 @@ describe('App.UpdateController', function () {
           }
         ],
         stackVersionNumber: '2.1',
-        result: ["metrics/api/cluster/summary"]
+        result: ['metrics/1', "metrics/api/cluster/summary"]
       },
       {
         title: 'STORM service stack 2.2',
@@ -165,7 +157,7 @@ describe('App.UpdateController', function () {
           }
         ],
         stackVersionNumber: '2.2',
-        result: ["metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary"]
+        result: ['metrics/1', "metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary"]
       },
       {
         title: 'STORM service stack 2.3',
@@ -177,27 +169,44 @@ describe('App.UpdateController', function () {
           }
         ],
         stackVersionNumber: '2.3',
-        result: ["metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary,metrics/api/v1/nimbus/summary"]
+        result: ['metrics/1', "metrics/api/v1/cluster/summary,metrics/api/v1/topology/summary,metrics/api/v1/nimbus/summary"]
       }
     ];
-    testCases.forEach(function(test){
+
+    beforeEach(function () {
+      this.mock = sinon.stub(App, 'get');
+      controller.set('serviceComponentMetrics', ['metrics/1']);
+    });
+    afterEach(function () {
+      this.mock.restore();
+    });
+    testCases.forEach(function (test) {
       it(test.title, function () {
-        App.cache['services'] = test.services;
+        App.cache.services = test.services;
+        this.mock.withArgs('router.clusterController.isServiceMetricsLoaded').returns(true);
         expect(controller.getConditionalFields()).to.eql(test.result);
       });
     });
 
-    testCasesByStackVersion.forEach(function(test) {
-      it(test.title, function() {
-        App.cache['services'] = test.services;
-        sinon.stub(App, 'get', function(key) {
-          if (key == 'currentStackVersionNumber') {
-            return test.stackVersionNumber;
-          }
-        });
+    testCasesByStackVersion.forEach(function (test) {
+      it(test.title, function () {
+        App.cache.services = test.services;
+        this.mock.withArgs('currentStackVersionNumber').returns(test.stackVersionNumber);
+        this.mock.withArgs('router.clusterController.isServiceMetricsLoaded').returns(true);
         expect(controller.getConditionalFields()).to.eql(test.result);
-        App.get.restore();
       });
+    });
+
+    it('FLUME service, first load', function () {
+      App.cache.services = [
+        {
+          ServiceInfo: {
+            service_name: 'FLUME'
+          }
+        }
+      ];
+      this.mock.withArgs('router.clusterController.isServiceMetricsLoaded').returns(false);
+      expect(controller.getConditionalFields()).to.eql(["host_components/processes/HostComponentProcess"]);
     });
   });
 
@@ -234,7 +243,7 @@ describe('App.UpdateController', function () {
       App.get.restore();
       controller.computeParameters.restore();
     });
-    it("", function () {
+    it("valid params are added", function () {
       expect(controller.addParamsToHostsUrl([], [], 'url')).to.equal('mock/clusters/mockurl&params&params');
     });
   });
@@ -244,23 +253,23 @@ describe('App.UpdateController', function () {
       this.mock = sinon.stub(App.Service, 'find');
       sinon.stub(controller, 'computeParameters');
       sinon.stub(controller, 'addParamsToHostsUrl');
-      sinon.stub(App.ajax, 'send');
     });
     afterEach(function () {
       App.Service.find.restore();
       controller.computeParameters.restore();
       controller.addParamsToHostsUrl.restore();
-      App.ajax.send.restore();
     });
     it("AMBARI_METRICS is not started", function () {
       this.mock.returns(Em.Object.create({isStarted: false}));
       expect(controller.loadHostsMetric([])).to.be.null;
-      expect(App.ajax.send.called).to.be.false;
+      var args = testHelpers.findAjaxRequest('name', 'hosts.metrics.lazy_load');
+      expect(args).to.not.exists;
     });
     it("AMBARI_METRICS is started", function () {
       this.mock.returns(Em.Object.create({isStarted: true}));
       expect(controller.loadHostsMetric([])).to.be.object;
-      expect(App.ajax.send.calledOnce).to.be.true;
+      var args = testHelpers.findAjaxRequest('name', 'hosts.metrics.lazy_load');
+      expect(args).to.exists;
     });
   });
 
@@ -271,7 +280,7 @@ describe('App.UpdateController', function () {
     afterEach(function () {
       App.hostsMapper.setMetrics.restore();
     });
-    it("", function () {
+    it("setMetrics called with valid arguments", function () {
       controller.loadHostsMetricSuccessCallback({});
       expect(App.hostsMapper.setMetrics.calledWith({})).to.be.true;
     });
@@ -283,7 +292,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'versions',
           parentStateName: 'stackAndUpgrade',
-          upgradeIsNotFinished: true,
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: true,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -291,8 +300,8 @@ describe('App.UpdateController', function () {
         },
         {
           currentStateName: 'stackUpgrade',
-          parentStateName: null,
-          upgradeIsNotFinished: true,
+          parentStateName: 'admin',
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: true,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -300,8 +309,8 @@ describe('App.UpdateController', function () {
         },
         {
           currentStateName: 'versions',
-          parentStateName: null,
-          upgradeIsNotFinished: true,
+          parentStateName: 'admin',
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: false,
           loadUpgradeDataCallCount: 1,
           callbackCallCount: 0,
@@ -309,8 +318,8 @@ describe('App.UpdateController', function () {
         },
         {
           currentStateName: 'versions',
-          parentStateName: null,
-          upgradeIsNotFinished: false,
+          parentStateName: 'admin',
+          wizardIsNotFinished: false,
           isLoadUpgradeDataPending: false,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -318,8 +327,8 @@ describe('App.UpdateController', function () {
         },
         {
           currentStateName: 'versions',
-          parentStateName: null,
-          upgradeIsNotFinished: true,
+          parentStateName: 'admin',
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: true,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -328,7 +337,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'services',
           parentStateName: 'stackAndUpgrade',
-          upgradeIsNotFinished: true,
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: false,
           loadUpgradeDataCallCount: 1,
           callbackCallCount: 0,
@@ -337,7 +346,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'services',
           parentStateName: 'stackAndUpgrade',
-          upgradeIsNotFinished: false,
+          wizardIsNotFinished: false,
           isLoadUpgradeDataPending: false,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -346,7 +355,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'services',
           parentStateName: 'stackAndUpgrade',
-          upgradeIsNotFinished: true,
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: true,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -355,7 +364,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'widgets',
           parentStateName: 'dashboard',
-          upgradeIsNotFinished: true,
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: false,
           loadUpgradeDataCallCount: 1,
           callbackCallCount: 0,
@@ -364,7 +373,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'widgets',
           parentStateName: 'dashboard',
-          upgradeIsNotFinished: false,
+          wizardIsNotFinished: false,
           isLoadUpgradeDataPending: false,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -373,7 +382,7 @@ describe('App.UpdateController', function () {
         {
           currentStateName: 'widgets',
           parentStateName: 'dashboard',
-          upgradeIsNotFinished: true,
+          wizardIsNotFinished: true,
           isLoadUpgradeDataPending: true,
           loadUpgradeDataCallCount: 0,
           callbackCallCount: 1,
@@ -388,7 +397,6 @@ describe('App.UpdateController', function () {
           };
         }
       },
-      mainAdminStackAndUpgradeController = App.get('router.mainAdminStackAndUpgradeController'),
       appGetMock;
 
     beforeEach(function () {
@@ -405,14 +413,24 @@ describe('App.UpdateController', function () {
     });
 
     cases.forEach(function (item) {
-      it(item.title, function () {
-        appGetMock.withArgs('router.mainAdminStackAndUpgradeController').returns(Em.Object.create({
-          loadUpgradeData: mock.loadUpgradeData,
-          isLoadUpgradeDataPending: item.isLoadUpgradeDataPending
-        })).withArgs('upgradeIsNotFinished').returns(item.upgradeIsNotFinished);
-        controller.updateUpgradeState(mock.callback);
-        expect(mock.loadUpgradeData.callCount).to.equal(item.loadUpgradeDataCallCount);
-        expect(mock.callback.callCount).to.equal(item.callbackCallCount);
+      describe(item.title, function () {
+
+        beforeEach(function () {
+          appGetMock.withArgs('router.mainAdminStackAndUpgradeController').returns(Em.Object.create({
+            loadUpgradeData: mock.loadUpgradeData,
+            isLoadUpgradeDataPending: item.isLoadUpgradeDataPending
+          })).withArgs('wizardIsNotFinished').returns(item.wizardIsNotFinished)
+            .withArgs('router.currentState.name').returns(item.currentStateName)
+            .withArgs('router.currentState.parentState.name').returns(item.parentStateName);
+          controller.updateUpgradeState(mock.callback);
+        });
+        it('loadUpgradeData is called ' + item.loadUpgradeDataCallCount + ' times', function () {
+          expect(mock.loadUpgradeData.callCount).to.equal(item.loadUpgradeDataCallCount);
+        });
+        it('callback is called ' + item.callbackCallCount + ' times', function () {
+          expect(mock.callback.callCount).to.equal(item.callbackCallCount);
+        });
+
       });
     });
 

@@ -28,8 +28,8 @@ security_enabled=$5
 kinit_path_local=$6
 smoke_user_keytab=$7
 smokeuser_principal=$8
+test_output_file=$9
 export ZOOKEEPER_EXIT_CODE=0
-test_output_file=/tmp/zkSmoke.out
 errors_expr="ERROR|Exception"
 acceptable_expr="SecurityException"
 zkhosts=` grep "^\s*server\.[[:digit:]]"  $conf_dir/zoo.cfg  | cut -f 2 -d '=' | cut -f 1 -d ':' | tr '\n' ' ' `
@@ -51,11 +51,25 @@ function verify_output() {
   fi
 }
 
+function rename_output(){
+  if [ -f $test_output_file ]; then
+    time=$(date +"%s")
+    output_file=$(echo $test_output_file | cut -f 1 -d '.')
+    errors=`mv $test_output_file $output_file$time.out`
+    if [ "$?" -ne 0 ]; then
+      echo "Error found in the zookeeper smoke test. Exiting."
+      echo $errors      
+      exit 1
+    fi
+  fi           
+}
+
 # Delete /zk_smoketest znode if exists
 /var/lib/ambari-agent/ambari-sudo.sh su $smoke_user -s /bin/bash - -c "source $conf_dir/zookeeper-env.sh ;  echo delete /zk_smoketest | ${zk_cli_shell} -server $zk_node1:$client_port" 2>&1>$test_output_file
 # Create /zk_smoketest znode on one zookeeper server
 /var/lib/ambari-agent/ambari-sudo.sh su $smoke_user -s /bin/bash - -c "source $conf_dir/zookeeper-env.sh ; echo create /zk_smoketest smoke_data | ${zk_cli_shell} -server $zk_node1:$client_port" 2>&1>>$test_output_file
 verify_output
+rename_output
 
 for i in $zkhosts ; do
   echo "Running test on host $i"

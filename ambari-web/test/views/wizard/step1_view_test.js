@@ -22,7 +22,13 @@ require('views/wizard/step1_view');
 var view;
 var controller;
 
+function getView() {
+  return App.WizardStep1View.create();
+}
+
 describe('App.WizardStep1View', function () {
+
+  App.TestAliases.testAsComputedAnd(getView(), 'showErrorsWarningCount', ['isSubmitDisabled', 'totalErrorCnt']);
 
   describe('#operatingSystems', function () {
     beforeEach(function () {
@@ -163,25 +169,55 @@ describe('App.WizardStep1View', function () {
       expect(view.get('operatingSystems.length')).to.equal(0);
     });
 
-    it('should create repo groups from repo list', function () {
-      controller = App.WizardStep1Controller.create({
-        content: {
-          stacks: App.Stack.find()
-        }
+    describe('should create repo groups from repo list', function () {
+
+      var repositories;
+
+      beforeEach(function () {
+        controller = App.WizardStep1Controller.create({
+          content: {
+            stacks: App.Stack.find()
+          }
+        });
+
+        view = App.WizardStep1View.create({'controller': controller});
+        view.set('$', function () {
+          return Em.Object.create({hide: Em.K, toggle: Em.K});
+        });
+
+        repositories = view.get('allRepositories');
       });
-      view = App.WizardStep1View.create({'controller': controller});
-      view.set('$', function () {
-        return Em.Object.create({hide: Em.K, toggle: Em.K});
+
+      it('operatingSystems.length', function () {
+        expect(view.get('operatingSystems.length')).to.equal(2);
       });
-      var repositories = view.get('allRepositories');
-      expect(view.get('operatingSystems.length')).to.equal(2);
-      expect(view.get('operatingSystems')[0].get('osType')).to.equal('redhat5');
-      expect(view.get('operatingSystems')[1].get('osType')).to.equal('redhat6');
-      expect(view.get('operatingSystems')[0].get('isSelected')).to.be.true;
-      expect(view.get('operatingSystems')[1].get('isSelected')).to.be.true;
-      expect(view.get('operatingSystems')[0].get('repositories')).to.eql([repositories[0], repositories[1]]);
-      expect(view.get('operatingSystems')[1].get('repositories')).to.eql([repositories[2], repositories[3]]);
+
+      it('operatingSystems.0.osType', function () {
+        expect(view.get('operatingSystems')[0].get('osType')).to.equal('redhat5');
+      });
+
+      it('operatingSystems.1.osType', function () {
+        expect(view.get('operatingSystems')[1].get('osType')).to.equal('redhat6');
+      });
+
+      it('operatingSystems.0.isSelected', function () {
+        expect(view.get('operatingSystems')[0].get('isSelected')).to.be.true;
+      });
+
+      it('operatingSystems.1.isSelected', function () {
+        expect(view.get('operatingSystems')[1].get('isSelected')).to.be.true;
+      });
+
+      it('operatingSystems.0.repositories', function () {
+        expect(view.get('operatingSystems')[0].get('repositories')).to.eql([repositories[0], repositories[1]]);
+      });
+
+      it('operatingSystems.1.repositories', function () {
+        expect(view.get('operatingSystems')[1].get('repositories')).to.eql([repositories[2], repositories[3]]);
+      });
+
     });
+
   });
 
   describe('#invalidFormatUrlExist', function () {
@@ -204,42 +240,9 @@ describe('App.WizardStep1View', function () {
     });
   });
 
-  describe('#isNoOsChecked', function () {
-    view = App.WizardStep1View.create();
+  App.TestAliases.testAsComputedEveryBy(getView(), 'isNoOsChecked', 'operatingSystems', 'isSelected', false);
 
-    var tests = Em.A([
-      {
-        operatingSystems: [
-          {'isSelected': false},
-          {'isSelected': false}
-        ],
-        e: true
-      },
-      {
-        operatingSystems: [
-          {'isSelected': true},
-          {'isSelected': false}
-        ],
-        e: false
-      },
-      {
-        operatingSystems: [
-          {'isSelected': true},
-          {'isSelected': true}
-        ],
-        e: false
-      }
-    ]);
-
-    tests.forEach(function (test) {
-      it(test.operatingSystems.mapProperty('isSelected').join(', '), function () {
-        var operatingSystems = view.get('operatingSystems');
-        Ember.set(operatingSystems[0], 'isSelected', test.operatingSystems[0].isSelected);
-        Ember.set(operatingSystems[1], 'isSelected', test.operatingSystems[1].isSelected);
-        expect(view.get('isNoOsChecked')).to.equal(test.e);
-      });
-    });
-  });
+  App.TestAliases.testAsComputedOr(getView(), 'isSubmitDisabled', ['invalidFormatUrlExist', 'isNoOsChecked', 'invalidUrlExist', 'controller.content.isCheckInProgress']);
 
   describe('#stacks', function () {
 
@@ -276,148 +279,9 @@ describe('App.WizardStep1View', function () {
 
   });
 
-  describe('#isSubmitDisabled', function () {
+  App.TestAliases.testAsComputedSomeBy(getView(), 'invalidUrlExist', 'allRepositories', 'validation', App.Repository.validation.INVALID);
 
-    var tests = Em.A([
-      {
-        invalidFormatUrlExist: false,
-        isNoOsChecked: false,
-        invalidUrlExist: false,
-        checkInProgress: false,
-        e: false
-      },
-      {
-        invalidFormatUrlExist: true,
-        isNoOsChecked: false,
-        invalidUrlExist: false,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: false,
-        isNoOsChecked: true,
-        invalidUrlExist: false,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: false,
-        isNoOsChecked: false,
-        invalidUrlExist: true,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: true,
-        isNoOsChecked: false,
-        invalidUrlExist: true,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: true,
-        isNoOsChecked: true,
-        invalidUrlExist: false,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: false,
-        isNoOsChecked: true,
-        invalidUrlExist: true,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: true,
-        isNoOsChecked: true,
-        invalidUrlExist: true,
-        checkInProgress: false,
-        e: true
-      },
-      {
-        invalidFormatUrlExist: true,
-        isNoOsChecked: false,
-        invalidUrlExist: false,
-        checkInProgress: true,
-        e: true
-      }
-    ]);
-
-    tests.forEach(function (test) {
-      it(test.invalidFormatUrlExist.toString() + ' ' + test.isNoOsChecked.toString() + ' ' + test.invalidUrlExist.toString()+ ' ' + test.checkInProgress.toString(), function () {
-        view = App.WizardStep1View.create();
-        view.reopen({
-          invalidFormatUrlExist: test.invalidFormatUrlExist,
-          isNoOsChecked: test.isNoOsChecked,
-          invalidUrlExist: test.invalidUrlExist
-        });
-        view.set('controller', {});
-        view.set('controller.content', {});
-        view.set('controller.content.isCheckInProgress', test.checkInProgress);
-        expect(view.get('isSubmitDisabled')).to.equal(test.e);
-      });
-    });
-  });
-
-  describe('#showErrorsWarningCount', function() {
-    var tests = [
-      {
-        isSubmitDisabled: true,
-        totalErrorCnt: 0,
-        e: false
-      },
-      {
-        isSubmitDisabled: true,
-        totalErrorCnt: 1,
-        e: true
-      },
-      {
-        isSubmitDisabled: false,
-        totalErrorCnt: 0,
-        e: false
-      }
-    ];
-    tests.forEach(function(test) {
-      it(test.isSubmitDisabled.toString() + ' ' + test.totalErrorCnt.toString(), function () {
-        var view = App.WizardStep1View.create();
-        view.reopen({
-          isSubmitDisabled: test.isSubmitDisabled,
-          totalErrorCnt: test.totalErrorCnt
-        });
-        expect(view.get('showErrorsWarningCount')).to.equal(test.e);
-      })
-    });
-  });
-
-  describe('#invalidUrlExist', function () {
-    var tests = Em.A([
-      {
-        allRepositories: [Em.Object.create({validation: 'icon-exclamation-sign'})],
-        m: 'invalidCnt: 1, validation: icon-exclamation-sign',
-        e: true
-      },
-      {
-        allRepositories: [Em.Object.create({validation: ''})],
-        m: 'invalidCnt: 1, validation: ""',
-        e: false
-      },
-      {
-        allRepositories: [Em.Object.create({validation: ''})],
-        m: 'invalidCnt: 0, validation: ""',
-        e: false
-      }
-    ]);
-    tests.forEach(function (test) {
-      it(test.m, function () {
-        view = App.WizardStep1View.create();
-        view.reopen({
-          allRepositories: test.allRepositories
-        });
-        expect(view.get('invalidUrlExist')).to.equal(test.e);
-      });
-    });
-  });
+  App.TestAliases.testAsComputedSomeBy(getView(), 'invalidFormatUrlExist', 'allRepositories', 'invalidFormatError', true);
 
   describe('#totalErrorCnt', function () {
     var tests = Em.A([
@@ -478,12 +342,19 @@ describe('App.WizardStep1View', function () {
   });
 
   describe('#didInsertElement', function () {
-    it('should create tooltip', function () {
+
+    beforeEach(function () {
       sinon.stub($.fn, 'tooltip', Em.K);
+    });
+
+    afterEach(function () {
+      $.fn.tooltip.restore();
+    });
+
+    it('should create tooltip', function () {
       view.set('isRLCollapsed', false);
       view.didInsertElement();
       expect($.fn.tooltip.calledOnce).to.equal(true);
-      $.fn.tooltip.restore();
     });
   });
 
@@ -577,7 +448,7 @@ describe('App.WizardStep1View', function () {
       })
     ];
 
-    var controller = {
+    var ctrl = {
       content: {
         stacks: [
           Em.Object.create({
@@ -614,7 +485,7 @@ describe('App.WizardStep1View', function () {
     it('target group isn\'t isSelected', function () {
       view.reopen({
         operatingSystems: operatingSystems,
-        controller: controller
+        controller: ctrl
       });
       view.updateByCheckbox();
       var targetGroup = view.get('operatingSystems.firstObject.repositories.firstObject');
@@ -625,11 +496,11 @@ describe('App.WizardStep1View', function () {
     });
 
     it('target group is isSelected, skipValidationisSelected = true', function () {
-      controller.content.stacks[0].operatingSystems[0].selected = true;
+      ctrl.content.stacks[0].operatingSystems[0].selected = true;
       operatingSystems[0].set('isSelected', true);
       view.reopen({
         operatingSystems: operatingSystems,
-        controller: controller
+        controller: ctrl
       });
       view.updateByCheckbox();
       var targetGroup = view.get('operatingSystems.firstObject.repositories.firstObject');

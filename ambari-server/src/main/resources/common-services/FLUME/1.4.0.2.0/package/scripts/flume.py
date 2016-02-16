@@ -96,10 +96,14 @@ def flume(action = None):
     )
 
     Directory(params.flume_conf_dir,
-              recursive=True,
+              create_parents = True,
               owner=params.flume_user,
               )
-    Directory(params.flume_log_dir, owner=params.flume_user)
+    Directory(params.flume_log_dir, 
+              owner=params.flume_user,
+              cd_access="a",
+              mode=0755,
+    )
 
     flume_agents = {}
     if params.flume_conf_content is not None:
@@ -239,7 +243,8 @@ def build_flume_topology(content):
     if 0 != len(rline) and not rline.startswith('#'):
       pair = rline.split('=')
       lhs = pair[0].strip()
-      rhs = pair[1].strip()
+      # workaround for properties that contain '='
+      rhs = "=".join(pair[1:]).strip()
 
       part0 = lhs.split('.')[0]
 

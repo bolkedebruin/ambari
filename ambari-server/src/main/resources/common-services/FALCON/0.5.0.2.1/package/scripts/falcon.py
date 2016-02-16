@@ -35,37 +35,45 @@ from ambari_commons import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
 @OsFamilyFuncImpl(os_family = OsFamilyImpl.DEFAULT)
-def falcon(type, action = None):
+def falcon(type, action = None, upgrade_type=None):
   import params
 
   if action == 'config':
     Directory(params.falcon_pid_dir,
       owner = params.falcon_user,
-      recursive = True)
+      create_parents = True,
+      mode = 0755,
+      cd_access = "a",
+    )
 
     Directory(params.falcon_log_dir,
       owner = params.falcon_user,
-      recursive = True)
+      create_parents = True,
+      mode = 0755,
+      cd_access = "a",
+    )
 
     Directory(params.falcon_webapp_dir,
       owner = params.falcon_user,
-      recursive = True)
+      create_parents = True)
 
     Directory(params.falcon_home,
       owner = params.falcon_user,
-      recursive = True)
+      create_parents = True)
 
     Directory(params.etc_prefix_dir,
       mode = 0755,
-      recursive = True)
+      create_parents = True)
 
     Directory(params.falcon_conf_dir,
       owner = params.falcon_user,
-      recursive = True)
+      create_parents = True)
 
     File(params.falcon_conf_dir + '/falcon-env.sh',
       content = InlineTemplate(params.falcon_env_sh_template),
-      owner = params.falcon_user)
+      owner = params.falcon_user,
+      group=params.user_group,
+    )
 
     File(params.falcon_conf_dir + '/client.properties',
       content = Template('client.properties.j2'),
@@ -87,7 +95,7 @@ def falcon(type, action = None):
         owner = params.falcon_user,
         group = params.user_group,
         mode = 0775,
-        recursive = True,
+        create_parents = True,
         cd_access = "a")
 
     if params.falcon_graph_serialize_path:
@@ -95,7 +103,7 @@ def falcon(type, action = None):
         owner = params.falcon_user,
         group = params.user_group,
         mode = 0775,
-        recursive = True,
+        create_parents = True,
         cd_access = "a")
 
   if type == 'server':
@@ -109,7 +117,7 @@ def falcon(type, action = None):
       elif params.store_uri[0:4] == "file":
         Directory(params.store_uri[7:],
           owner = params.falcon_user,
-          recursive = True)
+          create_parents = True)
 
       # TODO change to proper mode
       params.HdfsResource(params.flacon_apps_dir,
@@ -127,7 +135,7 @@ def falcon(type, action = None):
       elif params.falcon_store_uri[0:4] == "file":
         Directory(params.falcon_store_uri[7:],
           owner = params.falcon_user,
-          recursive = True)
+          create_parents = True)
 
       if params.supports_hive_dr:
         params.HdfsResource(params.dfs_data_mirroring_dir,
@@ -143,18 +151,18 @@ def falcon(type, action = None):
       params.HdfsResource(None, action = "execute")
       Directory(params.falcon_local_dir,
         owner = params.falcon_user,
-        recursive = True,
+        create_parents = True,
         cd_access = "a")
 
       if params.falcon_embeddedmq_enabled == True:
         Directory(
           os.path.abspath(os.path.join(params.falcon_embeddedmq_data, "..")),
           owner = params.falcon_user,
-          recursive = True)
+          create_parents = True)
 
         Directory(params.falcon_embeddedmq_data,
           owner = params.falcon_user,
-          recursive = True)
+          create_parents = True)
 
     # although Falcon's falcon-config.sh will use 'which hadoop' to figure
     # this out, in an upgraded cluster, it's possible that 'which hadoop'
@@ -178,7 +186,7 @@ def falcon(type, action = None):
 
 
 @OsFamilyFuncImpl(os_family = OSConst.WINSRV_FAMILY)
-def falcon(type, action = None):
+def falcon(type, action = None, upgrade_type=None):
   import params
 
   if action == 'config':

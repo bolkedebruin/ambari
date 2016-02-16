@@ -19,6 +19,7 @@
 
 var App = require('app');
 require('views/main/service/info/summary');
+var batchUtils = require('utils/batch_scheduled_requests');
 
 describe('App.MainServiceInfoSummaryView', function() {
 
@@ -36,72 +37,126 @@ describe('App.MainServiceInfoSummaryView', function() {
     service: Em.Object.create()
   });
 
+  App.TestAliases.testAsComputedAlias(view, 'servicesHaveClients', 'App.services.hasClient', 'boolean');
+
+  App.TestAliases.testAsComputedAlias(view, 'serviceName', 'service.serviceName', 'string');
+
+  App.TestAliases.testAsComputedAlias(view, 'alertsCount', 'controller.content.alertsCount', 'number');
+
+  App.TestAliases.testAsComputedAlias(view, 'hasCriticalAlerts', 'controller.content.hasCriticalAlerts', 'boolean');
+
   describe('#servers', function () {
     it('services shouldn\'t have servers except FLUME and ZOOKEEPER', function () {
       expect(view.get('servers')).to.be.empty;
     });
 
-    it('if one server exists then first server should have isComma and isAnd property false', function () {
-      view.set('controller.content', Em.Object.create({
-        id: 'ZOOKEEPER',
-        serviceName: 'ZOOKEEPER',
-        hostComponents: [
-          Em.Object.create({
-            displayName: '',
-            isMaster: true
-          })
-        ]
-      }));
-      expect(view.get('servers').objectAt(0).isComma).to.equal(false);
-      expect(view.get('servers').objectAt(0).isAnd).to.equal(false);
+    describe('if one server exists then first server should have isComma and isAnd property false', function () {
+
+      beforeEach(function () {
+        view.set('controller.content', Em.Object.create({
+          id: 'ZOOKEEPER',
+          serviceName: 'ZOOKEEPER',
+          hostComponents: [
+            Em.Object.create({
+              displayName: '',
+              isMaster: true
+            })
+          ]
+        }));
+      });
+
+      it('isComma', function () {
+        expect(view.get('servers').objectAt(0).isComma).to.equal(false);});
+
+      it('isAnd', function () {
+        expect(view.get('servers').objectAt(0).isAnd).to.equal(false);
+      });
     });
 
-    it('if more than one servers exist then first server should have isComma - true and isAnd - false', function () {
-      view.set('controller.content', Em.Object.create({
-        id: 'ZOOKEEPER',
-        serviceName: 'ZOOKEEPER',
-        hostComponents: [
-          Em.Object.create({
-            displayName: '',
-            isMaster: true
-          }),
-          Em.Object.create({
-            displayName: '',
-            isMaster: true
-          })
-        ]
-      }));
-      expect(view.get('servers').objectAt(0).isComma).to.equal(true);
-      expect(view.get('servers').objectAt(0).isAnd).to.equal(false);
-      expect(view.get('servers').objectAt(1).isComma).to.equal(false);
-      expect(view.get('servers').objectAt(1).isAnd).to.equal(false);
+    describe('if more than one servers exist then first server should have isComma - true and isAnd - false', function() {
+
+      beforeEach(function () {
+        view.set('controller.content', Em.Object.create({
+          id: 'ZOOKEEPER',
+          serviceName: 'ZOOKEEPER',
+          hostComponents: [
+            Em.Object.create({
+              displayName: '',
+              isMaster: true
+            }),
+            Em.Object.create({
+              displayName: '',
+              isMaster: true
+            })
+          ]
+        }));
+      });
+
+      it('0 isComma', function () {
+        expect(view.get('servers').objectAt(0).isComma).to.equal(true);
+      });
+
+      it('0 isAnd', function () {
+        expect(view.get('servers').objectAt(0).isAnd).to.equal(false);
+      });
+
+      it('1 isComma', function () {
+        expect(view.get('servers').objectAt(1).isComma).to.equal(false);
+      });
+
+      it('1 isAnd', function () {
+        expect(view.get('servers').objectAt(1).isAnd).to.equal(false);
+      });
+
     });
 
-    it('if more than two servers exist then second server should have isComma - false and isAnd - true', function () {
-      view.set('controller.content', Em.Object.create({
-        id: 'ZOOKEEPER',
-        serviceName: 'ZOOKEEPER',
-        hostComponents: [
-          Em.Object.create({
-            displayName: '',
-            isMaster: true
-          }),
-          Em.Object.create({
-            displayName: '',
-            isMaster: true
-          }),
-          Em.Object.create({
-            displayName: '',
-            isMaster: true
-          })
-        ]
-      }));
-      expect(view.get('servers').objectAt(0).isComma).to.equal(true);
-      expect(view.get('servers').objectAt(0).isAnd).to.equal(false);
-      expect(view.get('servers').objectAt(1).isComma).to.equal(false);
-      expect(view.get('servers').objectAt(1).isAnd).to.equal(true);
-      expect(view.get('servers').objectAt(2).isComma).to.equal(false);
-      expect(view.get('servers').objectAt(2).isAnd).to.equal(false);
+    describe('if more than two servers exist then second server should have isComma - false and isAnd - true', function () {
+
+      beforeEach(function () {
+        view.set('controller.content', Em.Object.create({
+          id: 'ZOOKEEPER',
+          serviceName: 'ZOOKEEPER',
+          hostComponents: [
+            Em.Object.create({
+              displayName: '',
+              isMaster: true
+            }),
+            Em.Object.create({
+              displayName: '',
+              isMaster: true
+            }),
+            Em.Object.create({
+              displayName: '',
+              isMaster: true
+            })
+          ]
+        }));
+      });
+
+      it('0 isComma', function () {
+        expect(view.get('servers').objectAt(0).isComma).to.equal(true);
+      });
+
+      it('0 isAnd', function () {
+        expect(view.get('servers').objectAt(0).isAnd).to.equal(false);
+      });
+
+      it('1 isComma', function () {
+        expect(view.get('servers').objectAt(1).isComma).to.equal(false);
+      });
+
+      it('1 isAnd', function () {
+        expect(view.get('servers').objectAt(1).isAnd).to.equal(true);
+      });
+
+      it('2 isComma', function () {
+        expect(view.get('servers').objectAt(2).isComma).to.equal(false);
+      });
+
+      it('2 isAnd', function () {
+        expect(view.get('servers').objectAt(2).isAnd).to.equal(false);
+      });
+
     });
 
   });
@@ -130,14 +185,15 @@ describe('App.MainServiceInfoSummaryView', function() {
         serviceName: 'HDFS'
       }));
       expect(view.get('hasAlertDefinitions')).to.be.true;
+    });
 
-      it('should return false if there is no alert definition for this service', function () {
-        view.set('controller.content', Em.Object.create({
-          serviceName: 'ZOOKEEPER'
-        }));
-        expect(view.get('hasAlertDefinitions')).to.be.false;
-      });
-    })
+    it('should return false if there is no alert definition for this service', function () {
+      view.set('controller.content', Em.Object.create({
+        serviceName: 'ZOOKEEPER'
+      }));
+      expect(view.get('hasAlertDefinitions')).to.be.false;
+    });
+
   });
 
   describe('#didInsertElement', function () {
@@ -387,4 +443,141 @@ describe('App.MainServiceInfoSummaryView', function() {
     });
 
   });
+
+  describe("#restartAllStaleConfigComponents", function () {
+
+    describe('trigger restartAllServiceHostComponents', function () {
+
+      beforeEach(function () {
+        view = App.MainServiceInfoSummaryView.create({
+          controller: Em.Object.create({
+            content: {
+              serviceName: "HDFS"
+            },
+            getActiveWidgetLayout: Em.K
+          }),
+          service: Em.Object.create({
+            displayName: 'HDFS'
+          })
+        });
+        sinon.stub(batchUtils, "restartAllServiceHostComponents", Em.K);
+      });
+
+      afterEach(function () {
+        batchUtils.restartAllServiceHostComponents.restore();
+      });
+
+      it('batch request is started', function () {
+        view.restartAllStaleConfigComponents().onPrimary();
+        expect(batchUtils.restartAllServiceHostComponents.calledOnce).to.equal(true);
+      });
+
+    });
+
+    describe('trigger check last check point warning before triggering restartAllServiceHostComponents', function () {
+
+      var mainServiceItemController;
+
+      beforeEach(function () {
+        view = App.MainServiceInfoSummaryView.create({
+          controller: Em.Object.create({
+            content: {
+              serviceName: "HDFS",
+              hostComponents: [{
+                componentName: 'NAMENODE',
+                workStatus: 'STARTED'
+              }],
+              restartRequiredHostsAndComponents: {
+                "host1": ['NameNode'],
+                "host2": ['DataNode', 'ZooKeeper']
+              }
+            },
+            getActiveWidgetLayout: Em.K
+          }),
+          service: Em.Object.create({
+            displayName: 'HDFS'
+          })
+        });
+        mainServiceItemController = App.MainServiceItemController.create({});
+        sinon.stub(mainServiceItemController, 'checkNnLastCheckpointTime', function() {
+          return true;
+        });
+        sinon.stub(App.router, 'get', function(k) {
+          if ('mainServiceItemController' === k) {
+            return mainServiceItemController;
+          }
+          return Em.get(App.router, k);
+        });
+      });
+
+      afterEach(function () {
+        mainServiceItemController.checkNnLastCheckpointTime.restore();
+        App.router.get.restore();
+      });
+
+      it('NN Last CheckPoint is checked', function () {
+        view.restartAllStaleConfigComponents();
+        expect(mainServiceItemController.checkNnLastCheckpointTime.calledOnce).to.equal(true);
+      });
+
+    });
+
+  });
+
+  describe("#setComponentsContent()", function() {
+
+    beforeEach(function() {
+      sinon.stub(Em.run, 'next', Em.clb);
+      sinon.stub(view, 'updateComponentList');
+      view.set('service', Em.Object.create({
+        hostComponents: [],
+        slaveComponents: [],
+        clientComponents: []
+      }));
+      view.setProperties({
+        mastersLength: 0,
+        slavesLength: 0,
+        clientsLength: 0,
+        mastersObj: ['master'],
+        slavesObj: ['slave'],
+        clientObj: ['client']
+      });
+    });
+    afterEach(function() {
+      Em.run.next.restore();
+      view.updateComponentList.restore();
+    });
+
+    it("service is null", function() {
+      view.set('service', null);
+      view.setComponentsContent();
+      expect(Em.run.next.calledOnce).to.be.true;
+      expect(view.updateComponentList.called).to.be.false
+    });
+
+    it("update master length", function() {
+      view.set('mastersLength', 1);
+      view.setComponentsContent();
+      expect(Em.run.next.calledOnce).to.be.true;
+      expect(view.updateComponentList.calledWith(['master'], [])).to.be.true;
+      expect(view.get('mastersLength')).to.be.equal(0);
+    });
+
+    it("update slave length", function() {
+      view.set('slavesLength', 1);
+      view.setComponentsContent();
+      expect(Em.run.next.calledOnce).to.be.true;
+      expect(view.updateComponentList.calledWith(['slave'], [])).to.be.true;
+      expect(view.get('slavesLength')).to.be.equal(0);
+    });
+
+    it("update client length", function() {
+      view.set('clientsLength', 1);
+      view.setComponentsContent();
+      expect(Em.run.next.calledOnce).to.be.true;
+      expect(view.updateComponentList.calledWith(['client'], [])).to.be.true;
+      expect(view.get('clientsLength')).be.equal(0);
+    });
+  });
+
 });

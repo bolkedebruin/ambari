@@ -17,7 +17,6 @@
  */
 
 var App = require('app');
-var validator = require('utils/validator');
 require('utils/batch_scheduled_requests');
 require('controllers/main/host');
 require('mappers/server_data_mapper');
@@ -26,113 +25,15 @@ describe('MainHostController', function () {
 
   var hostController, db;
 
-  // @todo add unit tests after bulk ops reimplementing
-  describe('#bulkOperation', function() {
+  beforeEach(function () {
+    hostController = App.MainHostController.create({});
+  });
 
-    beforeEach(function() {
-      hostController = App.MainHostController.create({});
-      sinon.stub(hostController, 'bulkOperationForHostsRestart', Em.K);
-      sinon.stub(hostController, 'bulkOperationForHosts', Em.K);
-      sinon.stub(hostController, 'bulkOperationForHostComponentsRestart', Em.K);
-      sinon.stub(hostController, 'bulkOperationForHostComponentsDecommission', Em.K);
-      sinon.stub(hostController, 'bulkOperationForHostComponents', Em.K);
-      sinon.stub(hostController, 'bulkOperationForHostsPassiveState', Em.K);
-    });
-
-    afterEach(function() {
-      hostController.bulkOperationForHosts.restore();
-      hostController.bulkOperationForHostsRestart.restore();
-      hostController.bulkOperationForHostComponentsRestart.restore();
-      hostController.bulkOperationForHostComponentsDecommission.restore();
-      hostController.bulkOperationForHostComponents.restore();
-      hostController.bulkOperationForHostsPassiveState.restore();
-
-    });
-
-    it('RESTART for hosts', function() {
-      var operationData = {
-        action: 'RESTART'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostsRestart.calledOnce).to.equal(true);
-    });
-
-    it('START for hosts', function() {
-      var operationData = {
-        action: 'STARTED'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHosts.calledOnce).to.equal(true);
-    });
-
-    it('STOP for hosts', function() {
-      var operationData = {
-        action: 'INSTALLED'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHosts.calledOnce).to.equal(true);
-    });
-
-    it('PASSIVE_STATE for hosts', function() {
-      var operationData = {
-        action: 'PASSIVE_STATE'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostsPassiveState.calledOnce).to.equal(true);
-    });
-
-    it('RESTART for hostComponents', function() {
-      var operationData = {
-        action: 'RESTART',
-        componentNameFormatted: 'DataNodes'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostComponentsRestart.calledOnce).to.equal(true);
-    });
-
-    it('START for hostComponents', function() {
-      var operationData = {
-        action: 'STARTED',
-        componentNameFormatted: 'DataNodes'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostComponents.calledOnce).to.equal(true);
-    });
-
-    it('STOP for hostComponents', function() {
-      var operationData = {
-        action: 'INSTALLED',
-        componentNameFormatted: 'DataNodes'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostComponents.calledOnce).to.equal(true);
-    });
-
-    it('DECOMMISSION for hostComponents', function() {
-      var operationData = {
-        action: 'DECOMMISSION',
-        componentNameFormatted: 'DataNodes'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostComponentsDecommission.calledOnce).to.equal(true);
-    });
-
-    it('RECOMMISSION for hostComponents', function() {
-      var operationData = {
-        action: 'DECOMMISSION_OFF',
-        componentNameFormatted: 'DataNodes'
-      };
-      hostController.bulkOperation(operationData, []);
-      expect(hostController.bulkOperationForHostComponentsDecommission.calledOnce).to.equal(true);
-    });
-
+  afterEach(function () {
+    hostController.destroy();
   });
 
   describe('#getRegExp()', function() {
-    before(function() {
-      hostController = App.MainHostController.create({});
-    });
-
     var message = '`{0}` should convert to `{1}`',
       tests = [
         { value: '.*', expected: '.*' },
@@ -156,38 +57,8 @@ describe('MainHostController', function () {
     });
   });
 
-  describe('#warnBeforeDecommissionSuccess()', function () {
-    var mock = {
-      showHbaseActiveWarning: Em.K,
-      checkRegionServerState: Em.K
-    };
-    beforeEach(function () {
-      hostController = App.MainHostController.create({});
-      sinon.stub(App.router, 'get', function () {
-        return mock;
-      });
-      sinon.spy(mock, 'showHbaseActiveWarning');
-      sinon.spy(mock, 'checkRegionServerState');
-    });
-    afterEach(function () {
-      App.router.get.restore();
-      mock.showHbaseActiveWarning.restore();
-      mock.checkRegionServerState.restore();
-    });
-
-    it('items length more than 0', function () {
-      hostController.warnBeforeDecommissionSuccess({items: [1]}, {}, {});
-      expect(mock.showHbaseActiveWarning.calledOnce).to.be.true;
-    });
-    it('items length equal 0', function () {
-      hostController.warnBeforeDecommissionSuccess({items: []}, {}, {hostNames: 'host1'});
-      expect(mock.checkRegionServerState.calledWith('host1')).to.be.true;
-    });
-  });
-
   describe('#getQueryParameters', function() {
     beforeEach(function() {
-      hostController = App.MainHostController.create({});
       sinon.spy(hostController, 'getRegExp');
       sinon.stub(App.db, 'getFilterConditions', function() {
         return [{
@@ -220,7 +91,6 @@ describe('MainHostController', function () {
       db = {mainHostController: [
         {name: 'hostName', status: 'sorting'}
       ]};
-      hostController = App.MainHostController.create({});
       sinon.stub(App.db, 'getSortingStatuses', function (k) {
         return db[k];
       });

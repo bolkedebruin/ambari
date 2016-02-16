@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>sqoop_user</name>
     <deleted>true</deleted>
@@ -68,5 +68,8 @@
 ::Set the path for where zookeper config dir is
 ::set ZOOCFGDIR=
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 </configuration>

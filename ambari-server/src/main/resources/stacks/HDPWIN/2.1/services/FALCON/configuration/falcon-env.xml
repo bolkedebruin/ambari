@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 -->
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>falcon_user</name>
     <deleted>true</deleted>
@@ -26,16 +26,27 @@
   <property>
     <name>falcon_log_dir</name>
     <value>c:\hadoop\logs\falcon</value>
+    <display-name>Falcon Log Dir</display-name>
     <description>Falcon log directory.</description>
+    <value-attributes>
+      <editable-only-at-install>true</editable-only-at-install>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
   <property>
     <name>falcon_pid_dir</name>
     <value>c:\hadoop\run\falcon</value>
+    <display-name>Falcon PID Dir</display-name>
     <description>Falcon pid-file directory.</description>
+    <value-attributes>
+      <editable-only-at-install>true</editable-only-at-install>
+      <overridable>false</overridable>
+    </value-attributes>
   </property>
   <property>
     <name>falcon_local_dir</name>
     <value>c:\hadoop\falcon</value>
+    <display-name>Falcon data directory</display-name>
     <description>Directory where Falcon data, such as activemq data, is stored.</description>
   </property>
   <!--embeddedmq properties-->
@@ -51,5 +62,8 @@
     <description>This is the jinja template for falcon-env.cmd file</description>
     <value>
     </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 </configuration>

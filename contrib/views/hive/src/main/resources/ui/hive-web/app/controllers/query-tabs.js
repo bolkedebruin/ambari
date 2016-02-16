@@ -20,6 +20,11 @@ import Ember from 'ember';
 import constants from 'hive/utils/constants';
 
 export default Ember.Controller.extend({
+  jobProgressService: Ember.inject.service(constants.namingConventions.jobProgress),
+  openQueries   : Ember.inject.controller(constants.namingConventions.openQueries),
+  notifyService: Ember.inject.service(constants.namingConventions.notify),
+  index: Ember.inject.controller(),
+
   tabClassNames : "fa queries-icon query-context-tab",
 
   tabs: [

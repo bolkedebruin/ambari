@@ -21,10 +21,7 @@ var App = require('app');
 require('config');
 
 require('messages');
-require('utils/base64');
-require('utils/db');
-require('utils/helper');
-require('utils/config');
+require('utils');
 require('mixins');
 require('models');
 require('controllers');
@@ -35,18 +32,27 @@ require('mappers');
 require('utils/ajax/ajax');
 require('utils/ajax/ajax_queue');
 
-var files = ['test/init_model_test',
+var files = [
+  'test/init_test',
+  'test/init_computed_aliases',
+  'test/init_model_test',
   'test/app_test',
+  'test/data/HDP2/site_properties_test',
   'test/data/HDP2/secure_mapping_test',
+  'test/data/HDP2.2/site_properties_test',
+  'test/data/HDP2.3/site_properties_test',
   'test/controllers/global/background_operations_test',
   'test/controllers/global/cluster_controller_test',
   'test/controllers/global/update_controller_test',
   'test/controllers/global/configuration_controller_test',
+  'test/controllers/global/wizard_watcher_controller_test',
+  'test/controllers/global/user_settings_controller_test',
   'test/controllers/main/alert_definitions_controller_test',
   'test/controllers/main/alerts/alert_definitions_actions_controller_test',
   'test/controllers/main/alerts/definitions_configs_controller_test',
   'test/controllers/main/alerts/definitions_details_controller_test',
   'test/controllers/main/alerts/alert_instances_controller_test',
+  'test/controllers/main/alerts/add_alert_definition/add_alert_definition_controller_test',
   'test/controllers/main/alerts/add_alert_definition/step1_controller_test',
   'test/controllers/main/alerts/manage_alert_notifications_controller_test',
   'test/controllers/main/admin/kerberos_test',
@@ -64,11 +70,15 @@ var files = ['test/init_model_test',
   'test/controllers/main/admin/highAvailability/nameNode/step3_controller_test',
   'test/controllers/main/admin/highAvailability/nameNode/step4_controller_test',
   'test/controllers/main/admin/highAvailability/resourceManager/step3_controller_test',
+  'test/controllers/main/admin/highAvailability/hawq/addStandby/step3_controller_test',
+  'test/controllers/main/admin/highAvailability/hawq/activateStandby/step2_controller_test',
   'test/controllers/main/dashboard/config_history_controller_test',
   'test/controllers/main/charts/heatmap_test',
   'test/controllers/main/charts/heatmap_metrics/heatmap_metric_test',
   'test/controllers/main/alerts/manage_alert_groups_controller_test',
   'test/controllers/main/host/add_controller_test',
+  'test/controllers/main/host/bulk_operations_controller_test',
+  'test/controllers/main/host/host_alerts_controller_test',
   'test/controllers/main/host/configs_service_test',
   'test/controllers/main/host/details_test',
   'test/controllers/main/host/addHost/step4_controller_test',
@@ -77,6 +87,7 @@ var files = ['test/init_model_test',
   'test/controllers/main/service/reassign_controller_test',
   'test/controllers/main/service/reassign/step1_controller_test',
   'test/controllers/main/service/reassign/step2_controller_test',
+  'test/controllers/main/service/reassign/step3_controller_test',
   'test/controllers/main/service/reassign/step4_controller_test',
   'test/controllers/main/service/reassign/step6_controller_test',
   'test/controllers/main/service/reassign/step7_controller_test',
@@ -96,8 +107,8 @@ var files = ['test/init_model_test',
   'test/controllers/application_test',
   'test/controllers/main_test',
   'test/controllers/login_controller_test',
+  'test/controllers/experimental_test',
   'test/controllers/wizard_test',
-  'test/controllers/wizard/slave_component_groups_controller',
   'test/controllers/wizard/step0_test',
   'test/controllers/wizard/step2_test',
   'test/controllers/wizard/step3_test',
@@ -105,6 +116,7 @@ var files = ['test/init_model_test',
   'test/controllers/wizard/step5_test',
   'test/controllers/wizard/step6_test',
   'test/controllers/wizard/step7_test',
+  'test/controllers/wizard/step7/pre_install_checks_controller_test',
   'test/controllers/wizard/step8_test',
   'test/controllers/wizard/step9_test',
   'test/controllers/wizard/step10_test',
@@ -122,22 +134,27 @@ var files = ['test/init_model_test',
   'test/mappers/users_mapper_test',
   'test/mappers/stack_mapper_test',
   'test/mappers/stack_service_mapper_test',
-  'test/mappers/configs/stack_config_properties_mapper_test',
   'test/mappers/configs/config_groups_mapper_test',
-  'test/mappers/configs/config_versions_mapper_test',
+  'test/mappers/configs/service_config_version_mapper_test',
   'test/mappers/configs/themes_mapper_test',
   'test/mixins/common/configs/enhanced_configs_test',
+  'test/mixins/common/configs/config_recommendations_test',
+  'test/mixins/common/configs/config_recommendation_parser_test',
   'test/mixins/common/configs/configs_saver_test',
   'test/mixins/common/configs/toggle_isrequired_test',
-  'test/mixins/common/chart/storm_linear_time_test',
+  'test/mixins/common/widgets/export_metrics_mixin_test',
+  'test/mixins/common/widgets/time_range_mixin_test',
   'test/mixins/common/widgets/widget_section_test',
+  'test/mixins/common/kdc_credentials_controller_mixin_test',
   'test/mixins/common/localStorage_test',
   'test/mixins/common/reload_popup_test',
   'test/mixins/common/serverValidator_test',
   'test/mixins/common/table_server_view_mixin_test',
   'test/mixins/common/widget_mixin_test',
   'test/mixins/main/host/details/host_components/decommissionable_test',
+  'test/mixins/main/host/details/host_components/install_component_test',
   'test/mixins/main/service/configs/widget_popover_support_test',
+  'test/mixins/main/service/configs/config_overridable_test',
   'test/mixins/routers/redirections_test',
   'test/mixins/wizard/addSeccurityConfigs_test',
   'test/mixins/wizard/wizard_menu_view_test',
@@ -149,9 +166,13 @@ var files = ['test/init_model_test',
   'test/utils/batch_scheduled_requests_test',
   'test/utils/blueprint_test',
   'test/utils/config_test',
-  'test/utils/date_test',
+  'test/utils/date/date_test',
+  'test/utils/date/timezone_test',
   'test/utils/data_manipulation_test',
   'test/utils/config_test',
+  'test/utils/db_test',
+  'test/utils/ember_computed_test',
+  'test/utils/ember_reopen_test',
   'test/utils/form_field_test',
   'test/utils/host_progress_popup_test',
   'test/utils/misc_test',
@@ -164,7 +185,7 @@ var files = ['test/init_model_test',
   'test/utils/ui_effects_test',
   'test/utils/updater_test',
   'test/utils/configs/database_test',
-  'test/utils/configs/config_property_helper_test',
+  'test/utils/configs/config_initializer_test',
   'test/utils/configs/modification_handlers/modification_handler_test',
   'test/utils/configs/modification_handlers/misc_test',
   'test/utils/load_timer_test',
@@ -182,11 +203,12 @@ var files = ['test/init_model_test',
   'test/views/common/rolling_restart_view_test',
   'test/views/common/modal_popup_test',
   'test/views/common/sort_view_test',
-  'test/views/common/custom_date_popup_test',
   'test/views/common/progress_bar_view_test',
+  'test/views/common/select_custom_date_view_test',
   'test/views/common/widget/graph_widget_view_test',
   'test/views/common/widget/number_widget_view_test',
   'test/views/common/widget/gauge_widget_view_test',
+  'test/views/common/modal_popups/cluster_check_popup_test',
   'test/views/common/modal_popups/hosts_table_list_popup_test',
   'test/views/common/modal_popups/dependent_configs_list_popup_test',
   'test/views/main/admin_test',
@@ -197,6 +219,10 @@ var files = ['test/init_model_test',
   'test/views/main/alerts/manage_alert_groups_view_test',
   'test/views/main/alerts/manage_alert_notifications_view_test',
   'test/views/main/alerts/definition_details_view_test',
+  'test/views/main/alerts/definition_configs_view_test',
+  'test/views/main/alerts/add_alert_definition/step1_view_test',
+  'test/views/main/alerts/add_alert_definition/step3_view_test',
+  'test/views/main/alerts/manage_alert_groups/select_definitions_popup_body_view_test',
   'test/views/main/admin/stack_upgrade/upgrade_version_box_view_test',
   'test/views/main/admin/stack_upgrade/upgrade_group_view_test',
   'test/views/main/admin/stack_upgrade/upgrade_task_view_test',
@@ -204,10 +230,10 @@ var files = ['test/init_model_test',
   'test/views/main/admin/stack_upgrade/version_view_test',
   'test/views/main/admin/stack_upgrade/services_view_test',
   'test/views/main/admin/stack_upgrade/menu_view_test',
+  'test/views/main/admin/stack_upgrade/failed_hosts_modal_view_test',
   'test/views/main/dashboard/config_history_view_test',
   'test/views/main/dashboard/widget_test',
   'test/views/main/dashboard/widgets_test',
-  'test/views/main/dashboard/cluster_metrics/memory_test',
   'test/views/main/dashboard/widgets/text_widget_test',
   'test/views/main/dashboard/widgets/uptime_text_widget_test',
   'test/views/main/dashboard/widgets/node_managers_live_test',
@@ -221,23 +247,30 @@ var files = ['test/init_model_test',
   'test/views/main/dashboard/widgets/links_widget_test',
   'test/views/main/dashboard/widgets/pie_chart_widget_test',
   'test/views/main/dashboard/widgets/namenode_cpu_test',
+  'test/views/main/dashboard/widgets/cluster_metrics_widget_test',
   'test/views/main/host/details_test',
   'test/views/main/host/summary_test',
   'test/views/main/host/menu_test',
   'test/views/main/host/stack_versions_view_test',
   'test/views/main/host/host_alerts_view_test',
+  'test/views/main/host/combo_search_box_test',
+  'test/views/main/host/config_service_test',
+  'test/views/main/host/add_view_test',
+  'test/views/main/host/config_service_menu_test',
   'test/views/main/host/details/host_component_view_test',
   'test/views/main/host/details/host_component_views/decommissionable_test',
   'test/views/main/host/details/host_component_views/datanode_view_test',
   'test/views/main/host/details/host_component_views/nodemanager_view_test',
   'test/views/main/host/details/host_component_views/regionserver_view_test',
   'test/views/main/host/details/host_component_views/tasktracker_view_test',
+  'test/views/main/host/metrics/disk_test',
   'test/views/main/charts/heatmap_test',
   'test/views/main/charts/heatmap/heatmap_host_test',
   'test/views/main/service/item_test',
   'test/views/main/service/info/config_test',
   'test/views/main/service/info/summary_test',
   'test/views/main/service/info/metrics/ambari_metrics/regionserver_base_test',
+  'test/views/main/service/info/metrics/flume/flume_agent_metrics_section_test',
   'test/views/main/service/services/ranger_test',
   'test/views/main/service/widgets/create/expression_view_test',
   'test/views/main/admin/highAvailability/nameNode/step1_view_test',
@@ -246,6 +279,8 @@ var files = ['test/init_model_test',
   'test/views/main/admin/highAvailability/nameNode/step6_view_test',
   'test/views/main/admin/highAvailability/nameNode/step8_view_test',
   'test/views/main/admin/highAvailability/nameNode/wizard_view_test',
+  'test/views/main/admin/highAvailability/progress_view_test',
+  'test/views/common/host_progress_popup_body_view_test',
   'test/views/common/configs/config_history_flow_test',
   'test/views/common/configs/overriddenProperty_view_test',
   'test/views/common/configs/service_config_view_test',
@@ -255,6 +290,8 @@ var files = ['test/init_model_test',
   'test/views/common/controls_view_test',
   'test/views/common/configs/widgets/time_interval_spinner_view_test',
   'test/views/common/form/spinner_input_view_test',
+  'test/views/common/form/manage_kdc_credentials_form_test',
+  'test/views/common/log_file_search_view_test',
   'test/views/wizard/step3/hostLogPopupBody_view_test',
   'test/views/wizard/step3/hostWarningPopupBody_view_test',
   'test/views/wizard/step3/hostWarningPopupFooter_view_test',
@@ -262,14 +299,15 @@ var files = ['test/init_model_test',
   'test/views/wizard/step1_view_test',
   'test/views/wizard/step2_view_test',
   'test/views/wizard/step3_view_test',
+  'test/views/wizard/step4_view_test',
   'test/views/wizard/step5_view_test',
   'test/views/wizard/step6_view_test',
+  'test/views/wizard/step7_view_test',
   'test/views/wizard/step8_view_test',
   'test/views/wizard/step9_view_test',
   'test/views/wizard/step9/hostLogPopupBody_view_test',
   'test/views/wizard/step10_view_test',
   'test/views/application_test',
-  'test/views/experimental_test',
   'test/views/installer_test',
   'test/views/login_test',
   'test/models/service/flume_test',
@@ -277,6 +315,7 @@ var files = ['test/init_model_test',
   'test/models/service/yarn_test',
   'test/models/alerts/alert_config_test',
   'test/models/alerts/alert_definition_test',
+  'test/models/alerts/alert_group_test',
   'test/models/alerts/alert_instance_test',
   'test/models/authentication_test',
   'test/models/cluster_states_test',
@@ -295,24 +334,69 @@ var files = ['test/init_model_test',
   'test/models/configs/sub_section_test',
   'test/models/configs/section_test',
   'test/models/configs/service_config_version_test',
-  'test/models/configs/config_property_test',
+  'test/models/configs/config_group_test',
+  'test/models/configs/stack_config_property_test',
   'test/models/configs/objects/service_config_test',
   'test/models/configs/objects/service_config_category_test',
   'test/models/configs/objects/service_config_property_test',
+  'test/models/configs/theme/tab_test',
+  'test/models/stack_version/repository_version_test',
   'test/routes/views_test',
   //contains test with fake timers that affect Date
-  'test/utils/lazy_loading_test'
+  'test/utils/lazy_loading_test',
+  'test/views/main/service/menu_test'
 ];
+
+var ajaxSendMock = {
+  complete: Em.K,
+  success: Em.K,
+  then: Em.K,
+  promise: Em.K,
+  done: Em.clb,
+  error: Em.K,
+  retry: function () {
+    return {
+      then: Em.K,
+      complete: Em.K
+    }
+  },
+  fail: Em.K,
+  always: Em.clb
+};
+
+// don't poll anything while test are running
+App.bgOperationsUpdateInterval = 3600000;
+App.componentsUpdateInterval = 3600000;
+App.contentUpdateInterval = 3600000;
+App.hostStatusCountersUpdateInterval = 3600000;
+App.alertDefinitionsUpdateInterval = 3600000;
+App.alertInstancesUpdateInterval = 3600000;
+App.alertGroupsUpdateInterval = 3600000;
 
 App.initialize();
 describe('Ambari Web Unit tests', function() {
 
-  for (var i = 0; i < files.length; i++) {
-
-    describe(files[i], function() {
-      require(files[i]);
+  beforeEach(function () {
+    App.set('testMode', false); // don't even try to write tests for testMode = true
+    sinon.stub($, 'ajax', Em.K);
+    sinon.stub(App.ajax, 'send', function () {
+      return ajaxSendMock;
     });
+    sinon.stub(App.updater, 'run', Em.K);
+    sinon.stub(App.updater, 'immediateRun', Em.K);
+  });
 
-  }
+  afterEach(function () {
+    App.ajax.send.restore();
+    $.ajax.restore();
+    App.updater.run.restore();
+    App.updater.immediateRun.restore();
+  });
+
+  files.forEach(function (file) {
+    describe(file, function() {
+      require(file);
+    });
+  });
 
 });

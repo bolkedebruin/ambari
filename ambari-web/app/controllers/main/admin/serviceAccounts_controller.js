@@ -49,7 +49,7 @@ App.MainAdminServiceAccountsController = App.MainServiceInfoConfigsController.ex
     var loadedClusterSiteToTagMap = {};
 
     for (var site in Em.get(data, 'Clusters.desired_configs')) {
-      if (serviceConfigsDef.configTypes.hasOwnProperty(site)) {
+      if (serviceConfigsDef.get('configTypes').hasOwnProperty(site)) {
         loadedClusterSiteToTagMap[site] = data.Clusters.desired_configs[site]['tag'];
       }
     }
@@ -104,37 +104,12 @@ App.MainAdminServiceAccountsController = App.MainServiceInfoConfigsController.ex
    */
   createConfigObject: function(serverConfigs) {
     var configs = App.config.mergePredefinedWithSaved(serverConfigs, this.get('selectedService'));
-    var miscConfigs = configs.filterProperty('displayType', 'user').filterProperty('category', 'Users and Groups').filterProperty('isVisible', true);
-
-    miscConfigs = App.config.miscConfigVisibleProperty(miscConfigs, App.Service.find().mapProperty('serviceName').concat('MISC'));
-
-    // load specific users along the wizards which called <code>loadUsers</code> method
-    var wizardContentProperties = [
-      {key: 'group', configName: 'user_group'},
-      {key: 'smokeuser', configName: 'smokeuser'},
-      {key: 'hdfsUser', configName: 'hdfs_user'}
-    ];
-    wizardContentProperties.forEach(function(item) {
-      this.setContentProperty(item.key, item.configName, miscConfigs);
-    }, this);
-    this.set('users', miscConfigs.filterProperty('isVisible'));
+    var miscConfigs = configs.filterProperty('displayType', 'user').filterProperty('category', 'Users and Groups');
+    miscConfigs.setEach('isVisible', true);
+    this.set('users', miscConfigs);
     this.set('dataIsLoaded', true);
   },
-  /**
-   * set config value to property of "content"
-   * @param key
-   * @param configName
-   * @param misc_configs
-   * @return {Boolean}
-   */
-  setContentProperty: function (key, configName, misc_configs) {
-    var content = this.get('content');
-    if (key && configName && misc_configs.someProperty('name', configName) && content.get(key)) {
-      content.set(key, misc_configs.findProperty('name', configName).get("value"));
-      return true;
-    }
-    return false;
-  },
+
   /**
    * sort miscellaneous configs by specific order
    * @param sortOrder
@@ -157,25 +132,6 @@ App.MainAdminServiceAccountsController = App.MainServiceInfoConfigsController.ex
       return sorted;
     } else {
       return arrayToSort;
-    }
-  },
-  /**
-   * set displayName of "proxyuser_group" depending on stack version
-   * @param misc_configs
-   */
-  setProxyUserGroupLabel: function (misc_configs) {
-    var proxyUserGroup = misc_configs.findProperty('name', 'proxyuser_group');
-    //stack, with version lower than 2.1, doesn't have Falcon service
-    if (proxyUserGroup) {
-      var proxyServices = ['HIVE', 'OOZIE', 'FALCON'];
-      var services = Em.A([]);
-      proxyServices.forEach(function (serviceName) {
-        var stackService = App.StackService.find(serviceName);
-        if (stackService) {
-          services.push(stackService.get('displayName'));
-        }
-      }, this);
-      proxyUserGroup.set('displayName', "Proxy group for " + stringUtils.getFormattedStringFromArray(services));
     }
   }
 });

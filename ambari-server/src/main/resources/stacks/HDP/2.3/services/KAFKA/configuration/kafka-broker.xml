@@ -22,6 +22,7 @@
   <property>
     <name>listeners</name>
     <value>PLAINTEXT://localhost:6667</value>
+    <property-type>DONT_ADD_ON_UPGRADE</property-type>
     <description>host and port where kafka broker will be accepting connnections. localhost will be subsituted with hostname.</description>
   </property>
   <property>
@@ -123,5 +124,31 @@
     <value>6667</value>
     <description>Deprecated config in favor of listeners config.</description>
     <deleted>true</deleted>
+  </property>
+  <property>
+    <name>external.kafka.metrics.exclude.prefix</name>
+    <value>kafka.network.RequestMetrics,kafka.server.DelayedOperationPurgatory,kafka.server.BrokerTopicMetrics.BytesRejectedPerSec</value>
+    <description>
+      Exclude metrics starting with these prefixes from being collected.
+    </description>
+  </property>
+  <property>
+    <name>external.kafka.metrics.include.prefix</name>
+    <value>kafka.network.RequestMetrics.ResponseQueueTimeMs.request.OffsetCommit.98percentile,kafka.network.RequestMetrics.ResponseQueueTimeMs.request.Offsets.95percentile,kafka.network.RequestMetrics.ResponseSendTimeMs.request.Fetch.95percentile,kafka.network.RequestMetrics.RequestsPerSec.request</value>
+    <description>
+      These metrics would be included even if the exclude prefix omits them.
+    </description>
+  </property>
+  <property>
+    <name>authorizer.class.name</name>
+    <description>
+      Kafka authorizer class
+    </description>
+    <depends-on>
+      <property>
+        <type>ranger-kafka-plugin-properties</type>
+        <name>ranger-kafka-plugin-enabled</name>
+      </property>
+    </depends-on>
   </property>
 </configuration>

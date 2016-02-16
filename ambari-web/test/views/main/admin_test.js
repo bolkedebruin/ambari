@@ -25,10 +25,12 @@ describe('App.MainAdminView', function () {
   var view;
 
   beforeEach(function () {
-    view = App.MainAdminView.create();
+    view = App.MainAdminView.create({
+      controller: Em.Object.create()
+    });
   });
 
-  describe('#categories', function () {
+  describe.skip('#categories', function () {
 
     var cases = [
       {
@@ -70,18 +72,28 @@ describe('App.MainAdminView', function () {
       }
     ];
 
+    beforeEach(function () {
+      this.stub = sinon.stub(App, 'get');
+    });
+
     afterEach(function () {
       App.get.restore();
     });
 
     cases.forEach(function (item) {
       it(item.title, function () {
-        sinon.stub(App, 'get').withArgs('isHadoopWindowsStack').returns(item.isHadoopWindowsStack);
+        this.stub.withArgs('isHadoopWindowsStack').returns(item.isHadoopWindowsStack);
         view.propertyDidChange('categories');
         expect(view.get('categories')).to.eql(item.categories);
       });
     });
+  });
 
+  describe("#willDestroyElement()", function() {
+    it("controller.category is set to null", function() {
+      view.willDestroyElement();
+      expect(view.get('controller.category')).to.be.null;
+    });
   });
 
 });

@@ -20,29 +20,43 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>spark_user</name>
+    <display-name>Spark User</display-name>
     <value>spark</value>
     <property-type>USER</property-type>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>spark_group</name>
+    <display-name>Spark Group</display-name>
     <value>spark</value>
     <property-type>GROUP</property-type>
     <description>spark group</description>
+    <value-attributes>
+      <type>user</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>spark_log_dir</name>
     <value>/var/log/spark</value>
     <description>Spark Log Dir</description>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
 
   <property>
     <name>spark_pid_dir</name>
     <value>/var/run/spark</value>
+    <value-attributes>
+      <type>directory</type>
+    </value-attributes>
   </property>
 
   <!-- spark-env.sh -->
@@ -68,7 +82,7 @@
 # Generic options for the daemons used in the standalone deploy mode
 
 # Alternate conf dir. (Default: ${SPARK_HOME}/conf)
-export SPARK_CONF_DIR=${SPARK_HOME:-{{spark_home}}}/conf
+export SPARK_CONF_DIR=${SPARK_CONF_DIR:-{{spark_home}}/conf}
 
 # Where log files are stored.(Default:${SPARK_HOME}/logs)
 #export SPARK_LOG_DIR=${SPARK_HOME:-{{spark_home}}}/logs
@@ -96,6 +110,17 @@ else
 fi
 
 </value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
+  <property>
+    <name>spark_thrift_cmd_opts</name>
+    <description>additional spark thrift server commandline options</description>
+    <value></value>
+    <value-attributes>
+      <empty-value-valid>true</empty-value-valid>
+    </value-attributes>
+  </property>
 </configuration>

@@ -19,6 +19,7 @@
 
 var App = require('app');
 require('views/wizard/step5_view');
+var stringUtils = require('utils/string_utils');
 var view;
 
 describe('App.WizardStep5View', function() {
@@ -29,24 +30,94 @@ describe('App.WizardStep5View', function() {
     });
   });
 
+  describe("#title", function() {
+    beforeEach(function () {
+      view.set('controller.content', Em.Object.create());
+    });
+
+    it("controller name is reassignMasterController", function() {
+      view.set('controller.content.controllerName', 'reassignMasterController');
+      view.propertyDidChange('title');
+      expect(view.get('title')).to.equal(Em.I18n.t('installer.step5.reassign.header'));
+    });
+    it("controller name is ''", function() {
+      view.set('controller.content.controllerName', '');
+      view.propertyDidChange('title');
+      expect(view.get('title')).to.equal(Em.I18n.t('installer.step5.header'));
+    });
+  });
+
+  describe("#setCoHostedComponentText()", function () {
+    beforeEach(function () {
+      sinon.stub(App.StackServiceComponent, 'find').returns([
+        Em.Object.create({
+          componentName: 'C1',
+          displayName: 'c1',
+          isOtherComponentCoHosted: true,
+          stackService: {
+            isSelected: true
+          },
+          coHostedComponents: ['C2']
+        }),
+        Em.Object.create({
+          componentName: 'C2',
+          displayName: 'c2',
+          isOtherComponentCoHosted: false,
+          stackService: {
+            isSelected: true
+          }
+        })
+      ]);
+      sinon.stub(stringUtils, 'getFormattedStringFromArray', function(str){
+        return str;
+      });
+    });
+    afterEach(function () {
+      App.StackServiceComponent.find.restore();
+      stringUtils.getFormattedStringFromArray.restore();
+    });
+    it("isReassignWizard - true", function () {
+      view.set('controller.isReassignWizard', true);
+      view.setCoHostedComponentText();
+      expect(view.get('coHostedComponentText')).to.be.empty;
+    });
+    it("isReassignWizard - false", function () {
+      view.set('controller.isReassignWizard', false);
+      view.setCoHostedComponentText();
+      expect(view.get('coHostedComponentText')).to.equal('<br/>' + Em.I18n.t('installer.step5.body.coHostedComponents').format(['c1', 'c2']));
+    });
+  });
+
   describe('#didInsertElement', function() {
-    it('should call controller.loadStep', function() {
+
+    beforeEach(function () {
       sinon.stub(view.get('controller'), 'loadStep', Em.K);
+    });
+
+    afterEach(function () {
+      view.get('controller').loadStep.restore();
+    });
+
+    it('should call controller.loadStep', function() {
       view.didInsertElement();
       expect(view.get('controller').loadStep.calledOnce).to.equal(true);
-      view.get('controller').loadStep.restore();
     });
   });
 
   describe('#shouldUseInputs', function() {
-    it('should based on hosts count', function() {
-      view.set('controller.hosts', d3.range(0, 25).map(function() {return {};}));
-      expect(view.get('shouldUseInputs')).to.be.false;
-      view.set('controller.hosts', d3.range(0, 26).map(function() {return {};}));
-      expect(view.get('shouldUseInputs')).to.be.true;
-      view.set('controller.hosts', d3.range(0, 24).map(function() {return {};}));
-      expect(view.get('shouldUseInputs')).to.be.false;
+
+    Em.A([
+      {range: 25, e: false},
+      {range: 26, e: true},
+      {range: 24, e: false}
+    ]).forEach(function (test) {
+      it(test.e + ' for ' + test.range + ' hosts', function () {
+        view.set('controller.hosts', d3.range(0, test.range).map(function() {return {};}));
+        expect(view.get('shouldUseInputs')).to.be.equal(test.e);
+      });
+
     });
+
   });
 
 });
@@ -302,15 +373,21 @@ describe('App.InputHostView', function() {
       }
     ]);
 
+    beforeEach(function () {
+      sinon.stub(view, 'initContent', Em.K);
+    });
+
+    afterEach(function () {
+      view.initContent.restore();
+    });
+
     tests.forEach(function(test) {
       it(test.m, function() {
         view.set('content', test.content);
         view.set('component', {component_name: test.componentName});
         view.set('controller.componentToRebalance', test.componentToRebalance);
-        sinon.stub(view, 'initContent', Em.K);
         view.rebalanceComponentHostsOnce();
         expect(view.initContent.calledOnce).to.equal(test.e.initContent);
-        view.initContent.restore();
       });
     });
   });

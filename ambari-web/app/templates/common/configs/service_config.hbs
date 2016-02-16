@@ -46,30 +46,49 @@
   {{/if}}
 {{/if}}
 {{#if view.supportsHostOverrides}}
-  <div class="alert alert-info">
-    {{t common.group}}&nbsp;
-    <div class="config-groups-dropdown">
-      {{view App.ConfigGroupDropdownView}}
-    </div>
+  <div class="alert alert-info config-manage-nav">
 
-    {{#isAccessible ADMIN}}
+    {{t common.group}}&nbsp;
+	  <span class="btn-group config-groups-dropdown">
+      {{#if controller.configGroupsAreLoaded}}
+        <button {{bindAttr disabled="controller.isHostsConfigsPage"}} class="btn dropdown-toggle first"
+                                                                      data-toggle="dropdown">{{selectedConfigGroup.displayNameHosts}}</button>
+        <button {{bindAttr disabled="controller.isHostsConfigsPage"}} class="btn dropdown-toggle" data-toggle="dropdown">
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu config-groups-dropdown-menu">
+          <!-- available config group menu links -->
+          {{#each configGroup in configGroups}}
+            <li>
+              <a href="#" {{action "selectConfigGroup" configGroup target="controller"}}>
+                {{configGroup.displayNameHosts}}
+              </a>
+            </li>
+          {{/each}}
+        </ul>
+      {{else}}
+        {{view App.SpinnerView classNames="pull-left"}}
+      {{/if}}
+		</span>
       {{#if controller.isHostsConfigsPage}}
         &nbsp;<a href="#" {{action "switchHostGroup" target="controller"}}>{{t common.change}}</a>
       {{else}}
-        <a href="#" class="link-left-pad" {{action "manageConfigurationGroup" target="controller"}}>{{t services.service.actions.manage_configuration_groups.short}}</a>
+        {{#isAuthorized "SERVICE.MANAGE_CONFIG_GROUPS"}}
+            <a href="#" class="link-left-pad" {{action "manageConfigurationGroup" target="controller"}}>{{t services.service.actions.manage_configuration_groups.short}}</a>
+        {{/isAuthorized}}
       {{/if}}
-    {{/isAccessible}}
     <div class="pull-right">
       {{view App.FilterComboCleanableView filterBinding="view.filter" columnsBinding="view.columns" popoverDescriptionBinding="view.propertyFilterPopover"}}
     </div>
+    <div class="clearfix"></div>
   </div>
 {{/if}}
 
-{{#if view.showConfigHistoryFeature}}
+{{#if view.isOnTheServicePage}}
   {{#if allVersionsLoaded}}
     {{view App.ConfigHistoryFlowView serviceBinding="selectedService"}}
   {{else}}
-    <div class="spinner"></div>
+    {{view App.SpinnerView}}
   {{/if}}
 {{/if}}
 
@@ -90,7 +109,7 @@
     </div>
   {{/unless}}
   {{#if view.supportsConfigLayout}}
-    <ul class="nav nav-tabs mbm config-tabs">
+    <ul class="nav nav-tabs mbm config-tabs background-text">
       {{#each tab in view.tabs}}
         <li rel='tooltip' {{bindAttr class="tab.isActive:active tab.isHiddenByFilter:disabled" data-original-title="tab.tooltipMsg"}}>
           <a href="#" {{action "setActiveTab" tab target="view"}} {{bindAttr data-target="tab.headingClass"}} data-toggle="tab">
@@ -123,7 +142,7 @@
                 </div>
               {{/each}}
             {{else}}
-              <div class="spinner"></div>
+              {{view App.SpinnerView}}
             {{/if}}
           {{else}}
               {{! Render Enhanced Config Section }}
@@ -149,5 +168,5 @@
     </div>
   {{/if}}
 {{else}}
-  <div class="spinner"></div>
+  {{view App.SpinnerView}}
 {{/if}}

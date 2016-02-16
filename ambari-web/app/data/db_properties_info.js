@@ -32,8 +32,6 @@ module.exports = {
   dpPropertiesByServiceMap: {
     'HIVE': {
       db_selector: 'hive_database',
-
-      host_name: 'hive_hostname',
       db_name: 'ambari.hive.db.schema.name',
 
       connection_url: 'javax.jdo.option.ConnectionURL',
@@ -45,8 +43,6 @@ module.exports = {
     },
     'OOZIE': {
       db_selector: 'oozie_database',
-
-      host_name: 'oozie_hostname',
       db_name: 'oozie.db.schema.name',
 
       connection_url: 'oozie.service.JPAService.jdbc.url',
@@ -54,16 +50,6 @@ module.exports = {
 
       user_name: 'oozie.service.JPAService.jdbc.username',
       password: 'oozie.service.JPAService.jdbc.password'
-    },
-    'RANGER': {
-      db_selector: 'DB_FLAVOR',
-
-      host_name: 'db_host',
-      db_name: 'db_name',
-
-      connection_url:  App.get('isHadoop23Stack') ? 'ranger.jpa.jdbc.url' : 'ranger_jdbc_connection_url',
-      driver: App.get('isHadoop23Stack') ? 'ranger.jpa.jdbc.driver' : 'ranger_jdbc_driver',
-      sql_jar_connector: 'SQL_CONNECTOR_JAR'
     }
   },
 
@@ -108,7 +94,14 @@ module.exports = {
       'sql_jar_connector': '/usr/share/java/sqljdbc4.jar',
       'db_type': 'mssql'
     },
+    /** TODO: Remove SQLA from the list of databases once Ranger DB_FLAVOR=SQLA is replaced with SQL Anywhere */
     'SQLA': {
+      'connection_url': 'jdbc:sqlanywhere:host={0};database={1}',
+      'driver': 'sap.jdbc4.sqlanywhere.IDriver',
+      'sql_jar_connector': '/path_to_driver/sqla-client-jdbc.tar.gz',
+      'db_type': 'sqlanywhere'
+    },
+    'ANYWHERE': {
       'connection_url': 'jdbc:sqlanywhere:host={0};database={1}',
       'driver': 'sap.jdbc4.sqlanywhere.IDriver',
       'sql_jar_connector': '/path_to_driver/sqla-client-jdbc.tar.gz',

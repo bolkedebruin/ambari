@@ -18,23 +18,10 @@
 
 package org.apache.ambari.server.controller;
 
-import java.io.File;
-import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
@@ -43,6 +30,9 @@ import org.apache.ambari.server.actionmanager.RequestFactory;
 import org.apache.ambari.server.actionmanager.Stage;
 import org.apache.ambari.server.actionmanager.StageFactory;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.api.services.stackadvisor.StackAdvisorHelper;
+import org.apache.ambari.server.api.services.stackadvisor.StackAdvisorRequest;
+import org.apache.ambari.server.api.services.stackadvisor.recommendations.RecommendationResponse;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.internal.ArtifactResourceProvider;
 import org.apache.ambari.server.controller.internal.RequestImpl;
@@ -60,6 +50,12 @@ import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.ClusterControllerHelper;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.metadata.RoleCommandOrder;
+import org.apache.ambari.server.orm.dao.KerberosPrincipalDAO;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.apache.ambari.server.security.SecurePasswordHelper;
+import org.apache.ambari.server.security.credential.Credential;
+import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
+import org.apache.ambari.server.security.encryption.CredentialStoreService;
 import org.apache.ambari.server.serveraction.ServerAction;
 import org.apache.ambari.server.serveraction.kerberos.CleanupServerAction;
 import org.apache.ambari.server.serveraction.kerberos.CreateKeytabFilesServerAction;
@@ -68,7 +64,6 @@ import org.apache.ambari.server.serveraction.kerberos.DestroyPrincipalsServerAct
 import org.apache.ambari.server.serveraction.kerberos.FinalizeKerberosServerAction;
 import org.apache.ambari.server.serveraction.kerberos.KDCType;
 import org.apache.ambari.server.serveraction.kerberos.KerberosAdminAuthenticationException;
-import org.apache.ambari.server.serveraction.kerberos.KerberosCredential;
 import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileWriter;
 import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileWriterFactory;
 import org.apache.ambari.server.serveraction.kerberos.KerberosInvalidConfigurationException;
@@ -95,6 +90,7 @@ import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.Service;
+import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
@@ -105,18 +101,31 @@ import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
 import org.apache.ambari.server.state.kerberos.KerberosIdentityDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosKeytabDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosPrincipalDescriptor;
+import org.apache.ambari.server.state.kerberos.KerberosPrincipalType;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptor;
 import org.apache.ambari.server.state.kerberos.VariableReplacementHelper;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostServerActionEvent;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.directory.server.kerberos.shared.keytab.Keytab;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
+import java.io.File;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
 
 @Singleton
 public class KerberosHelperImpl implements KerberosHelper {
@@ -124,23 +133,6 @@ public class KerberosHelperImpl implements KerberosHelper {
   private static final String BASE_LOG_DIR = "/tmp/ambari";
 
   private static final Logger LOG = LoggerFactory.getLogger(KerberosHelperImpl.class);
-
-  /**
-   * name of the property used to hold the service check identifier value, used when creating and
-   * destroying the (unique) service check identity.
-   */
-  private static final String SERVICE_CHECK_IDENTIFIER = "_kerberos_internal_service_check_identifier";
-
-  /**
-   * Regular expression pattern used to parse auth_to_local property specifications into the following
-   * parts:
-   * <ul>
-   * <li>configuration type (optional, if _global_)</li>
-   * <li>property name</li>
-   * <li>concatenation type (optional, if using the default behavior)</li>
-   * </ul>
-   */
-  private static final Pattern AUTH_TO_LOCAL_PROPERTY_SPECIFICATION_PATTERN = Pattern.compile("^(?:(.+?)/)?(.+?)(?:\\|(.+?))?$");
 
   @Inject
   private AmbariCustomCommandExecutionHelper customCommandExecutionHelper;
@@ -184,11 +176,34 @@ public class KerberosHelperImpl implements KerberosHelper {
   @Inject
   private KerberosIdentityDataFileWriterFactory kerberosIdentityDataFileWriterFactory;
 
+  @Inject
+  private SecurePasswordHelper securePasswordHelper;
+
+  @Inject
+  private KerberosPrincipalDAO kerberosPrincipalDAO;
+
+  /**
+   * The injector used to create new instances of helper classes like CreatePrincipalsServerAction
+   * and CreateKeytabFilesServerAction.
+   */
+  @Inject
+  private Injector injector;
+
+  /**
+   * The secure storage facility to use to store KDC administrator credential.
+   */
+  @Inject
+  private CredentialStoreService credentialStoreService;
+
+  @Inject
+  private StackAdvisorHelper stackAdvisorHelper;
+
   /**
    * Used to get kerberos descriptors associated with the cluster or stack.
    * Currently not available via injection.
    */
   private static ClusterController clusterController = null;
+
 
   @Override
   public RequestStageContainer toggleKerberos(Cluster cluster, SecurityType securityType,
@@ -203,10 +218,10 @@ public class KerberosHelperImpl implements KerberosHelper {
 
     if (securityType == SecurityType.KERBEROS) {
       LOG.info("Configuring Kerberos for realm {} on cluster, {}", kerberosDetails.getDefaultRealm(), cluster.getClusterName());
-      requestStageContainer = handle(cluster, kerberosDetails, null, null, null, requestStageContainer, new EnableKerberosHandler());
+      requestStageContainer = handle(cluster, kerberosDetails, null, null, null, null, requestStageContainer, new EnableKerberosHandler());
     } else if (securityType == SecurityType.NONE) {
       LOG.info("Disabling Kerberos from cluster, {}", cluster.getClusterName());
-      requestStageContainer = handle(cluster, kerberosDetails, null, null, null, requestStageContainer, new DisableKerberosHandler());
+      requestStageContainer = handle(cluster, kerberosDetails, null, null, null, null, requestStageContainer, new DisableKerberosHandler());
     } else {
       throw new AmbariException(String.format("Unexpected security type value: %s", securityType.name()));
     }
@@ -243,7 +258,7 @@ public class KerberosHelperImpl implements KerberosHelper {
 
               if (handler != null) {
                 requestStageContainer = handle(cluster, getKerberosDetails(cluster, manageIdentities),
-                    null, null, null, requestStageContainer, handler);
+                    null, null, null, null, requestStageContainer, handler);
               } else {
                 throw new AmbariException(String.format("Unexpected directive value: %s", value));
               }
@@ -263,19 +278,19 @@ public class KerberosHelperImpl implements KerberosHelper {
 
   @Override
   public RequestStageContainer ensureIdentities(Cluster cluster, Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                                Collection<String> identityFilter, Set<String> hostsToForceKerberosOperations,
+                                                Set<String> hostFilter, Collection<String> identityFilter, Set<String> hostsToForceKerberosOperations,
                                                 RequestStageContainer requestStageContainer, Boolean manageIdentities)
       throws AmbariException, KerberosOperationException {
-    return handle(cluster, getKerberosDetails(cluster, manageIdentities), serviceComponentFilter, identityFilter,
+    return handle(cluster, getKerberosDetails(cluster, manageIdentities), serviceComponentFilter, hostFilter, identityFilter,
         hostsToForceKerberosOperations, requestStageContainer, new CreatePrincipalsAndKeytabsHandler(false, false));
   }
 
   @Override
   public RequestStageContainer deleteIdentities(Cluster cluster, Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                                Collection<String> identityFilter, RequestStageContainer requestStageContainer,
+                                                Set<String> hostFilter, Collection<String> identityFilter, RequestStageContainer requestStageContainer,
                                                 Boolean manageIdentities)
       throws AmbariException, KerberosOperationException {
-    return handle(cluster, getKerberosDetails(cluster, manageIdentities), serviceComponentFilter, identityFilter, null,
+    return handle(cluster, getKerberosDetails(cluster, manageIdentities), serviceComponentFilter, hostFilter, identityFilter, null,
         requestStageContainer, new DeletePrincipalsAndKeytabsHandler());
   }
 
@@ -283,53 +298,328 @@ public class KerberosHelperImpl implements KerberosHelper {
   public void configureService(Cluster cluster, ServiceComponentHost serviceComponentHost)
       throws AmbariException, KerberosInvalidConfigurationException {
 
-    KerberosDetails kerberosDetails = getKerberosDetails(cluster, null);
-
-    // Set properties...
     String serviceName = serviceComponentHost.getServiceName();
+    String hostName = serviceComponentHost.getHostName();
+
+    Map<String, Map<String, String>> existingConfigurations = calculateExistingConfigurations(cluster, hostName);
+
+    Map<String, Map<String, String>> updates = getServiceConfigurationUpdates(cluster,
+        existingConfigurations, Collections.singleton(serviceName), serviceAlreadyExists(cluster, serviceComponentHost), true, true);
+
+    for (Map.Entry<String, Map<String, String>> entry : updates.entrySet()) {
+      configHelper.updateConfigType(cluster, ambariManagementController, entry.getKey(), entry.getValue(), null,
+          ambariManagementController.getAuthName(), String.format("Enabling Kerberos for %s", serviceName));
+    }
+  }
+
+  private boolean serviceAlreadyExists(Cluster cluster, ServiceComponentHost sch) throws AmbariException {
+    Service service = cluster.getService(sch.getServiceName());
+    if (service != null) {
+      Map<String, ServiceComponent> serviceComponentMap = service.getServiceComponents();
+      for (ServiceComponent serviceComponent : serviceComponentMap.values()) {
+        Map<String, ServiceComponentHost> serviceComponentHostMap = serviceComponent.getServiceComponentHosts();
+        for (ServiceComponentHost serviceComponentHost : serviceComponentHostMap.values()) {
+          if (serviceComponentHost.getState() == State.INSTALLED || serviceComponentHost.getState() == State.STARTED) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  @Override
+  public Map<String, Map<String, String>> getServiceConfigurationUpdates(Cluster cluster,
+                                                                         Map<String, Map<String, String>> existingConfigurations,
+                                                                         Set<String> services,
+                                                                         boolean serviceAlreadyExists,
+                                                                         boolean kerberosEnabled,
+                                                                         boolean applyStackAdvisorUpdates)
+      throws KerberosInvalidConfigurationException, AmbariException {
+
+    Map<String, Map<String, String>> kerberosConfigurations = new HashMap<String, Map<String, String>>();
+    KerberosDetails kerberosDetails = getKerberosDetails(cluster, null);
     KerberosDescriptor kerberosDescriptor = getKerberosDescriptor(cluster);
-    KerberosServiceDescriptor serviceDescriptor = kerberosDescriptor.getService(serviceName);
 
-    if (serviceDescriptor != null) {
-      Map<String, String> kerberosDescriptorProperties = kerberosDescriptor.getProperties();
-      Map<String, Map<String, String>> kerberosConfigurations = new HashMap<String, Map<String, String>>();
-      Map<String, Map<String, String>> configurations = calculateConfigurations(cluster,
-          serviceComponentHost.getHostName(), kerberosDescriptorProperties);
+    Map<String, String> kerberosDescriptorProperties = kerberosDescriptor.getProperties();
+    Map<String, Map<String, String>> configurations = addAdditionalConfigurations(cluster,
+        deepCopy(existingConfigurations), null, kerberosDescriptorProperties);
 
-      Map<String, KerberosComponentDescriptor> componentDescriptors = serviceDescriptor.getComponents();
-      for (KerberosComponentDescriptor componentDescriptor : componentDescriptors.values()) {
-        if (componentDescriptor != null) {
-          Map<String, Map<String, String>> identityConfigurations;
-          List<KerberosIdentityDescriptor> identities;
+    Map<String, Set<String>> propertiesToIgnore = new HashMap<String, Set<String>>();
 
-          identities = serviceDescriptor.getIdentities(true);
-          identityConfigurations = getConfigurations(identities);
-          if (identityConfigurations != null) {
-            for (Map.Entry<String, Map<String, String>> entry : identityConfigurations.entrySet()) {
-              mergeConfigurations(kerberosConfigurations, entry.getKey(), entry.getValue(), configurations);
+    for (String serviceName : services) {
+      // Set properties...
+      KerberosServiceDescriptor serviceDescriptor = kerberosDescriptor.getService(serviceName);
+
+      if (serviceDescriptor != null) {
+        Map<String, KerberosComponentDescriptor> componentDescriptors = serviceDescriptor.getComponents();
+        for (KerberosComponentDescriptor componentDescriptor : componentDescriptors.values()) {
+          if (componentDescriptor != null) {
+            Map<String, Map<String, String>> identityConfigurations;
+
+            identityConfigurations = getIdentityConfigurations(serviceDescriptor.getIdentities(true));
+            if (identityConfigurations != null) {
+              for (Map.Entry<String, Map<String, String>> entry : identityConfigurations.entrySet()) {
+                String configType = entry.getKey();
+                Map<String, String> properties = entry.getValue();
+
+                mergeConfigurations(kerberosConfigurations, configType, entry.getValue(), configurations);
+
+                if ((properties != null) && !properties.isEmpty()) {
+                  Set<String> propertyNames = propertiesToIgnore.get(configType);
+                  if (propertyNames == null) {
+                    propertyNames = new HashSet<String>();
+                    propertiesToIgnore.put(configType, propertyNames);
+                  }
+                  propertyNames.addAll(properties.keySet());
+                }
+              }
             }
+
+            identityConfigurations = getIdentityConfigurations(componentDescriptor.getIdentities(true));
+            if (identityConfigurations != null) {
+              for (Map.Entry<String, Map<String, String>> entry : identityConfigurations.entrySet()) {
+                String configType = entry.getKey();
+                Map<String, String> properties = entry.getValue();
+
+                mergeConfigurations(kerberosConfigurations, configType, entry.getValue(), configurations);
+
+                if ((properties != null) && !properties.isEmpty()) {
+                  Set<String> propertyNames = propertiesToIgnore.get(configType);
+                  if (propertyNames == null) {
+                    propertyNames = new HashSet<String>();
+                    propertiesToIgnore.put(configType, propertyNames);
+                  }
+                  propertyNames.addAll(properties.keySet());
+                }
+              }
+            }
+
+            mergeConfigurations(kerberosConfigurations,
+                componentDescriptor.getConfigurations(!serviceAlreadyExists), configurations);
+          }
+        }
+      }
+    }
+
+    setAuthToLocalRules(kerberosDescriptor, cluster, kerberosDetails.getDefaultRealm(), configurations, kerberosConfigurations);
+
+    return (applyStackAdvisorUpdates)
+        ? applyStackAdvisorUpdates(cluster, services, configurations, kerberosConfigurations, propertiesToIgnore, kerberosEnabled)
+        : kerberosConfigurations;
+  }
+
+  public Map<String, Map<String, String>> applyStackAdvisorUpdates(Cluster cluster, Set<String> services,
+                                                                    Map<String, Map<String, String>> existingConfigurations,
+                                                                    Map<String, Map<String, String>> kerberosConfigurations,
+                                                                    Map<String, Set<String>> propertiesToIgnore,
+                                                                   boolean kerberosEnabled) throws AmbariException {
+
+    StackId stackVersion = cluster.getCurrentStackVersion();
+
+    List<String> hostNames = new ArrayList<String>();
+    Collection<Host> hosts = cluster.getHosts();
+
+    if (hosts != null) {
+      for (Host host : hosts) {
+        hostNames.add(host.getHostName());
+      }
+    }
+
+    // Don't actually call the stack advisor if no hosts are in the cluster, else the stack advisor
+    // will throw a StackAdvisorException stating "Hosts and services must not be empty".
+    // This could happen when enabling Kerberos while installing a cluster via Blueprints due to the
+    // way hosts are discovered during the install process.
+    if(!hostNames.isEmpty()) {
+      Map<String, Map<String, Map<String, String>>> requestConfigurations = new HashMap<String, Map<String, Map<String, String>>>();
+      if (existingConfigurations != null) {
+        for (Map.Entry<String, Map<String, String>> configuration : existingConfigurations.entrySet()) {
+          Map<String, Map<String, String>> properties = new HashMap<String, Map<String, String>>();
+          String configType = configuration.getKey();
+          Map<String, String> configurationProperties = configuration.getValue();
+
+          if (configurationProperties == null) {
+            configurationProperties = Collections.emptyMap();
           }
 
-          identities = componentDescriptor.getIdentities(true);
-          identityConfigurations = getConfigurations(identities);
-          if (identityConfigurations != null) {
-            for (Map.Entry<String, Map<String, String>> entry : identityConfigurations.entrySet()) {
-              mergeConfigurations(kerberosConfigurations, entry.getKey(), entry.getValue(), configurations);
-            }
+          if ("cluster-env".equals(configType)) {
+            configurationProperties = new HashMap<String, String>(configurationProperties);
+            configurationProperties.put("security_enabled", (kerberosEnabled) ? "true" : "false");
           }
 
-          mergeConfigurations(kerberosConfigurations,
-              componentDescriptor.getConfigurations(true), configurations);
+          properties.put("properties", configurationProperties);
+          requestConfigurations.put(configType, properties);
         }
       }
 
-      setAuthToLocalRules(kerberosDescriptor, cluster, kerberosDetails.getDefaultRealm(), configurations, kerberosConfigurations);
+      // Apply the current Kerberos properties...
+      for (Map.Entry<String, Map<String, String>> configuration : kerberosConfigurations.entrySet()) {
+        String configType = configuration.getKey();
+        Map<String, String> configurationProperties = configuration.getValue();
 
-      for (Map.Entry<String, Map<String, String>> entry : kerberosConfigurations.entrySet()) {
-        configHelper.updateConfigType(cluster, ambariManagementController, entry.getKey(), entry.getValue(), null,
-            ambariManagementController.getAuthName(), String.format("Enabling Kerberos for %s", serviceName));
+        if ((configurationProperties != null) && !configurationProperties.isEmpty()) {
+          Map<String, Map<String, String>> requestConfiguration = requestConfigurations.get(configType);
+
+          if (requestConfiguration == null) {
+            requestConfiguration = new HashMap<String, Map<String, String>>();
+            requestConfigurations.put(configType, requestConfiguration);
+          }
+
+          Map<String, String> requestConfigurationProperties = requestConfiguration.get("properties");
+          if (requestConfigurationProperties == null) {
+            requestConfigurationProperties = new HashMap<String, String>();
+          } else {
+            requestConfigurationProperties = new HashMap<String, String>(requestConfigurationProperties);
+          }
+
+          requestConfigurationProperties.putAll(configurationProperties);
+          requestConfiguration.put("properties", requestConfigurationProperties);
+        }
+      }
+
+      StackAdvisorRequest request = StackAdvisorRequest.StackAdvisorRequestBuilder
+          .forStack(stackVersion.getStackName(), stackVersion.getStackVersion())
+          .forServices(new ArrayList<String>(services))
+          .forHosts(hostNames)
+          .withConfigurations(requestConfigurations)
+          .ofType(StackAdvisorRequest.StackAdvisorRequestType.CONFIGURATIONS)
+          .build();
+
+      try {
+        RecommendationResponse response = stackAdvisorHelper.recommend(request);
+
+        RecommendationResponse.Recommendation recommendation = (response == null) ? null : response.getRecommendations();
+        RecommendationResponse.Blueprint blueprint = (recommendation == null) ? null : recommendation.getBlueprint();
+        Map<String, RecommendationResponse.BlueprintConfigurations> configurations = (blueprint == null) ? null : blueprint.getConfigurations();
+
+        if (configurations != null) {
+          for (Map.Entry<String, RecommendationResponse.BlueprintConfigurations> configuration : configurations.entrySet()) {
+            String configType = configuration.getKey();
+            Map<String, String> recommendedConfigProperties = configuration.getValue().getProperties();
+            Map<String, String> existingConfigProperties = (existingConfigurations == null) ? null : existingConfigurations.get(configType);
+            Map<String, String> kerberosConfigProperties = kerberosConfigurations.get(configType);
+            Set<String> ignoreProperties = (propertiesToIgnore == null) ? null : propertiesToIgnore.get(configType);
+
+            for (Map.Entry<String, String> property : recommendedConfigProperties.entrySet()) {
+              String propertyName = property.getKey();
+
+              if ((ignoreProperties == null) || !ignoreProperties.contains(propertyName)) {
+                String recommendedValue = property.getValue();
+
+                if (kerberosConfigProperties == null) {
+                  // There is no explicit update for this property from the Kerberos Descriptor...
+                  // add the config and property if it also does not exist in the existing configurations
+                  if ((existingConfigProperties == null) || !existingConfigProperties.containsKey(propertyName)) {
+                    LOG.debug("Adding Kerberos configuration based on StackAdvisor recommendation:" +
+                            "\n\tConfigType: {}\n\tProperty: {}\n\tValue: {}",
+                        configType, propertyName, recommendedValue);
+
+                    HashMap<String, String> properties = new HashMap<String, String>();
+                    properties.put(propertyName, recommendedValue);
+                    kerberosConfigurations.put(configType, properties);
+                  }
+                } else {
+                  String value = kerberosConfigProperties.get(propertyName);
+                  if (value == null) {
+                    // There is no explicit update for this property from the Kerberos Descriptor...
+                    // add the property if it also does not exist in the existing configurations
+                    if ((existingConfigProperties == null) || !existingConfigProperties.containsKey(propertyName)) {
+                      LOG.debug("Adding Kerberos configuration based on StackAdvisor recommendation:" +
+                              "\n\tConfigType: {}\n\tProperty: {}\n\tValue: {}",
+                          configType, propertyName, recommendedValue);
+
+                      kerberosConfigProperties.put(propertyName, recommendedValue);
+                    }
+                  } else if (!value.equals(recommendedValue)) {
+                    // If the recommended value is a change, automatically change it.
+                    LOG.debug("Updating Kerberos configuration based on StackAdvisor recommendation:" +
+                            "\n\tConfigType: {}\n\tProperty: {}\n\tOld Value: {}\n\tNew Value: {}",
+                        configType, propertyName, value, recommendedValue);
+
+                    kerberosConfigProperties.put(propertyName, recommendedValue);
+                  }
+                }
+              }
+            }
+          }
+        }
+
+      } catch (Exception e) {
+        throw new AmbariException(e.getMessage(), e);
       }
     }
+
+    return kerberosConfigurations;
+  }
+
+  @Override
+  public boolean ensureHeadlessIdentities(Cluster cluster, Map<String, Map<String, String>> existingConfigurations, Set<String> services)
+      throws KerberosInvalidConfigurationException, AmbariException {
+
+    KerberosDetails kerberosDetails = getKerberosDetails(cluster, null);
+
+    // Only perform this task if Ambari manages Kerberos identities
+    if (kerberosDetails.manageIdentities()) {
+      KerberosDescriptor kerberosDescriptor = getKerberosDescriptor(cluster);
+
+      Map<String, String> kerberosDescriptorProperties = kerberosDescriptor.getProperties();
+      Map<String, Map<String, String>> configurations = addAdditionalConfigurations(cluster,
+        deepCopy(existingConfigurations), null, kerberosDescriptorProperties);
+
+      Map<String, String> kerberosConfiguration = kerberosDetails.getKerberosEnvProperties();
+      KerberosOperationHandler kerberosOperationHandler = kerberosOperationHandlerFactory.getKerberosOperationHandler(kerberosDetails.getKdcType());
+      PrincipalKeyCredential administratorCredential = getKDCAdministratorCredentials(cluster.getClusterName());
+
+      try {
+        kerberosOperationHandler.open(administratorCredential, kerberosDetails.getDefaultRealm(), kerberosConfiguration);
+      } catch (KerberosOperationException e) {
+        String message = String.format("Failed to process the identities, could not properly open the KDC operation handler: %s",
+          e.getMessage());
+        LOG.error(message);
+        throw new AmbariException(message, e);
+      }
+
+      for (String serviceName : services) {
+        // Set properties...
+        KerberosServiceDescriptor serviceDescriptor = kerberosDescriptor.getService(serviceName);
+
+        if (serviceDescriptor != null) {
+          Map<String, KerberosComponentDescriptor> componentDescriptors = serviceDescriptor.getComponents();
+          for (KerberosComponentDescriptor componentDescriptor : componentDescriptors.values()) {
+            if (componentDescriptor != null) {
+              List<KerberosIdentityDescriptor> identityDescriptors;
+
+              // Handle the service-level Kerberos identities
+              identityDescriptors = serviceDescriptor.getIdentities(true);
+              if (identityDescriptors != null) {
+                for (KerberosIdentityDescriptor identityDescriptor : identityDescriptors) {
+                  createUserIdentity(identityDescriptor, kerberosConfiguration, kerberosOperationHandler, configurations);
+                }
+              }
+
+              // Handle the component-level Kerberos identities
+              identityDescriptors = componentDescriptor.getIdentities(true);
+              if (identityDescriptors != null) {
+                for (KerberosIdentityDescriptor identityDescriptor : identityDescriptors) {
+                  createUserIdentity(identityDescriptor, kerberosConfiguration, kerberosOperationHandler, configurations);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // The KerberosOperationHandler needs to be closed, if it fails to close ignore the
+      // exception since there is little we can or care to do about it now.
+      try {
+        kerberosOperationHandler.close();
+      } catch (KerberosOperationException e) {
+        // Ignore this...
+      }
+
+    }
+
+    return true;
   }
 
   @Override
@@ -344,10 +634,6 @@ public class KerberosHelperImpl implements KerberosHelper {
                                                   RequestStageContainer requestStageContainer)
       throws KerberosOperationException, AmbariException {
     requestStageContainer = handleTestIdentity(cluster, getKerberosDetails(cluster, null), commandParamsStage, requestStageContainer, new DeletePrincipalsAndKeytabsHandler());
-
-    // Clear the Kerberos service check identifier
-    setKerberosServiceCheckIdentifier(cluster, null);
-
     return requestStageContainer;
   }
 
@@ -365,7 +651,13 @@ public class KerberosHelperImpl implements KerberosHelper {
                                   Map<String, Map<String, String>> kerberosConfigurations)
       throws AmbariException {
 
-    if (kerberosDescriptor != null) {
+    boolean processAuthToLocalRules = true;
+    Map<String, String> kerberosEnvProperties = existingConfigurations.get("kerberos-env");
+    if(kerberosEnvProperties.containsKey("manage_auth_to_local")) {
+      processAuthToLocalRules = Boolean.valueOf(kerberosEnvProperties.get("manage_auth_to_local"));
+    }
+
+    if (kerberosDescriptor != null && processAuthToLocalRules) {
 
       Set<String> authToLocalProperties;
       Set<String> authToLocalPropertiesToSet = new HashSet<String>();
@@ -374,8 +666,11 @@ public class KerberosHelperImpl implements KerberosHelper {
       // the 'kerberos-env' structure is expected to be available here as it was previously validated
       boolean caseInsensitiveUser = Boolean.valueOf(existingConfigurations.get("kerberos-env").get("case_insensitive_username_rules"));
 
+      // Additional realms that need to be handled according to the Kerberos Descriptor
+      String additionalRealms = kerberosDescriptor.getProperty("additional_realms");
+
       // Determine which properties need to be set
-      AuthToLocalBuilder authToLocalBuilder = new AuthToLocalBuilder(caseInsensitiveUser);
+      AuthToLocalBuilder authToLocalBuilder = new AuthToLocalBuilder(realm, additionalRealms, caseInsensitiveUser);
       addIdentities(authToLocalBuilder, kerberosDescriptor.getIdentities(), null, existingConfigurations);
 
       authToLocalProperties = kerberosDescriptor.getAuthToLocalProperties();
@@ -389,7 +684,7 @@ public class KerberosHelperImpl implements KerberosHelper {
 
         for (KerberosServiceDescriptor service : services.values()) {
           if (installedServices.containsKey(service.getName())) {
-
+            Service svc = installedServices.get(service.getName());
             addIdentities(authToLocalBuilder, service.getIdentities(true), null, existingConfigurations);
 
             authToLocalProperties = service.getAuthToLocalProperties();
@@ -399,13 +694,57 @@ public class KerberosHelperImpl implements KerberosHelper {
 
             Map<String, KerberosComponentDescriptor> components = service.getComponents();
             if (components != null) {
-              for (KerberosComponentDescriptor component : components.values()) {
-                addIdentities(authToLocalBuilder, component.getIdentities(true), null, existingConfigurations);
+              Map<String,ServiceComponent> serviceComponents = svc.getServiceComponents();
 
-                authToLocalProperties = component.getAuthToLocalProperties();
-                if (authToLocalProperties != null) {
-                  authToLocalPropertiesToSet.addAll(authToLocalProperties);
+              for (KerberosComponentDescriptor component : components.values()) {
+                // When the cluster is provisioned by a Blueprint service components with
+                // cardinality 0+ might be left out from the Blueprint thus we have to check
+                // if they exist
+                ServiceComponent svcComp = null;
+                if (!serviceComponents.containsKey(component.getName()))
+                  continue;
+
+                svcComp = serviceComponents.get(component.getName());
+
+                boolean addSvcCompIdentities = false;
+
+                if (cluster.isBluePrintDeployed())
+                {
+                  if (svcComp.getDesiredState() == State.INSTALLED ||  svcComp.getDesiredState() == State.STARTED)
+                    addSvcCompIdentities = true;
                 }
+                else {
+
+                  // Since when the cluster is deployed through the UI ALL service components of the selected services are created
+                  // with desired state INSTALLED regardless whether the service components were associated with hosts or not thus
+                  // we can not determine if the component is installed or not.
+                  // We rather look at service compoent hosts
+                  for (ServiceComponentHost svcCompHost: svcComp.getServiceComponentHosts().values()) {
+                    if (svcCompHost.getDesiredState() != State.UNKNOWN
+                      && svcCompHost.getDesiredState() != State.UNINSTALLING
+                      && svcCompHost.getDesiredState() != State.UNINSTALLED
+                      && svcCompHost.getDesiredState() != State.INSTALL_FAILED
+                      && svcCompHost.getDesiredState() != State.WIPING_OUT) {
+
+                      // If there is at least a host that contains the component add the identities
+                      addSvcCompIdentities = true;
+                      break;
+                    }
+                  }
+                }
+
+                if (addSvcCompIdentities) {
+                  LOG.info("Adding identity for " + component.getName() + " to auth to local mapping");
+                  addIdentities(authToLocalBuilder, component.getIdentities(true), null, existingConfigurations);
+
+                  authToLocalProperties = component.getAuthToLocalProperties();
+                  if (authToLocalProperties != null) {
+                    authToLocalPropertiesToSet.addAll(authToLocalProperties);
+
+                  }
+                }
+
+
               }
             }
           }
@@ -414,14 +753,21 @@ public class KerberosHelperImpl implements KerberosHelper {
 
       if (!authToLocalPropertiesToSet.isEmpty()) {
         for (String authToLocalProperty : authToLocalPropertiesToSet) {
-          Matcher m = AUTH_TO_LOCAL_PROPERTY_SPECIFICATION_PATTERN.matcher(authToLocalProperty);
+          Matcher m = KerberosDescriptor.AUTH_TO_LOCAL_PROPERTY_SPECIFICATION_PATTERN.matcher(authToLocalProperty);
 
-          if(m.matches()) {
-            AuthToLocalBuilder builder = authToLocalBuilder.copy();
+          if (m.matches()) {
+            AuthToLocalBuilder builder;
+            try {
+              builder = (AuthToLocalBuilder) authToLocalBuilder.clone();
+            } catch (CloneNotSupportedException e) {
+              LOG.error("Failed to clone the AuthToLocalBuilder: " + e.getLocalizedMessage(), e);
+              throw new AmbariException("Failed to clone the AuthToLocalBuilder: " + e.getLocalizedMessage(), e);
+            }
+
             String configType = m.group(1);
             String propertyName = m.group(2);
 
-            if(configType == null) {
+            if (configType == null) {
               configType = "";
             }
 
@@ -440,8 +786,8 @@ public class KerberosHelperImpl implements KerberosHelper {
               kerberosConfigurations.put(configType, kerberosConfiguration);
             }
 
-            kerberosConfiguration.put(propertyName, builder.generate(realm,
-                AuthToLocalBuilder.ConcatenationType.translate(m.group(3))));
+            kerberosConfiguration.put(propertyName,
+                builder.generate(AuthToLocalBuilder.ConcatenationType.translate(m.group(3))));
           }
         }
       }
@@ -453,7 +799,7 @@ public class KerberosHelperImpl implements KerberosHelper {
   public List<ServiceComponentHost> getServiceComponentHostsToProcess(Cluster cluster,
                                                                       KerberosDescriptor kerberosDescriptor,
                                                                       Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                                                      Collection<String> identityFilter,
+                                                                      Collection<String> hostFilter, Collection<String> identityFilter,
                                                                       Command<Boolean, ServiceComponentHost> shouldProcessCommand)
       throws AmbariException {
     List<ServiceComponentHost> serviceComponentHostsToProcess = new ArrayList<ServiceComponentHost>();
@@ -469,28 +815,31 @@ public class KerberosHelperImpl implements KerberosHelper {
         for (Host host : hosts) {
           String hostname = host.getHostName();
 
-          // Get a list of components on the current host
-          List<ServiceComponentHost> serviceComponentHosts = cluster.getServiceComponentHosts(hostname);
+          // Filter hosts as needed....
+          if ((hostFilter == null) || hostFilter.contains(hostname)) {
+            // Get a list of components on the current host
+            List<ServiceComponentHost> serviceComponentHosts = cluster.getServiceComponentHosts(hostname);
 
-          if ((serviceComponentHosts != null) && !serviceComponentHosts.isEmpty()) {
+            if ((serviceComponentHosts != null) && !serviceComponentHosts.isEmpty()) {
 
-            // Iterate over the components installed on the current host to get the service and
-            // component-level Kerberos descriptors in order to determine which principals,
-            // keytab files, and configurations need to be created or updated.
-            for (ServiceComponentHost sch : serviceComponentHosts) {
-              String serviceName = sch.getServiceName();
-              String componentName = sch.getServiceComponentName();
+              // Iterate over the components installed on the current host to get the service and
+              // component-level Kerberos descriptors in order to determine which principals,
+              // keytab files, and configurations need to be created or updated.
+              for (ServiceComponentHost sch : serviceComponentHosts) {
+                String serviceName = sch.getServiceName();
+                String componentName = sch.getServiceComponentName();
 
-              // If there is no filter or the filter contains the current service name...
-              if ((serviceComponentFilter == null) || serviceComponentFilter.containsKey(serviceName)) {
-                Collection<String> componentFilter = (serviceComponentFilter == null) ? null : serviceComponentFilter.get(serviceName);
-                KerberosServiceDescriptor serviceDescriptor = kerberosDescriptor.getService(serviceName);
+                // If there is no filter or the filter contains the current service name...
+                if ((serviceComponentFilter == null) || serviceComponentFilter.containsKey(serviceName)) {
+                  Collection<String> componentFilter = (serviceComponentFilter == null) ? null : serviceComponentFilter.get(serviceName);
+                  KerberosServiceDescriptor serviceDescriptor = kerberosDescriptor.getService(serviceName);
 
-                if (serviceDescriptor != null) {
-                  // If there is no filter or the filter contains the current component name,
-                  // test to see if this component should be processed by querying the handler...
-                  if (((componentFilter == null) || componentFilter.contains(componentName)) && shouldProcessCommand.invoke(sch)) {
-                    serviceComponentHostsToProcess.add(sch);
+                  if (serviceDescriptor != null) {
+                    // If there is no filter or the filter contains the current component name,
+                    // test to see if this component should be processed by querying the handler...
+                    if (((componentFilter == null) || componentFilter.contains(componentName)) && shouldProcessCommand.invoke(sch)) {
+                      serviceComponentHostsToProcess.add(sch);
+                    }
                   }
                 }
               }
@@ -554,6 +903,9 @@ public class KerberosHelperImpl implements KerberosHelper {
     Set<Resource> response = null;
     try {
       response = artifactProvider.getResources(request, predicate);
+    } catch (AuthorizationException e) {
+      e.printStackTrace();
+      throw new AmbariException(e.getMessage(), e);
     } catch (SystemException e) {
       e.printStackTrace();
       throw new AmbariException("An unknown error occurred while trying to obtain the cluster kerberos descriptor", e);
@@ -650,7 +1002,7 @@ public class KerberosHelperImpl implements KerberosHelper {
 
           if (principalDescriptor != null) {
             principal = variableReplacementHelper.replaceVariables(principalDescriptor.getValue(), configurations);
-            principalType = principalDescriptor.getType().name().toLowerCase();
+            principalType = KerberosPrincipalType.translate(principalDescriptor.getType());
             principalConfiguration = variableReplacementHelper.replaceVariables(principalDescriptor.getConfiguration(), configurations);
           }
 
@@ -707,76 +1059,9 @@ public class KerberosHelperImpl implements KerberosHelper {
   public Map<String, Map<String, String>> calculateConfigurations(Cluster cluster, String hostname,
                                                                   Map<String, String> kerberosDescriptorProperties)
       throws AmbariException {
-    // For a configuration type, both tag and an actual configuration can be stored
-    // Configurations from the tag is always expanded and then over-written by the actual
-    // global:version1:{a1:A1,b1:B1,d1:D1} + global:{a1:A2,c1:C1,DELETED_d1:x} ==>
-    // global:{a1:A2,b1:B1,c1:C1}
-    Map<String, Map<String, String>> configurations = new HashMap<String, Map<String, String>>();
-    Map<String, Map<String, String>> configurationTags = ambariManagementController.findConfigurationTagsWithOverrides(cluster, hostname);
-
-    if (configurationTags.get(Configuration.GLOBAL_CONFIG_TAG) != null) {
-      configHelper.applyCustomConfig(
-          configurations, Configuration.GLOBAL_CONFIG_TAG,
-          Configuration.RCA_ENABLED_PROPERTY, "false", false);
-    }
-
-    Map<String, Map<String, String>> configProperties = configHelper.getEffectiveConfigProperties(cluster, configurationTags);
-
-    // Apply the configurations saved with the Execution Cmd on top of
-    // derived configs - This will take care of all the hacks
-    for (Map.Entry<String, Map<String, String>> entry : configProperties.entrySet()) {
-      String type = entry.getKey();
-      Map<String, String> allLevelMergedConfig = entry.getValue();
-      Map<String, String> configuration = configurations.get(type);
-
-      if (configuration == null) {
-        configuration = new HashMap<String, String>(allLevelMergedConfig);
-      } else {
-        Map<String, String> mergedConfig = configHelper.getMergedConfig(allLevelMergedConfig, configuration);
-        configuration.clear();
-        configuration.putAll(mergedConfig);
-      }
-
-      configurations.put(type, configuration);
-    }
-
-    // A map to hold un-categorized properties.  This may come from the KerberosDescriptor
-    // and will also contain a value for the current host
-    Map<String, String> generalProperties = configurations.get("");
-    if (generalProperties == null) {
-      generalProperties = new HashMap<String, String>();
-      configurations.put("", generalProperties);
-    }
-
-    // If any properties are set in the calculated KerberosDescriptor, add them into the
-    // Map of configurations as an un-categorized type (using an empty string)
-    if (kerberosDescriptorProperties != null) {
-      generalProperties.putAll(kerberosDescriptorProperties);
-    }
-
-    // Add the current hostname under "host" and "hostname"
-    generalProperties.put("host", hostname);
-    generalProperties.put("hostname", hostname);
-
-    // Add the current cluster's name
-    generalProperties.put("cluster_name", cluster.getClusterName());
-
-    // add clusterHostInfo config
-    Map<String, Set<String>> clusterHostInfo = StageUtils.getClusterHostInfo(cluster);
-
-    if(clusterHostInfo != null) {
-      Map<String, String> componentHosts = new HashMap<String, String>();
-
-      clusterHostInfo = StageUtils.substituteHostIndexes(clusterHostInfo);
-
-      for (Map.Entry<String, Set<String>> entry : clusterHostInfo.entrySet()) {
-        componentHosts.put(entry.getKey(), StringUtils.join(entry.getValue(), ","));
-      }
-
-      configurations.put("clusterHostInfo", componentHosts);
-    }
-
-    return configurations;
+    return addAdditionalConfigurations(cluster,
+        calculateExistingConfigurations(cluster, hostname),
+        hostname, kerberosDescriptorProperties);
   }
 
   @Override
@@ -850,9 +1135,16 @@ public class KerberosHelperImpl implements KerberosHelper {
                 String uniqueKey = String.format("%s|%s", principal, (keytabFile == null) ? "" : keytabFile);
 
                 if (!hostActiveIdentities.containsKey(uniqueKey)) {
+                  KerberosPrincipalType principalType = principalDescriptor.getType();
+
+                  // Assume the principal is a service principal if not specified
+                  if(principalType == null) {
+                    principalType = KerberosPrincipalType.SERVICE;
+                  }
+
                   KerberosPrincipalDescriptor resolvedPrincipalDescriptor =
                       new KerberosPrincipalDescriptor(principal,
-                          principalDescriptor.getType(),
+                          principalType,
                           variableReplacementHelper.replaceVariables(principalDescriptor.getConfiguration(), configurations),
                           variableReplacementHelper.replaceVariables(principalDescriptor.getLocalUsername(), configurations));
 
@@ -890,6 +1182,97 @@ public class KerberosHelperImpl implements KerberosHelper {
   }
 
   /**
+   * Gets the previously stored KDC administrator credential.
+   * <p/>
+   * This implementation accesses the secure CredentialStoreService instance to get the data.
+   *
+   * @param clusterName the name of the relevant cluster
+   * @return a PrincipalKeyCredential or null, if the KDC administrator credential is not available
+   * @throws AmbariException if an error occurs while retrieving the credentials
+   */
+  @Override
+  public PrincipalKeyCredential getKDCAdministratorCredentials(String clusterName) throws AmbariException {
+    Credential credentials = credentialStoreService.getCredential(clusterName, KDC_ADMINISTRATOR_CREDENTIAL_ALIAS);
+
+    if (credentials instanceof PrincipalKeyCredential) {
+      return (PrincipalKeyCredential) credentials;
+    } else {
+      return null;
+    }
+  }
+
+  /**
+   * Creates the principal and cached keytab file for the specified identity, if it is determined to
+   * be user (or headless) identity
+   * <p/>
+   * If the identity is determined not to be a user identity, it is skipped.
+   *
+   * @param identityDescriptor       the Kerberos identity to process
+   * @param kerberosEnvProperties    the kerberos-env properties
+   * @param kerberosOperationHandler the relevant KerberosOperationHandler
+   * @param configurations           the existing configurations for the cluster
+   * @return true if the identity was created; otherwise false
+   * @throws AmbariException
+   */
+  private boolean createUserIdentity(KerberosIdentityDescriptor identityDescriptor,
+                                     Map<String, String> kerberosEnvProperties,
+                                     KerberosOperationHandler kerberosOperationHandler,
+                                     Map<String, Map<String, String>> configurations)
+      throws AmbariException {
+
+    boolean created = false;
+
+    if (identityDescriptor != null) {
+      KerberosPrincipalDescriptor principalDescriptor = identityDescriptor.getPrincipalDescriptor();
+
+      if (principalDescriptor != null) {
+        // If this principal indicates it is a user principal, continue, else skip it.
+        if (KerberosPrincipalType.USER == principalDescriptor.getType()) {
+          String principal = variableReplacementHelper.replaceVariables(principalDescriptor.getValue(), configurations);
+
+          // If this principal is already in the Ambari database, then don't try to recreate it or it's
+          // keytab file.
+          if (!kerberosPrincipalDAO.exists(principal)) {
+            CreatePrincipalsServerAction.CreatePrincipalResult result;
+
+            result = injector.getInstance(CreatePrincipalsServerAction.class).createPrincipal(
+                principal,
+                false,
+                kerberosEnvProperties,
+                kerberosOperationHandler,
+                null);
+
+            if (result == null) {
+              throw new AmbariException("Failed to create the account for " + principal);
+            } else {
+              KerberosKeytabDescriptor keytabDescriptor = identityDescriptor.getKeytabDescriptor();
+
+              if (keytabDescriptor != null) {
+                Keytab keytab = injector.getInstance(CreateKeytabFilesServerAction.class).createKeytab(
+                    principal,
+                    result.getPassword(),
+                    result.getKeyNumber(),
+                    kerberosOperationHandler,
+                    true,
+                    true,
+                    null);
+
+                if (keytab == null) {
+                  throw new AmbariException("Failed to create the keytab for " + principal);
+                }
+              }
+
+              created = true;
+            }
+          }
+        }
+      }
+    }
+
+    return created;
+  }
+
+  /**
    * Validate the KDC admin credentials.
    *
    * @param kerberosDetails the KerberosDetails containing information about the Kerberos configuration
@@ -908,15 +1291,15 @@ public class KerberosHelperImpl implements KerberosHelper {
     }
 
     if (kerberosDetails.manageIdentities()) {
-      String credentials = getEncryptedAdministratorCredentials(cluster);
+      PrincipalKeyCredential credentials = getKDCAdministratorCredentials(cluster.getClusterName());
       if (credentials == null) {
         throw new KerberosMissingAdminCredentialsException(
             "Missing KDC administrator credentials.\n" +
-                "The KDC administrator credentials must be set in session by updating the relevant Cluster resource." +
-                "This may be done by issuing a PUT to the api/v1/clusters/(cluster name) API entry point with the following payload:\n" +
+                "The KDC administrator credentials must be set as a persisted or temporary credential resource." +
+                "This may be done by issuing a POST to the /api/v1/clusters/:clusterName/credentials/kdc.admin.credential API entry point with the following payload:\n" +
                 "{\n" +
-                "  \"session_attributes\" : {\n" +
-                "    \"kerberos_admin\" : {\"principal\" : \"(PRINCIPAL)\", \"password\" : \"(PASSWORD)\"}\n" +
+                "  \"Credential\" : {\n" +
+                "    \"principal\" : \"(PRINCIPAL)\", \"key\" : \"(PASSWORD)\", \"type\" : \"(persisted|temporary)\"}\n" +
                 "  }\n" +
                 "}"
         );
@@ -926,22 +1309,19 @@ public class KerberosHelperImpl implements KerberosHelper {
         if (operationHandler == null) {
           throw new AmbariException("Failed to get an appropriate Kerberos operation handler.");
         } else {
-          byte[] key = Integer.toHexString(cluster.hashCode()).getBytes();
-          KerberosCredential kerberosCredentials = KerberosCredential.decrypt(credentials, key);
-
           boolean missingCredentials = false;
           try {
-            operationHandler.open(kerberosCredentials, kerberosDetails.getDefaultRealm(), kerberosDetails.getKerberosEnvProperties());
+            operationHandler.open(credentials, kerberosDetails.getDefaultRealm(), kerberosDetails.getKerberosEnvProperties());
             // todo: this is really odd that open doesn't throw an exception if the credentials are missing
             missingCredentials = !operationHandler.testAdministratorCredentials();
           } catch (KerberosAdminAuthenticationException e) {
             throw new KerberosAdminAuthenticationException(
                 "Invalid KDC administrator credentials.\n" +
-                    "The KDC administrator credentials must be set in session by updating the relevant Cluster resource." +
-                    "This may be done by issuing a PUT to the api/v1/clusters/(cluster name) API entry point with the following payload:\n" +
+                    "The KDC administrator credentials must be set as a persisted or temporary credential resource." +
+                    "This may be done by issuing a POST (or PUT for updating) to the /api/v1/clusters/:clusterName/credentials/kdc.admin.credential API entry point with the following payload:\n" +
                     "{\n" +
-                    "  \"session_attributes\" : {\n" +
-                    "    \"kerberos_admin\" : {\"principal\" : \"(PRINCIPAL)\", \"password\" : \"(PASSWORD)\"}\n" +
+                    "  \"Credential\" : {\n" +
+                    "    \"principal\" : \"(PRINCIPAL)\", \"key\" : \"(PASSWORD)\", \"type\" : \"(persisted|temporary)\"}\n" +
                     "  }\n" +
                     "}", e);
           } catch (KerberosKDCConnectionException e) {
@@ -973,11 +1353,11 @@ public class KerberosHelperImpl implements KerberosHelper {
           if (missingCredentials) {
             throw new KerberosMissingAdminCredentialsException(
                 "Invalid KDC administrator credentials.\n" +
-                    "The KDC administrator credentials must be set in session by updating the relevant Cluster resource." +
-                    "This may be done by issuing a PUT to the api/v1/clusters/(cluster name) API entry point with the following payload:\n" +
+                    "The KDC administrator credentials must be set as a persisted or temporary credential resource." +
+                    "This may be done by issuing a POST to the /api/v1/clusters/:clusterName/credentials/kdc.admin.credential API entry point with the following payload:\n" +
                     "{\n" +
-                    "  \"session_attributes\" : {\n" +
-                    "    \"kerberos_admin\" : {\"principal\" : \"(PRINCIPAL)\", \"password\" : \"(PASSWORD)\"}\n" +
+                    "  \"Credential\" : {\n" +
+                    "    \"principal\" : \"(PRINCIPAL)\", \"key\" : \"(PASSWORD)\", \"type\" : \"(persisted|temporary)\"}\n" +
                     "  }\n" +
                     "}"
             );
@@ -999,6 +1379,9 @@ public class KerberosHelperImpl implements KerberosHelper {
    * @param serviceComponentFilter         a Map of service names to component names indicating the relevant
    *                                       set of services and components - if null, no filter is relevant;
    *                                       if empty, the filter indicates no relevant services or components
+   * @param hostFilter                     a set of hostname indicating the set of hosts to process -
+   *                                       if null, no filter is relevant; if empty, the filter indicates no
+   *                                       relevant hosts
    * @param identityFilter                 a Collection of identity names indicating the relevant identities -
    *                                       if null, no filter is relevant; if empty, the filter indicates no
    *                                       relevant identities
@@ -1018,13 +1401,13 @@ public class KerberosHelperImpl implements KerberosHelper {
    *                                               Kerberos-specific configuration details
    */
   @Transactional
-  private RequestStageContainer handle(Cluster cluster,
-                                       KerberosDetails kerberosDetails,
-                                       Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                       Collection<String> identityFilter,
-                                       Set<String> hostsToForceKerberosOperations,
-                                       RequestStageContainer requestStageContainer,
-                                       final Handler handler)
+  RequestStageContainer handle(Cluster cluster,
+                               KerberosDetails kerberosDetails,
+                               Map<String, ? extends Collection<String>> serviceComponentFilter,
+                               Set<String> hostFilter, Collection<String> identityFilter,
+                               Set<String> hostsToForceKerberosOperations,
+                               RequestStageContainer requestStageContainer,
+                               final Handler handler)
       throws AmbariException, KerberosOperationException {
 
     final KerberosDescriptor kerberosDescriptor = getKerberosDescriptor(cluster);
@@ -1034,6 +1417,7 @@ public class KerberosHelperImpl implements KerberosHelper {
         cluster,
         kerberosDescriptor,
         serviceComponentFilter,
+        hostFilter,
         identityFilter,
         new Command<Boolean, ServiceComponentHost>() {
           @Override
@@ -1100,7 +1484,7 @@ public class KerberosHelperImpl implements KerberosHelper {
     // Use the handler implementation to setup the relevant stages.
     handler.createStages(cluster, clusterHostInfoJson,
         hostParamsJson, event, roleCommandOrder, kerberosDetails, dataDirectory,
-        requestStageContainer, schToProcess, serviceComponentFilter, identityFilter,
+        requestStageContainer, schToProcess, serviceComponentFilter, hostFilter, identityFilter,
         hostsWithValidKerberosClient);
 
     // Add the finalize stage...
@@ -1136,25 +1520,6 @@ public class KerberosHelperImpl implements KerberosHelper {
     }
 
     return requestStageContainer;
-  }
-
-  private int filteredIdentitiesCount(List<KerberosIdentityDescriptor> identities, Collection<String> identityFilter) {
-
-    if ((identities == null) || identities.isEmpty()) {
-      return 0;
-    } else if (identityFilter == null) {
-      return identities.size();
-    } else {
-      int count = 0;
-
-      for (KerberosIdentityDescriptor identity : identities) {
-        if (identityFilter.contains(identity.getName())) {
-          count++;
-        }
-      }
-
-      return count;
-    }
   }
 
 
@@ -1243,9 +1608,6 @@ public class KerberosHelperImpl implements KerberosHelper {
             }
           });
 
-          // Get or create the unique service check identifier
-          String serviceCheckId = getKerberosServiceCheckIdentifier(cluster, true);
-
           try {
             // Iterate over the hosts in the cluster to find the components installed in each.  For each
             // component (aka service component host - sch) determine the configuration updates and
@@ -1260,9 +1622,6 @@ public class KerberosHelperImpl implements KerberosHelper {
                 // Calculate the current host-specific configurations. These will be used to replace
                 // variables within the Kerberos descriptor data
                 Map<String, Map<String, String>> configurations = calculateConfigurations(cluster, hostname, kerberosDescriptorProperties);
-
-                // Set the unique service check identifier
-                configurations.get("").put("service_check_id", serviceCheckId);
 
                 // Add a short date value
                 configurations.get("").put("short_date", new SimpleDateFormat("MMddyy").format(new Date()));
@@ -1323,7 +1682,7 @@ public class KerberosHelperImpl implements KerberosHelper {
             }
           }
 
-          // If there are ServiceComponentHosts to process, make sure the administrator credentials
+          // If there are ServiceComponentHosts to process, make sure the administrator credential
           // are available
           if (!serviceComponentHostsToProcess.isEmpty()) {
             try {
@@ -1369,7 +1728,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           handler.createStages(cluster,
               clusterHostInfoJson, hostParamsJson, event, roleCommandOrder, kerberosDetails,
               dataDirectory, requestStageContainer, serviceComponentHostsToProcess,
-              Collections.<String, Collection<String>>emptyMap(), null, hostsWithValidKerberosClient);
+              Collections.<String, Collection<String>>emptyMap(), null, null, hostsWithValidKerberosClient);
 
 
           handler.addFinalizeOperationStage(cluster, clusterHostInfoJson, hostParamsJson, event,
@@ -1658,101 +2017,12 @@ public class KerberosHelperImpl implements KerberosHelper {
                                         Integer timeout) throws AmbariException {
 
     Stage stage = createNewStage(id, cluster, requestId, requestContext, clusterHostInfo, commandParams, hostParams);
-    stage.addServerActionCommand(actionClass.getName(), null,
-        Role.AMBARI_SERVER_ACTION,
-        RoleCommand.EXECUTE,
-        cluster.getClusterName(),
-        event,
-        commandParameters,
-        commandDetail,
-        ambariManagementController.findConfigurationTagsWithOverrides(cluster, null),
-        timeout, false);
+    stage.addServerActionCommand(actionClass.getName(), null, Role.AMBARI_SERVER_ACTION,
+        RoleCommand.EXECUTE, cluster.getClusterName(), event, commandParameters, commandDetail,
+        ambariManagementController.findConfigurationTagsWithOverrides(cluster, null), timeout,
+        false, false);
 
     return stage;
-  }
-
-  /**
-   * Using the session data from the relevant Cluster object, creates a KerberosCredential,
-   * serializes, and than encrypts it.
-   * <p/>
-   * Since the relevant data is stored in the HTTPSession (which relies on ThreadLocalStorage),
-   * it needs to be retrieved now and placed in the action's command parameters so it will be
-   * available when needed.  Because command parameters are stored in plaintext in the Ambari database,
-   * this (sensitive) data needs to be encrypted, however it needs to be done using a key the can be
-   * recreated sometime later when the data needs to be access. Since it is expected that the Cluster
-   * object will be able now and later, the hashcode of this object is used to build the key - it
-   * is expected that the same instance will be retrieved from the Clusters instance, thus yielding
-   * the same hashcode value.
-   * <p/>
-   * If the Ambari server architecture changes, this will need to be revisited.
-   *
-   * @param cluster the relevant Cluster
-   * @return a serialized and encrypted KerberosCredential, or null if administrator data is not found
-   * @throws AmbariException
-   */
-  private String getEncryptedAdministratorCredentials(Cluster cluster) throws AmbariException {
-    String encryptedAdministratorCredentials = null;
-
-    Map<String, Object> sessionAttributes = cluster.getSessionAttributes();
-    if (sessionAttributes != null) {
-      KerberosCredential credential = KerberosCredential.fromMap(sessionAttributes, "kerberos_admin/");
-      if (credential != null) {
-        byte[] key = Integer.toHexString(cluster.hashCode()).getBytes();
-        encryptedAdministratorCredentials = credential.encrypt(key);
-      }
-    }
-
-    return encryptedAdministratorCredentials;
-  }
-
-  /**
-   * Using the session data from the relevant Cluster object, gets the previously stored
-   * Kerberos service check identifier value or creates a new one if indicated to do so.
-   * <p/>
-   * This value is used intended to be used by the KerberosHelper to manage uniquely crated
-   * principals for use in service checks.
-   *
-   * @param cluster the relevant Cluster
-   * @return the previously stored Kerberos service check identifier value, or null if
-   * not previously stored
-   */
-  private String getKerberosServiceCheckIdentifier(Cluster cluster, boolean createIfNull) {
-    Map<String, Object> sessionAttributes = cluster.getSessionAttributes();
-    Object value = (sessionAttributes == null) ? null : sessionAttributes.get(SERVICE_CHECK_IDENTIFIER);
-    String serviceCheckIdentifier = (value instanceof String) ? (String) value : null;
-
-    if ((serviceCheckIdentifier == null) && createIfNull) {
-      // Create a new (ideally) unique(ish) identifier
-      Random random = new Random(System.currentTimeMillis());
-      char[] chars = new char[8];
-
-      for (int i = 0; i < 8; i++) {
-        chars[i] = (char) ((int) 'a' + random.nextInt(26));
-      }
-
-      serviceCheckIdentifier = String.valueOf(chars);
-      setKerberosServiceCheckIdentifier(cluster, serviceCheckIdentifier);
-    }
-
-    return serviceCheckIdentifier;
-  }
-
-  /**
-   * Stores the Kerberos service check identifier value into the session data from the
-   * relevant Cluster object.
-   * <p/>
-   * This value is used intended to be used by the KerberosHelper to manage uniquely crated
-   * principals for use in service checks.
-   *
-   * @param cluster the relevant Cluster
-   * @param value   the Kerberos service check identifier to store or null to clear any previously set value
-   */
-  private void setKerberosServiceCheckIdentifier(Cluster cluster, String value) {
-    if (value == null) {
-      cluster.removeSessionAttribute(SERVICE_CHECK_IDENTIFIER);
-    } else {
-      cluster.setSessionAttribute(SERVICE_CHECK_IDENTIFIER, value);
-    }
   }
 
   /**
@@ -1820,16 +2090,13 @@ public class KerberosHelperImpl implements KerberosHelper {
         : !"false".equalsIgnoreCase(value);
   }
 
-  /**
-   * Given a list of KerberosIdentityDescriptors, returns a Map fo configuration types to property
-   * names and values.
-   * <p/>
-   * The property names and values are not expected to have any variable replacements done.
-   *
-   * @param identityDescriptors a List of KerberosIdentityDescriptor from which to retrieve configurations
-   * @return a Map of configuration types to property name/value pairs (as a Map)
-   */
-  private Map<String, Map<String, String>> getConfigurations(List<KerberosIdentityDescriptor> identityDescriptors) {
+  @Override
+  public boolean getForceToggleKerberosDirective(Map<String, String> requestProperties) {
+    return (requestProperties != null) && "true".equalsIgnoreCase(requestProperties.get(DIRECTIVE_FORCE_TOGGLE_KERBEROS));
+  }
+
+  @Override
+  public Map<String, Map<String, String>> getIdentityConfigurations(List<KerberosIdentityDescriptor> identityDescriptors) {
     Map<String, Map<String, String>> map = new HashMap<String, Map<String, String>>();
 
     if (identityDescriptors != null) {
@@ -1932,6 +2199,130 @@ public class KerberosHelperImpl implements KerberosHelper {
     return identities;
   }
 
+  /**
+   * Determines the existing configurations for the cluster, related to a given hostname (if provided)
+   *
+   * @param cluster  the cluster
+   * @param hostname a hostname
+   * @return a map of the existing configurations
+   * @throws AmbariException
+   */
+  private Map<String, Map<String, String>> calculateExistingConfigurations(Cluster cluster, String hostname) throws AmbariException {
+    // For a configuration type, both tag and an actual configuration can be stored
+    // Configurations from the tag is always expanded and then over-written by the actual
+    // global:version1:{a1:A1,b1:B1,d1:D1} + global:{a1:A2,c1:C1,DELETED_d1:x} ==>
+    // global:{a1:A2,b1:B1,c1:C1}
+    Map<String, Map<String, String>> configurations = new HashMap<String, Map<String, String>>();
+    Map<String, Map<String, String>> configurationTags = ambariManagementController.findConfigurationTagsWithOverrides(cluster, hostname);
+
+    if (configurationTags.get(Configuration.GLOBAL_CONFIG_TAG) != null) {
+      configHelper.applyCustomConfig(
+          configurations, Configuration.GLOBAL_CONFIG_TAG,
+          Configuration.RCA_ENABLED_PROPERTY, "false", false);
+    }
+
+    Map<String, Map<String, String>> configProperties = configHelper.getEffectiveConfigProperties(cluster, configurationTags);
+
+    // Apply the configurations saved with the Execution Cmd on top of
+    // derived configs - This will take care of all the hacks
+    for (Map.Entry<String, Map<String, String>> entry : configProperties.entrySet()) {
+      String type = entry.getKey();
+      Map<String, String> allLevelMergedConfig = entry.getValue();
+      Map<String, String> configuration = configurations.get(type);
+
+      if (configuration == null) {
+        configuration = new HashMap<String, String>(allLevelMergedConfig);
+      } else {
+        Map<String, String> mergedConfig = configHelper.getMergedConfig(allLevelMergedConfig, configuration);
+        configuration.clear();
+        configuration.putAll(mergedConfig);
+      }
+
+      configurations.put(type, configuration);
+    }
+
+    return configurations;
+  }
+
+  /**
+   * Add configurations related to Kerberos, to a previously created map of configurations.
+   * <p/>
+   * The supplied map of configurations is expected to be mutable and will be altered.
+   *
+   * @param cluster                      the cluster
+   * @param configurations               a map of configurations
+   * @param hostname                     a hostname
+   * @param kerberosDescriptorProperties the Kerberos descriptor properties
+   * @return the supplied map of configurations with updates applied
+   * @throws AmbariException
+   */
+  private Map<String, Map<String, String>> addAdditionalConfigurations(Cluster cluster, Map<String, Map<String, String>> configurations,
+                                                                       String hostname, Map<String, String> kerberosDescriptorProperties)
+      throws AmbariException {
+
+    // A map to hold un-categorized properties.  This may come from the KerberosDescriptor
+    // and will also contain a value for the current host
+    Map<String, String> generalProperties = configurations.get("");
+    if (generalProperties == null) {
+      generalProperties = new HashMap<String, String>();
+      configurations.put("", generalProperties);
+    }
+
+    // If any properties are set in the calculated KerberosDescriptor, add them into the
+    // Map of configurations as an un-categorized type (using an empty string)
+    if (kerberosDescriptorProperties != null) {
+      generalProperties.putAll(kerberosDescriptorProperties);
+    }
+
+    if (!StringUtils.isEmpty(hostname)) {
+      // Add the current hostname under "host" and "hostname"
+      generalProperties.put("host", hostname);
+      generalProperties.put("hostname", hostname);
+    }
+
+    // Add the current cluster's name
+    generalProperties.put("cluster_name", cluster.getClusterName());
+
+    // add clusterHostInfo config
+    if (configurations.get("clusterHostInfo") == null) {
+      Map<String, Set<String>> clusterHostInfo = StageUtils.getClusterHostInfo(cluster);
+
+      if (clusterHostInfo != null) {
+        Map<String, String> componentHosts = new HashMap<String, String>();
+
+        clusterHostInfo = StageUtils.substituteHostIndexes(clusterHostInfo);
+
+        for (Map.Entry<String, Set<String>> entry : clusterHostInfo.entrySet()) {
+          componentHosts.put(entry.getKey(), StringUtils.join(entry.getValue(), ","));
+        }
+
+        configurations.put("clusterHostInfo", componentHosts);
+      }
+    }
+
+    return configurations;
+  }
+
+  /**
+   * Creates a deep copy of a map of maps, typically used to copy configuration sets.
+   *
+   * @param map the map to copy
+   * @return a deep copy of the supplied map
+   */
+  private Map<String, Map<String, String>> deepCopy(Map<String, Map<String, String>> map) {
+    if (map == null) {
+      return null;
+    } else {
+      Map<String, Map<String, String>> copy = new HashMap<String, Map<String, String>>();
+
+      for (Map.Entry<String, Map<String, String>> entry : map.entrySet()) {
+        Map<String, String> innerMap = entry.getValue();
+        copy.put(entry.getKey(), (innerMap == null) ? null : new HashMap<String, String>(innerMap));
+      }
+
+      return copy;
+    }
+  }
 
   /* ********************************************************************************************
    * Helper classes and enums
@@ -2007,6 +2398,9 @@ public class KerberosHelperImpl implements KerberosHelper {
      * @param serviceComponentFilter a Map of service names to component names indicating the relevant
      *                               set of services and components - if null, no filter is relevant;
      *                               if empty, the filter indicates no relevant services or components
+     * @param hostFilter             a set of hostname indicating the set of hosts to process -
+     *                               if null, no filter is relevant; if empty, the filter indicates no
+     *                               relevant hosts
      * @param identityFilter         a Collection of identity names indicating the relevant identities -
      *                               if null, no filter is relevant; if empty, the filter indicates no
      *                               relevant identities
@@ -2020,7 +2414,9 @@ public class KerberosHelperImpl implements KerberosHelper {
                                KerberosDetails kerberosDetails, File dataDirectory,
                                RequestStageContainer requestStageContainer,
                                List<ServiceComponentHost> serviceComponentHosts,
-                               Map<String, ? extends Collection<String>> serviceComponentFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
+                               Map<String, ? extends Collection<String>> serviceComponentFilter,
+                               Set<String> hostFilter, Collection<String> identityFilter,
+                               Set<String> hostsWithValidKerberosClient)
         throws AmbariException;
 
 
@@ -2040,7 +2436,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Preparing Operations",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2063,7 +2459,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Preparing Operations",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2086,7 +2482,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Preparing Operations",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2109,7 +2505,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Create Principals",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2132,7 +2528,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Destroy Principals",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2155,7 +2551,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Create Keytabs",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2193,7 +2589,8 @@ public class KerberosHelperImpl implements KerberosHelper {
             "SET_KEYTAB",
             requestResourceFilters,
             requestParams);
-        customCommandExecutionHelper.addExecutionCommandsToStage(actionExecContext, stage, requestParams, false);
+        customCommandExecutionHelper.addExecutionCommandsToStage(actionExecContext, stage,
+            requestParams);
       }
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
@@ -2260,7 +2657,8 @@ public class KerberosHelperImpl implements KerberosHelper {
               "REMOVE_KEYTAB",
               requestResourceFilters,
               requestParams);
-          customCommandExecutionHelper.addExecutionCommandsToStage(actionExecContext, stage, requestParams, false);
+          customCommandExecutionHelper.addExecutionCommandsToStage(actionExecContext, stage,
+              requestParams);
         }
       }
 
@@ -2285,7 +2683,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Update Service Configurations",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2338,7 +2736,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           event,
           commandParameters,
           "Kerberization Clean Up",
-          1200);
+          configuration.getDefaultServerTaskTimeout());
 
       RoleGraph roleGraph = roleGraphFactory.createNew(roleCommandOrder);
       roleGraph.build(stage);
@@ -2365,9 +2763,7 @@ public class KerberosHelperImpl implements KerberosHelper {
   private class EnableKerberosHandler extends Handler {
     @Override
     public boolean shouldProcess(SecurityState desiredSecurityState, ServiceComponentHost sch) throws AmbariException {
-      return (desiredSecurityState == SecurityState.SECURED_KERBEROS) &&
-          (sch.getSecurityState() != SecurityState.SECURED_KERBEROS) &&
-          (sch.getSecurityState() != SecurityState.SECURING);
+      return (desiredSecurityState == SecurityState.SECURED_KERBEROS);
     }
 
     @Override
@@ -2392,7 +2788,8 @@ public class KerberosHelperImpl implements KerberosHelper {
                              RoleCommandOrder roleCommandOrder, KerberosDetails kerberosDetails,
                              File dataDirectory, RequestStageContainer requestStageContainer,
                              List<ServiceComponentHost> serviceComponentHosts,
-                             Map<String, ? extends Collection<String>> serviceComponentFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
+                             Map<String, ? extends Collection<String>> serviceComponentFilter,
+                             Set<String> hostFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
         throws AmbariException {
       // If there are principals, keytabs, and configurations to process, setup the following sages:
       //  1) prepare identities
@@ -2421,6 +2818,9 @@ public class KerberosHelperImpl implements KerberosHelper {
       if (serviceComponentFilter != null) {
         commandParameters.put(KerberosServerAction.SERVICE_COMPONENT_FILTER, StageUtils.getGson().toJson(serviceComponentFilter));
       }
+      if (hostFilter != null) {
+        commandParameters.put(KerberosServerAction.HOST_FILTER, StageUtils.getGson().toJson(hostFilter));
+      }
       if (identityFilter != null) {
         commandParameters.put(KerberosServerAction.IDENTITY_FILTER, StageUtils.getGson().toJson(identityFilter));
       }
@@ -2432,7 +2832,6 @@ public class KerberosHelperImpl implements KerberosHelper {
 
       if (kerberosDetails.manageIdentities()) {
         commandParameters.put(KerberosServerAction.KDC_TYPE, kerberosDetails.getKdcType().name());
-        commandParameters.put(KerberosServerAction.ADMINISTRATOR_CREDENTIAL, getEncryptedAdministratorCredentials(cluster));
 
         // *****************************************************************
         // Create stage to create principals
@@ -2505,7 +2904,7 @@ public class KerberosHelperImpl implements KerberosHelper {
                              RoleCommandOrder roleCommandOrder, KerberosDetails kerberosDetails,
                              File dataDirectory, RequestStageContainer requestStageContainer,
                              List<ServiceComponentHost> serviceComponentHosts,
-                             Map<String, ? extends Collection<String>> serviceComponentFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient) throws AmbariException {
+                             Map<String, ? extends Collection<String>> serviceComponentFilter, Set<String> hostFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient) throws AmbariException {
       //  1) revert configurations
 
       // If a RequestStageContainer does not already exist, create a new one...
@@ -2528,6 +2927,9 @@ public class KerberosHelperImpl implements KerberosHelper {
       if (serviceComponentFilter != null) {
         commandParameters.put(KerberosServerAction.SERVICE_COMPONENT_FILTER, StageUtils.getGson().toJson(serviceComponentFilter));
       }
+      if (hostFilter != null) {
+        commandParameters.put(KerberosServerAction.HOST_FILTER, StageUtils.getGson().toJson(hostFilter));
+      }
       if (identityFilter != null) {
         commandParameters.put(KerberosServerAction.IDENTITY_FILTER, StageUtils.getGson().toJson(identityFilter));
       }
@@ -2544,7 +2946,6 @@ public class KerberosHelperImpl implements KerberosHelper {
 
       if (kerberosDetails.manageIdentities()) {
         commandParameters.put(KerberosServerAction.KDC_TYPE, kerberosDetails.getKdcType().name());
-        commandParameters.put(KerberosServerAction.ADMINISTRATOR_CREDENTIAL, getEncryptedAdministratorCredentials(cluster));
 
         // *****************************************************************
         // Create stage to remove principals
@@ -2635,7 +3036,8 @@ public class KerberosHelperImpl implements KerberosHelper {
                              RoleCommandOrder roleCommandOrder, KerberosDetails kerberosDetails,
                              File dataDirectory, RequestStageContainer requestStageContainer,
                              List<ServiceComponentHost> serviceComponentHosts,
-                             Map<String, ? extends Collection<String>> serviceComponentFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
+                             Map<String, ? extends Collection<String>> serviceComponentFilter,
+                             Set<String> hostFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
         throws AmbariException {
       // If there are principals and keytabs to process, setup the following sages:
       //  1) prepare identities
@@ -2663,13 +3065,16 @@ public class KerberosHelperImpl implements KerberosHelper {
       if (serviceComponentFilter != null) {
         commandParameters.put(KerberosServerAction.SERVICE_COMPONENT_FILTER, StageUtils.getGson().toJson(serviceComponentFilter));
       }
+      if (hostFilter != null) {
+        commandParameters.put(KerberosServerAction.HOST_FILTER, StageUtils.getGson().toJson(hostFilter));
+      }
       if (identityFilter != null) {
         commandParameters.put(KerberosServerAction.IDENTITY_FILTER, StageUtils.getGson().toJson(identityFilter));
       }
 
       commandParameters.put(KerberosServerAction.REGENERATE_ALL, (regenerateAllKeytabs) ? "true" : "false");
 
-      if(updateConfigurations) {
+      if (updateConfigurations) {
         commandParameters.put(KerberosServerAction.UPDATE_CONFIGURATION_NOTE, "Updated Kerberos-related configurations");
         commandParameters.put(KerberosServerAction.UPDATE_CONFIGURATIONS, "true");
       }
@@ -2681,7 +3086,6 @@ public class KerberosHelperImpl implements KerberosHelper {
 
       if (kerberosDetails.manageIdentities()) {
         commandParameters.put(KerberosServerAction.KDC_TYPE, kerberosDetails.getKdcType().name());
-        commandParameters.put(KerberosServerAction.ADMINISTRATOR_CREDENTIAL, getEncryptedAdministratorCredentials(cluster));
 
         // *****************************************************************
         // Create stage to create principals
@@ -2699,7 +3103,7 @@ public class KerberosHelperImpl implements KerberosHelper {
             hostParamsJson, commandParameters, roleCommandOrder, requestStageContainer, hostsWithValidKerberosClient);
       }
 
-      if(updateConfigurations) {
+      if (updateConfigurations) {
         // *****************************************************************
         // Create stage to update configurations of services
         addUpdateConfigurationsStage(cluster, clusterHostInfoJson, hostParamsJson, event, commandParameters,
@@ -2749,7 +3153,7 @@ public class KerberosHelperImpl implements KerberosHelper {
                              RoleCommandOrder roleCommandOrder, KerberosDetails kerberosDetails,
                              File dataDirectory, RequestStageContainer requestStageContainer,
                              List<ServiceComponentHost> serviceComponentHosts,
-                             Map<String, ? extends Collection<String>> serviceComponentFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
+                             Map<String, ? extends Collection<String>> serviceComponentFilter, Set<String> hostFilter, Collection<String> identityFilter, Set<String> hostsWithValidKerberosClient)
         throws AmbariException {
 
       // If a RequestStageContainer does not already exist, create a new one...
@@ -2776,12 +3180,14 @@ public class KerberosHelperImpl implements KerberosHelper {
         if (serviceComponentFilter != null) {
           commandParameters.put(KerberosServerAction.SERVICE_COMPONENT_FILTER, StageUtils.getGson().toJson(serviceComponentFilter));
         }
+        if (hostFilter != null) {
+          commandParameters.put(KerberosServerAction.HOST_FILTER, StageUtils.getGson().toJson(hostFilter));
+        }
         if (identityFilter != null) {
           commandParameters.put(KerberosServerAction.IDENTITY_FILTER, StageUtils.getGson().toJson(identityFilter));
         }
 
         commandParameters.put(KerberosServerAction.KDC_TYPE, kerberosDetails.getKdcType().name());
-        commandParameters.put(KerberosServerAction.ADMINISTRATOR_CREDENTIAL, getEncryptedAdministratorCredentials(cluster));
 
         // *****************************************************************
         // Create stage to create principals

@@ -19,14 +19,24 @@
 var App = require('app');
 var setups = require('test/init_model_test');
 
+function getController() {
+  return App.KerberosWizardStep2Controller.create({});
+}
+
 describe('App.KerberosWizardStep2Controller', function() {
+
+  App.TestAliases.testAsComputedAlias(getController(), 'isBackBtnDisabled', 'testConnectionInProgress', 'boolean');
+
+  App.TestAliases.testAsComputedAlias(getController(), 'hostNames', 'App.allHostNames');
+
+  App.TestAliases.testAsComputedAlias(getController(), 'isConfigsLoaded', 'wizardController.stackConfigsLoaded', 'boolean');
 
   describe('#createKerberosSiteObj', function() {
     var controller;
 
     beforeEach(function() {
       setups.setupStackVersion(this, 'HDP-2.3');
-      controller = App.KerberosWizardStep2Controller.create({});
+      controller = getController();
       sinon.stub(controller, 'tweakKdcTypeValue', Em.K);
       sinon.stub(controller, 'tweakManualKdcProperties', Em.K);
     });
@@ -37,26 +47,26 @@ describe('App.KerberosWizardStep2Controller', function() {
       controller.tweakManualKdcProperties.restore();
     });
 
-    var _createProperty = function(name, value) {
+    var _createProperty = function(name, value, displayType) {
       var preDefProp = App.config.get('preDefinedSiteProperties').findProperty('name', name);
       if (preDefProp) {
         return App.ServiceConfigProperty.create(
           $.extend(true, {}, preDefProp, {
             value: value, filename: 'some-site.xml',
-            isRequiredByAgent: preDefProp.isRequiredByAgent == undefined ? true : preDefProp.isRequiredByAgent
+            'displayType': displayType,
+            isRequiredByAgent: preDefProp.isRequiredByAgent === undefined ? true : preDefProp.isRequiredByAgent
           }));
-      } else {
-        return App.ServiceConfigProperty.create({name: name, value: value, isRequiredByAgent: true, filename: 'some-site.xml'});
       }
+      return App.ServiceConfigProperty.create({name: name, value: value, isRequiredByAgent: true, filename: 'some-site.xml'});
     };
 
     var tests = [
       {
         stepConfigs: [
-          ['realm', ' SPACES '],
-          ['admin_server_host', ' space_left'],
-          ['kdc_host', ' space_left_and_right '],
-          ['ldap_url', 'space_right ']
+          ['realm', ' SPACES ', 'host'],
+          ['admin_server_host', ' space_left', 'host'],
+          ['kdc_host', ' space_left_and_right ', 'host'],
+          ['ldap_url', 'space_right ', 'host']
         ],
         e: {
           realm: 'SPACES',
@@ -68,19 +78,30 @@ describe('App.KerberosWizardStep2Controller', function() {
     ];
 
     tests.forEach(function(test) {
-      it('Should trim values for properties ' + Em.keys(test.e).join(','), function() {
-        sinon.stub(App.StackService, 'find').returns([Em.Object.create({serviceName: 'KERBEROS'})]);
-        controller.set('stepConfigs', [
-          App.ServiceConfig.create({
-            configs: test.stepConfigs.map(function(item) { return _createProperty(item[0], item[1]); })
-          })
-        ]);
-        var result = controller.createKerberosSiteObj('some-site', 'random-tag');
-        App.StackService.find.restore();
+      describe('Should trim values for properties ' + Em.keys(test.e).join(','), function() {
+        var result;
+
+        beforeEach(function () {
+          sinon.stub(App.StackService, 'find').returns([Em.Object.create({serviceName: 'KERBEROS'})]);
+          controller.set('stepConfigs', [
+            App.ServiceConfig.create({
+              configs: test.stepConfigs.map(function(item) { return _createProperty(item[0], item[1], item[2]); })
+            })
+          ]);
+          result = controller.createKerberosSiteObj('some-site', 'random-tag');
+        });
+
+        afterEach(function () {
+          App.StackService.find.restore();
+        });
+
         Em.keys(test.e).forEach(function(propertyName) {
-          expect(result.properties[propertyName]).to.be.eql(test.e[propertyName]);
+          it(propertyName, function () {
+            expect(result.properties[propertyName]).to.be.eql(test.e[propertyName]);
+          });
         });
       });
     });
   });
+
 });

@@ -32,15 +32,9 @@ App.HBaseRegionsInTransitionView = App.TextDashboardWidgetView.extend({
   }.property("model.regionsInTransition"),
 
   classNameBindings: ['isRed', 'isOrange', 'isGreen', 'isNA'],
-  isGreen: function () {
-    return this.get('data') <= this.get('thresh1');
-  }.property('data','thresh1'),
-  isOrange: function () {
-    return (this.get('data') <= this.get('thresh2') && this.get('data') > this.get('thresh1') );
-  }.property('data','thresh1','thresh2'),
-  isRed: function () {
-    return this.get('data') > this.get('thresh2');
-  }.property('data','thresh2'),
+  isGreen: Em.computed.lteProperties('data', 'thresh1'),
+  isRed: Em.computed.gtProperties('data', 'thresh2'),
+  isOrange: Em.computed.and('!isGreen', '!isRed'),
   isNA: function () {
     return this.get('data') === null;
   }.property('data'),
@@ -49,9 +43,7 @@ App.HBaseRegionsInTransitionView = App.TextDashboardWidgetView.extend({
   thresh2: 2,
   maxValue: 'infinity',
 
-  data: function () {
-    return this.get('model.regionsInTransition');
-  }.property("model.regionsInTransition"),
+  data: Em.computed.alias('model.regionsInTransition'),
 
   content: function (){
     return this.get('data') + "";

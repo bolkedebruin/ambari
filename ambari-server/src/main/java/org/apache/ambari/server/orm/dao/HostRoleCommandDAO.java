@@ -31,11 +31,23 @@ import java.util.Map;
 
 import javax.persistence.EntityManager;
 import javax.persistence.TypedQuery;
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.criteria.Order;
+import javax.persistence.metamodel.SingularAttribute;
 
+import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
+import org.apache.ambari.server.api.query.JpaPredicateVisitor;
+import org.apache.ambari.server.api.query.JpaSortBuilder;
+import org.apache.ambari.server.controller.spi.PageRequest;
+import org.apache.ambari.server.controller.spi.Predicate;
+import org.apache.ambari.server.controller.spi.Request;
+import org.apache.ambari.server.controller.spi.SortRequest;
+import org.apache.ambari.server.controller.utilities.PredicateHelper;
 import org.apache.ambari.server.orm.RequiresSession;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
+import org.apache.ambari.server.orm.entities.HostRoleCommandEntity_;
 import org.apache.ambari.server.orm.entities.StageEntity;
 
 import com.google.common.collect.Lists;
@@ -62,7 +74,8 @@ public class HostRoleCommandDAO {
       "SUM(CASE WHEN hrc.status = :in_progress THEN 1 ELSE 0 END), " +
       "SUM(CASE WHEN hrc.status = :pending THEN 1 ELSE 0 END), " +
       "SUM(CASE WHEN hrc.status = :queued THEN 1 ELSE 0 END), " +
-      "SUM(CASE WHEN hrc.status = :timedout THEN 1 ELSE 0 END)" +
+      "SUM(CASE WHEN hrc.status = :timedout THEN 1 ELSE 0 END)," +
+      "SUM(CASE WHEN hrc.status = :skipped_failed THEN 1 ELSE 0 END)" +
       ") FROM HostRoleCommandEntity hrc " +
       " GROUP BY hrc.requestId, hrc.stageId HAVING hrc.requestId = :requestId",
       HostRoleCommandStatusSummaryDTO.class.getName());
@@ -195,6 +208,15 @@ public class HostRoleCommandDAO {
     return daoUtils.selectList(query, role, status);
   }
 
+  @RequiresSession
+  public List<HostRoleCommandEntity> findSortedCommandsByRequestIdAndCustomCommandName(Long requestId, String customCommandName) {
+    TypedQuery<HostRoleCommandEntity> query = entityManagerProvider.get().createQuery("SELECT hostRoleCommand " +
+        "FROM HostRoleCommandEntity hostRoleCommand " +
+        "WHERE hostRoleCommand.requestId=?1 AND hostRoleCommand.customCommandName=?2 " +
+        "ORDER BY hostRoleCommand.taskId", HostRoleCommandEntity.class);
+    return daoUtils.selectList(query, requestId, customCommandName);
+  }
+
 
   @RequiresSession
   public List<HostRoleCommandEntity> findSortedCommandsByStageAndHost(StageEntity stageEntity, HostEntity hostEntity) {
@@ -312,6 +334,35 @@ public class HostRoleCommandDAO {
   }
 
   /**
+   * Finds all the {@link HostRoleCommandEntity}s for the given request that are
+   * between the specified stage IDs and have the specified status.
+   *
+   * @param requestId
+   *          the request ID
+   * @param status
+   *          the command status to query for (not {@code null}).
+   * @param minStageId
+   *          the lowest stage ID to requests tasks for.
+   * @param maxStageId
+   *          the highest stage ID to request tasks for.
+   * @return the tasks that satisfy the specified parameters.
+   */
+  @RequiresSession
+  public List<HostRoleCommandEntity> findByStatusBetweenStages(long requestId,
+      HostRoleStatus status, long minStageId, long maxStageId) {
+
+    TypedQuery<HostRoleCommandEntity> query = entityManagerProvider.get().createNamedQuery(
+        "HostRoleCommandEntity.findByStatusBetweenStages", HostRoleCommandEntity.class);
+
+    query.setParameter("requestId", requestId);
+    query.setParameter("status", status);
+    query.setParameter("minStageId", minStageId);
+    query.setParameter("maxStageId", maxStageId);
+
+    return daoUtils.selectList(query);
+  }
+
+  /**
    * Gets requests that have tasks in any of the specified statuses.
    *
    * @param statuses
@@ -413,7 +464,7 @@ public class HostRoleCommandDAO {
   /**
    * Finds the counts of tasks for a request and groups them by stage id.
    * This allows for very efficient loading when there are a huge number of stages
-   * and tasks to iterate (for example, during a Rolling Upgrade).
+   * and tasks to iterate (for example, during a Stack Upgrade).
    * @param requestId the request id
    * @return the map of stage-to-summary objects
    */
@@ -434,6 +485,7 @@ public class HostRoleCommandDAO {
     query.setParameter("pending", HostRoleStatus.PENDING);
     query.setParameter("queued", HostRoleStatus.QUEUED);
     query.setParameter("timedout", HostRoleStatus.TIMEDOUT);
+    query.setParameter("skipped_failed", HostRoleStatus.SKIPPED_FAILED);
 
     Map<Long, HostRoleCommandStatusSummaryDTO> map = new HashMap<Long, HostRoleCommandStatusSummaryDTO>();
 
@@ -442,5 +494,130 @@ public class HostRoleCommandDAO {
     }
 
     return map;
+  }
+
+  /**
+   * Updates the {@link HostRoleCommandEntity#isFailureAutoSkipped()} flag for
+   * all commands for the given request.
+   * <p/>
+   * This will update each entity to ensure that the cache is maintained in a
+   * correct state. A batch update doesn't always reflect in JPA-managed
+   * entities.
+   * <p/>
+   * Stages which do not support automatically skipped commands will be updated
+   * with a value of {@code false}.
+   *
+   * @param requestId
+   *          the request ID of the commands to update
+   * @param skipOnFailure
+   *          {@code true} to automatically skip failures, {@code false}
+   *          otherwise.
+   * @param skipOnServiceCheckFailure
+   *          {@code true} to skip service check failures
+   *
+   * @see StageEntity#isAutoSkipOnFailureSupported()
+   */
+  @Transactional
+  public void updateAutomaticSkipOnFailure(long requestId,
+      boolean skipOnFailure, boolean skipOnServiceCheckFailure) {
+
+    List<HostRoleCommandEntity> tasks = findByRequest(requestId);
+    for (HostRoleCommandEntity task : tasks) {
+      // if the stage does not support automatically skipping its commands, then
+      // do nothing
+      StageEntity stage = task.getStage();
+
+      boolean isStageSkippable = stage.isSkippable();
+      boolean isAutoSkipSupportedOnStage = stage.isAutoSkipOnFailureSupported();
+
+      // if the stage is not skippable or it does not support auto skip
+      if (!isStageSkippable || !isAutoSkipSupportedOnStage) {
+        task.setAutoSkipOnFailure(false);
+      } else {
+        if (task.getRoleCommand() == RoleCommand.SERVICE_CHECK) {
+          task.setAutoSkipOnFailure(skipOnServiceCheckFailure);
+        } else {
+          task.setAutoSkipOnFailure(skipOnFailure);
+        }
+      }
+
+      // save changes
+      merge(task);
+    }
+  }
+
+  /**
+   * Finds all {@link HostRoleCommandEntity} that match the provided predicate.
+   * This method will make JPA do the heavy lifting of providing a slice of the
+   * result set.
+   *
+   * @param request
+   * @return
+   */
+  @RequiresSession
+  public List<HostRoleCommandEntity> findAll(Request request, Predicate predicate) {
+    EntityManager entityManager = entityManagerProvider.get();
+
+    // convert the Ambari predicate into a JPA predicate
+    HostRoleCommandPredicateVisitor visitor = new HostRoleCommandPredicateVisitor();
+    PredicateHelper.visit(predicate, visitor);
+
+    CriteriaQuery<HostRoleCommandEntity> query = visitor.getCriteriaQuery();
+    javax.persistence.criteria.Predicate jpaPredicate = visitor.getJpaPredicate();
+
+    if (null != jpaPredicate) {
+      query.where(jpaPredicate);
+    }
+
+    // sorting
+    SortRequest sortRequest = request.getSortRequest();
+    if (null != sortRequest) {
+      JpaSortBuilder<HostRoleCommandEntity> sortBuilder = new JpaSortBuilder<HostRoleCommandEntity>();
+      List<Order> sortOrders = sortBuilder.buildSortOrders(sortRequest, visitor);
+      query.orderBy(sortOrders);
+    }
+
+    TypedQuery<HostRoleCommandEntity> typedQuery = entityManager.createQuery(query);
+
+    // pagination
+    PageRequest pagination = request.getPageRequest();
+    if (null != pagination) {
+      typedQuery.setFirstResult(pagination.getOffset());
+      typedQuery.setMaxResults(pagination.getPageSize());
+    }
+
+    return daoUtils.selectList(typedQuery);
+  }
+
+  /**
+   * The {@link HostRoleCommandPredicateVisitor} is used to convert an Ambari
+   * {@link Predicate} into a JPA {@link javax.persistence.criteria.Predicate}.
+   */
+  private final class HostRoleCommandPredicateVisitor
+      extends JpaPredicateVisitor<HostRoleCommandEntity> {
+
+    /**
+     * Constructor.
+     *
+     */
+    public HostRoleCommandPredicateVisitor() {
+      super(entityManagerProvider.get(), HostRoleCommandEntity.class);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Class<HostRoleCommandEntity> getEntityClass() {
+      return HostRoleCommandEntity.class;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public List<? extends SingularAttribute<?, ?>> getPredicateMapping(String propertyId) {
+      return HostRoleCommandEntity_.getPredicateMapping().get(propertyId);
+    }
   }
 }

@@ -27,18 +27,19 @@ from ambari_commons.logging_utils import get_debug_mode, print_warning_msg, prin
 from ambari_commons.os_check import OSConst
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons.os_utils import is_root
-from ambari_server.dbConfiguration import ensure_dbms_is_running, ensure_jdbc_driver_is_installed, \
-  get_native_libs_path, get_jdbc_driver_path
-from ambari_server.serverConfiguration import configDefaults, find_jdk, get_ambari_classpath, get_ambari_properties, \
+from ambari_server.dbConfiguration import ensure_dbms_is_running, ensure_jdbc_driver_is_installed
+from ambari_server.serverConfiguration import configDefaults, find_jdk, get_ambari_properties, \
   get_conf_dir, get_is_persisted, get_is_secure, get_java_exe_path, get_original_master_key, read_ambari_user, \
+  get_is_active_instance, \
   PID_NAME, SECURITY_KEY_ENV_VAR_NAME, SECURITY_MASTER_KEY_LOCATION, \
-  SETUP_OR_UPGRADE_MSG, check_database_name_property, parse_properties_file
+  SETUP_OR_UPGRADE_MSG, check_database_name_property, parse_properties_file, get_missing_properties
 from ambari_server.serverUtils import refresh_stack_hash
 from ambari_server.setupHttps import get_fqdn
 from ambari_server.setupSecurity import generate_env, \
   ensure_can_start_under_current_user
 from ambari_server.utils import check_reverse_lookup, save_pid, locate_file, looking_for_pid, wait_for_pid, \
   save_main_pid_ex, check_exitcode
+from ambari_server.serverClassPath import ServerClassPath
 
 
 # debug settings
@@ -54,6 +55,9 @@ if ambari_provider_module is not None:
 
 jvm_args = os.getenv('AMBARI_JVM_ARGS', '-Xms512m -Xmx2048m')
 
+ENV_FOREGROUND_KEY = "AMBARI_SERVER_RUN_IN_FOREGROUND"
+IS_FOREGROUND = ENV_FOREGROUND_KEY in os.environ and os.environ[ENV_FOREGROUND_KEY].lower() == "true"
+
 SERVER_START_CMD = "{0} " \
     "-server -XX:NewRatio=3 " \
     "-XX:+UseConcMarkSweepGC " + \
@@ -62,7 +66,7 @@ SERVER_START_CMD = "{0} " \
     "{1} {2} " \
     "-cp {3} "\
     "org.apache.ambari.server.controller.AmbariServer " \
-    "> {4} 2>&1 || echo $? > {5} &"
+    "> {4} 2>&1 || echo $? > {5}"
 SERVER_START_CMD_DEBUG = "{0} " \
     "-server -XX:NewRatio=2 " \
     "-XX:+UseConcMarkSweepGC " + \
@@ -71,7 +75,11 @@ SERVER_START_CMD_DEBUG = "{0} " \
     "server=y,suspend={6} " \
     "-cp {3} " + \
     "org.apache.ambari.server.controller.AmbariServer " \
-    "> {4} 2>&1 || echo $? > {5} &"
+    "> {4} 2>&1 || echo $? > {5}"
+    
+if not IS_FOREGROUND:
+  SERVER_START_CMD += " &"
+  SERVER_START_CMD_DEBUG += " &"
 
 SERVER_START_CMD_WINDOWS = "{0} " \
     "-server -XX:NewRatio=3 " \
@@ -93,9 +101,6 @@ SERVER_START_TIMEOUT = 10
 
 SERVER_PING_TIMEOUT_WINDOWS = 5
 SERVER_PING_ATTEMPTS_WINDOWS = 4
-
-SERVER_CLASSPATH_KEY = "SERVER_CLASSPATH"
-LIBRARY_PATH_KEY = "LD_LIBRARY_PATH"
 
 SERVER_SEARCH_PATTERN = "org.apache.ambari.server.controller.AmbariServer"
 
@@ -201,7 +206,7 @@ def wait_for_server_start(pidFile, scmStatus):
   else:
     save_main_pid_ex(pids, pidFile, [locate_file('sh', '/bin'),
                                      locate_file('bash', '/bin'),
-                                     locate_file('dash', '/bin')], True)
+                                     locate_file('dash', '/bin')], True, IS_FOREGROUND)
 
 
 def server_process_main(options, scmStatus=None):
@@ -219,6 +224,12 @@ def server_process_main(options, scmStatus=None):
   check_database_name_property()
   parse_properties_file(options)
 
+  is_active_instance = get_is_active_instance()
+  if not is_active_instance:
+      print_warning_msg("This instance of ambari server is not designated as active. Cannot start ambari server.")
+      err = "This is not an active instance. Shutting down..."
+      raise FatalException(1, err)
+
   ambari_user = read_ambari_user()
   current_user = ensure_can_start_under_current_user(ambari_user)
 
@@ -232,6 +243,13 @@ def server_process_main(options, scmStatus=None):
     raise FatalException(1, err)
 
   properties = get_ambari_properties()
+
+  if not options.skip_properties_validation:
+    missing_properties = get_missing_properties(properties)
+    if missing_properties:
+      err = "Required properties are not found: " + str(missing_properties) + ". To skip properties validation " \
+            "use \"--skip-properties-validation\""
+      raise FatalException(1, err)
 
   # Preparations
   if is_root():
@@ -256,36 +274,41 @@ def server_process_main(options, scmStatus=None):
 
   java_exe = get_java_exe_path()
 
-  class_path = get_conf_dir()
-  class_path = os.path.abspath(class_path) + os.pathsep + get_ambari_classpath()
-  jdbc_driver_path = get_jdbc_driver_path(options, properties)
-  if jdbc_driver_path not in class_path:
-    class_path = class_path + os.pathsep + jdbc_driver_path
-
-  if SERVER_CLASSPATH_KEY in os.environ:
-      class_path =  os.environ[SERVER_CLASSPATH_KEY] + os.pathsep + class_path
-
-  native_libs_path = get_native_libs_path(options, properties)
-  if native_libs_path is not None:
-    if LIBRARY_PATH_KEY in os.environ:
-      native_libs_path = os.environ[LIBRARY_PATH_KEY] + os.pathsep + native_libs_path
-    os.environ[LIBRARY_PATH_KEY] = native_libs_path
+  serverClassPath = ServerClassPath(properties, options)
 
   debug_mode = get_debug_mode()
   debug_start = (debug_mode & 1) or SERVER_START_DEBUG
   suspend_start = (debug_mode & 2) or SUSPEND_START_MODE
   suspend_mode = 'y' if suspend_start else 'n'
 
+  if options.skip_database_validation:
+    global jvm_args
+    jvm_args += " -DskipDatabaseConsistencyValidation"
+
   param_list = generate_child_process_param_list(ambari_user, java_exe,
-                                                 class_path, debug_start,
+                                                 serverClassPath.get_full_ambari_classpath_escaped_for_shell(), debug_start,
                                                  suspend_mode)
-  environ = generate_env(ambari_user, current_user)
+  environ = generate_env(options, ambari_user, current_user)
 
   if not os.path.exists(configDefaults.PID_DIR):
     os.makedirs(configDefaults.PID_DIR, 0755)
 
+  # The launched shell process and sub-processes should have a group id that
+  # is different from the parent.
+  def make_process_independent():
+    if IS_FOREGROUND: # upstart script is not able to track process from different pgid.
+      return
+    
+    processId = os.getpid()
+    if processId > 0:
+      try:
+        os.setpgid(processId, processId)
+      except OSError, e:
+        print_warning_msg('setpgid({0}, {0}) failed - {1}'.format(pidJava, str(e)))
+        pass
+
   print_info_msg("Running server: " + str(param_list))
-  procJava = subprocess.Popen(param_list, env=environ)
+  procJava = subprocess.Popen(param_list, env=environ, preexec_fn=make_process_independent)
 
   pidJava = procJava.pid
   if pidJava <= 0:
@@ -309,5 +332,8 @@ def server_process_main(options, scmStatus=None):
 
   if scmStatus is not None:
     scmStatus.reportStarted()
+    
+  if IS_FOREGROUND:
+    procJava.communicate()
 
   return procJava

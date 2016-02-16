@@ -125,7 +125,7 @@ class TestRangerUsersync(RMFTestCase):
                               environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_67'},
                               sudo = True
     )
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'ranger-usersync', '2.2.2.0-2399'), sudo=True)
+    self.assertResourceCalled("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'ranger-usersync', '2.2.2.0-2399'), sudo=True)
 
   @patch("setup_ranger.setup_usersync")
   def test_upgrade_23(self, setup_usersync_mock):
@@ -141,28 +141,36 @@ class TestRangerUsersync(RMFTestCase):
                        config_dict = json_content,
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
-                       call_mocks = [(0, None), (0, None)],
+                       call_mocks = [(0, None, ''), (0, None)],
                        mocks_dict = mocks_dict)
 
     self.assertTrue(setup_usersync_mock.called)
     self.assertResourceCalled("Execute", ("/usr/bin/ranger-usersync-stop",),
                               environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_67'},
                               sudo = True)
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'ranger-usersync', '2.3.0.0-1234'), sudo=True)
+    self.assertResourceCalledIgnoreEarlier("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'ranger-usersync', '2.3.0.0-1234'), sudo=True)
 
     self.assertEquals(2, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'ranger-usersync', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'ranger-usersync', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'ranger-usersync', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'ranger-usersync', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
 
   def assert_configure_default(self):
     self.assertResourceCalled('PropertiesFile', '/usr/hdp/current/ranger-usersync/install.properties',
         properties = self.getConfig()['configurations']['usersync-properties'],
     )
+
+    custom_config=dict()
+    custom_config['unix_user'] = "ranger"
+    custom_config['unix_group'] = "ranger"
+    self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-usersync/install.properties',
+        properties = custom_config,
+    )
+
     self.assertResourceCalled('Execute', 'cd /usr/hdp/current/ranger-usersync && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/hdp/current/ranger-usersync/setup.sh',
         logoutput = True,
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
@@ -176,11 +184,22 @@ class TestRangerUsersync(RMFTestCase):
     self.assertResourceCalled('File', '/usr/hdp/current/ranger-usersync/ranger-usersync-services.sh',
         mode = 0755,
     )
+    self.assertResourceCalled('Directory', '/var/log/ranger/usersync',
+        owner = custom_config['unix_user'],
+        group = custom_config['unix_group']
+    )
+
       
   def assert_configure_secured(self):
     self.assertResourceCalled('PropertiesFile', '/usr/hdp/current/ranger-usersync/install.properties',
         properties = self.getConfig()['configurations']['usersync-properties'],
     )
+    custom_config=dict()
+    custom_config['unix_user'] = "ranger"
+    custom_config['unix_group'] = "ranger"
+    self.assertResourceCalled('ModifyPropertiesFile', '/usr/hdp/current/ranger-usersync/install.properties',
+        properties = custom_config,
+    )
     self.assertResourceCalled('Execute', 'cd /usr/hdp/current/ranger-usersync && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E /usr/hdp/current/ranger-usersync/setup.sh',
         logoutput = True,
         environment = {'JAVA_HOME': u'/usr/jdk64/jdk1.7.0_45'},
@@ -193,4 +212,8 @@ class TestRangerUsersync(RMFTestCase):
     )
     self.assertResourceCalled('File', '/usr/hdp/current/ranger-usersync/ranger-usersync-services.sh',
         mode = 0755,
+    )
+    self.assertResourceCalled('Directory', '/var/log/ranger/usersync',
+        owner = custom_config['unix_user'],
+        group = custom_config['unix_group']
     )

@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration supports_final="false">
+<configuration supports_final="false" supports_adding_forbidden="true">
 
   <property>
     <name>content</name>
@@ -196,6 +196,10 @@ log4j.appender.EventCounter=org.apache.hadoop.log.metrics.EventCounter
 # Removes "deprecated" messages
 log4j.logger.org.apache.hadoop.conf.Configuration.deprecation=WARN
     </value>
+    <value-attributes>
+      <type>content</type>
+      <show-property-name>false</show-property-name>
+    </value-attributes>
   </property>
 
 </configuration>

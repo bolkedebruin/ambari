@@ -29,6 +29,14 @@ App.HostComponent = DS.Model.extend({
   hostName: DS.attr('string'),
   service: DS.belongsTo('App.Service'),
   adminState: DS.attr('string'),
+
+  summaryLabelClassName:function(){
+    return 'label_for_'+this.get('componentName').toLowerCase();
+  }.property('componentName'),
+
+  summaryValueClassName:function(){
+    return 'value_for_'+this.get('componentName').toLowerCase();
+  }.property('componentName'),
   /**
    * Determine if component is client
    * @returns {bool}
@@ -41,17 +49,21 @@ App.HostComponent = DS.Model.extend({
    * Based on <code>workStatus</code>
    * @returns {bool}
    */
-  isRunning: function () {
-    return (this.get('workStatus') == 'STARTED' || this.get('workStatus') == 'STARTING');
-  }.property('workStatus'),
+  isRunning: Em.computed.existsIn('workStatus', ['STARTED', 'STARTING']),
+
+  /**
+   * Determines if component is not installed
+   * Based on <code>workStatus</code>
+   *
+   * @type {boolean}
+   */
+  isNotInstalled: Em.computed.existsIn('workStatus', ['INIT', 'INSTALL_FAILED']),
 
   /**
    * Formatted <code>componentName</code>
    * @returns {String}
    */
-  displayName: function () {
-    return App.format.role(this.get('componentName'));
-  }.property('componentName'),
+  displayName: Em.computed.formatRole('componentName'),
 
   /**
    * Determine if component is master
@@ -99,15 +111,22 @@ App.HostComponent = DS.Model.extend({
    * User friendly host component status
    * @returns {String}
    */
-  isActive: function () {
-    return (this.get('passiveState') == 'OFF');
-  }.property('passiveState'),
+  isActive: Em.computed.equal('passiveState', 'OFF'),
 
-  passiveTooltip: function () {
-    if (!this.get('isActive')) {
-      return Em.I18n.t('hosts.component.passive.mode');
-    }
-  }.property('isActive'),
+  /**
+   * Determine if passiveState is implied from host or/and service
+   * @returns {Boolean}
+   */
+  isImpliedState: Em.computed.existsIn('passiveState', ['IMPLIED_FROM_SERVICE_AND_HOST', 'IMPLIED_FROM_HOST', 'IMPLIED_FROM_SERVICE']),
+
+  passiveTooltip: Em.computed.ifThenElse('isActive', '', Em.I18n.t('hosts.component.passive.mode')),
+  /**
+   * Determine if component is a HDP component
+   * @returns {bool}
+   */
+  isHDPComponent: function () {
+    return !App.get('components.nonHDP').contains(this.get('componentName'));
+  }.property('componentName', 'App.components.nonHDP'),
 
   statusClass: function () {
     return this.get('isActive') ? this.get('workStatus') : 'icon-medkit';
@@ -138,6 +157,26 @@ App.HostComponent = DS.Model.extend({
 });
 
 App.HostComponent.FIXTURES = [];
+
+
+/**
+ * get particular counter of host-component by name
+ * @param {string} componentName
+ * @param {string} type (installedCount|startedCount|totalCount)
+ * @returns {number}
+ */
+App.HostComponent.getCount = function (componentName, type) {
+  switch (App.StackServiceComponent.find(componentName).get('componentCategory')) {
+    case 'MASTER':
+      return Number(App.MasterComponent.find(componentName).get(type));
+    case 'SLAVE':
+      return Number(App.SlaveComponent.find(componentName).get(type));
+    case 'CLIENT':
+      return Number(App.ClientComponent.find(componentName).get(type));
+    default:
+      return 0;
+  }
+};
 
 App.HostComponentStatus = {
   started: "STARTED",
@@ -227,6 +266,11 @@ App.HostComponentStatus = {
 
 App.HostComponentActionMap = {
   getMap: function(ctx) {
+    var NN = ctx.get('controller.content.hostComponents').findProperty('componentName', 'NAMENODE');
+    var RM = ctx.get('controller.content.hostComponents').findProperty('componentName', 'RESOURCEMANAGER');
+    var RA = ctx.get('controller.content.hostComponents').findProperty('componentName', 'RANGER_ADMIN');
+    var HM = ctx.get('controller.content.hostComponents').findProperty('componentName', 'HAWQMASTER');
+    var HS = ctx.get('controller.content.hostComponents').findProperty('componentName', 'HAWQSTANDBY');
     return {
       RESTART_ALL: {
         action: 'restartAllHostComponents',
@@ -274,21 +318,21 @@ App.HostComponentActionMap = {
         label: App.get('isHaEnabled') ? Em.I18n.t('admin.highAvailability.button.disable') : Em.I18n.t('admin.highAvailability.button.enable'),
         cssClass: App.get('isHaEnabled') ? 'icon-arrow-down' : 'icon-arrow-up',
         isHidden: App.get('isHaEnabled'),
-        disabled: App.get('isSingleNode')
+        disabled: App.get('isSingleNode') || !NN || NN.get('isNotInstalled')
       },
       TOGGLE_RM_HA: {
         action: 'enableRMHighAvailability',
         label: Em.I18n.t('admin.rm_highAvailability.button.enable'),
         cssClass: 'icon-arrow-up',
         isHidden: App.get('isRMHaEnabled'),
-        disabled: App.get('isSingleNode')
+        disabled: App.get('isSingleNode') || !RM || RM.get('isNotInstalled')
       },
       TOGGLE_RA_HA: {
         action: 'enableRAHighAvailability',
         label: Em.I18n.t('admin.ra_highAvailability.button.enable'),
         cssClass: 'icon-arrow-up',
         isHidden: App.get('isRAHaEnabled'),
-        disabled: App.get('isSingleNode')
+        disabled: App.get('isSingleNode') || !RA || RA.get('isNotInstalled')
       },
       MOVE_COMPONENT: {
         action: 'reassignMaster',
@@ -329,12 +373,46 @@ App.HostComponentActionMap = {
         hasSubmenu: ctx.get('controller.isSeveralClients'),
         submenuOptions: ctx.get('controller.clientComponents')
       },
+      IMMEDIATE_STOP_CLUSTER: {
+        action: 'immediateStopHawqCluster',
+        customCommand: 'IMMEDIATE_STOP_CLUSTER',
+        context: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
+        label: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
+        cssClass: 'icon-stop',
+        disabled: !HM || HM.get('workStatus') != App.HostComponentStatus.started
+      },
+      IMMEDIATE_STOP: {
+        customCommand: 'IMMEDIATE_STOP',
+        context: Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.context'),
+        label: Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.label'),
+        cssClass: 'icon-stop'
+      },
       MASTER_CUSTOM_COMMAND: {
         action: 'executeCustomCommand',
         cssClass: 'icon-play-circle',
         isHidden: false,
         disabled: false
-      }
-    }
+      },
+      DELETE_SERVICE: {
+        action: 'deleteService',
+        context: ctx.get('serviceName'),
+        label: Em.I18n.t('common.delete'),
+        cssClass: 'icon-remove'
+      },
+      TOGGLE_ADD_HAWQ_STANDBY: {
+        action: 'addHawqStandby',
+        label: Em.I18n.t('admin.addHawqStandby.button.enable'),
+        cssClass: 'icon-plus',
+        isHidden: App.get('isSingleNode') || HS,
+        disabled: false
+      },
+      TOGGLE_ACTIVATE_HAWQ_STANDBY: {
+        action: 'activateHawqStandby',
+        label: Em.I18n.t('admin.activateHawqStandby.button.enable'),
+        cssClass: 'icon-arrow-up',
+        isHidden: App.get('isSingleNode') || !HS,
+        disabled: false
+       }
+    };
   }
 };

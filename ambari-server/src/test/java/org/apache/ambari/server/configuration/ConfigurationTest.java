@@ -32,12 +32,9 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Properties;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.Configuration.ConnectionPoolType;
 import org.apache.ambari.server.configuration.Configuration.DatabaseType;
-import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.security.authorization.LdapServerProperties;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.RandomStringUtils;
@@ -54,24 +51,16 @@ import org.powermock.core.classloader.annotations.PowerMockIgnore;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
-import com.google.inject.Guice;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
+import junit.framework.Assert;
 
 @RunWith(PowerMockRunner.class)
 @PrepareForTest({ Configuration.class })
-@PowerMockIgnore( {"javax.management.*"})
+@PowerMockIgnore( {"javax.management.*", "javax.crypto.*"})
 public class ConfigurationTest {
   public TemporaryFolder temp = new TemporaryFolder();
-  private Injector injector;
-
-  @Inject
-  private Configuration config;
 
   @Before
   public void setup() throws Exception {
-    injector = Guice.createInjector(new InMemoryDefaultTestModule());
-    injector.injectMembers(this);
     temp.create();
   }
 
@@ -86,7 +75,7 @@ public class ConfigurationTest {
    */
   @Test
   public void testDefaultTwoWayAuthNotSet() throws Exception {
-    Assert.assertFalse(config.getTwoWaySsl());
+    Assert.assertFalse(new Configuration().getTwoWaySsl());
   }
 
   /**
@@ -330,6 +319,21 @@ public class ConfigurationTest {
 
 
   @Test
+  public void testGetDefaultServerTaskTimeout() {
+    Properties ambariProperties = new Properties();
+    Configuration conf = new Configuration(ambariProperties);
+
+    Assert.assertEquals(Integer.valueOf(1200), conf.getDefaultServerTaskTimeout());
+
+    ambariProperties = new Properties();
+    ambariProperties.setProperty(Configuration.SERVER_TASK_TIMEOUT_KEY, "3600");
+
+    conf = new Configuration(ambariProperties);
+
+    Assert.assertEquals(Integer.valueOf(3600), conf.getDefaultServerTaskTimeout());
+  }
+
+  @Test
   public void testGetLdapServerProperties_WrongManagerPassword() throws Exception {
     final Properties ambariProperties = new Properties();
     ambariProperties.setProperty(Configuration.LDAP_MANAGER_PASSWORD_KEY, "somePassword");
@@ -496,4 +500,67 @@ public class ConfigurationTest {
     ambariProperties.setProperty(Configuration.AGENT_PACKAGE_PARALLEL_COMMANDS_LIMIT_KEY, "0");
     Assert.assertEquals(1, configuration.getAgentPackageParallelCommandsLimit());
   }
+
+  @Test
+  public void testGetExecutionSchedulerWait() throws Exception {
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    //default
+    Assert.assertEquals(new Long(1000L), configuration.getExecutionSchedulerWait());
+
+    ambariProperties.setProperty(Configuration.EXECUTION_SCHEDULER_WAIT_KEY, "5");
+    Assert.assertEquals(new Long(5000L), configuration.getExecutionSchedulerWait());
+    // > 60 secs
+    ambariProperties.setProperty(Configuration.EXECUTION_SCHEDULER_WAIT_KEY, "100");
+    Assert.assertEquals(new Long(60000L), configuration.getExecutionSchedulerWait());
+    //not a number
+    ambariProperties.setProperty(Configuration.EXECUTION_SCHEDULER_WAIT_KEY, "100m");
+    Assert.assertEquals(new Long(1000L), configuration.getExecutionSchedulerWait());
+  }
+
+  @Test
+  public void testExperimentalConcurrentStageProcessing() throws Exception {
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    Assert.assertFalse(configuration.isExperimentalConcurrentStageProcessingEnabled());
+
+    ambariProperties.setProperty(Configuration.EXPERIMENTAL_CONCURRENCY_STAGE_PROCESSING_ENABLED,
+        Boolean.TRUE.toString());
+
+    Assert.assertTrue(configuration.isExperimentalConcurrentStageProcessingEnabled());
+  }
+
+  @Test
+  public void testAlertCaching() throws Exception {
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    Assert.assertFalse(configuration.isAlertCacheEnabled());
+
+    ambariProperties.setProperty(Configuration.ALERTS_CACHE_ENABLED, Boolean.TRUE.toString());
+    ambariProperties.setProperty(Configuration.ALERTS_CACHE_FLUSH_INTERVAL, "60");
+    ambariProperties.setProperty(Configuration.ALERTS_CACHE_SIZE, "1000");
+
+    Assert.assertTrue(configuration.isAlertCacheEnabled());
+    Assert.assertEquals(60, configuration.getAlertCacheFlushInterval());
+    Assert.assertEquals(1000, configuration.getAlertCacheSize());
+  }
+
+  @Test
+  public void testPropertyProviderThreadPoolSizes() throws Exception {
+    final Properties ambariProperties = new Properties();
+    final Configuration configuration = new Configuration(ambariProperties);
+
+    Assert.assertEquals(2 * Runtime.getRuntime().availableProcessors(), configuration.getPropertyProvidersThreadPoolCoreSize());
+    Assert.assertEquals(4 * Runtime.getRuntime().availableProcessors(), configuration.getPropertyProvidersThreadPoolMaxSize());
+
+    ambariProperties.setProperty(Configuration.PROPERTY_PROVIDER_THREADPOOL_MAX_SIZE_KEY, "44");
+    ambariProperties.setProperty(Configuration.PROPERTY_PROVIDER_THREADPOOL_CORE_SIZE_KEY, "22");
+
+    Assert.assertEquals(22, configuration.getPropertyProvidersThreadPoolCoreSize());
+    Assert.assertEquals(44, configuration.getPropertyProvidersThreadPoolMaxSize());
+  }
+
 }

@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>hive.client.heapsize</name>
     <deleted>true</deleted>
@@ -31,6 +31,9 @@
     <name>content</name>
     <description>This is the jinja template for hive-env.sh file</description>
     <value></value>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 
   <property>
@@ -66,26 +69,6 @@
         </entry>
         <entry>
           <value>off</value>
-          <label>Off</label>
-        </entry>
-      </entries>
-      <selection-cardinality>1</selection-cardinality>
-    </value-attributes>
-  </property>
-
-  <property>
-    <name>cost_based_optimizer</name>
-    <display-name>Cost Based Optimizer</display-name>
-    <value>Off</value>
-    <value-attributes>
-      <type>value-list</type>
-      <entries>
-        <entry>
-          <value>On</value>
-          <label>On</label>
-        </entry>
-        <entry>
-          <value>Off</value>
           <label>Off</label>
         </entry>
       </entries>

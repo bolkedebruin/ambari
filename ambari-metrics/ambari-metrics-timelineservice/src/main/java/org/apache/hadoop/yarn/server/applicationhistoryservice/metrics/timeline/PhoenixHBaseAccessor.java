@@ -17,13 +17,17 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.hadoop.hbase.util.RetryCounterFactory;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 import org.apache.hadoop.metrics2.sink.timeline.SingleValuedTimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetricMetadata;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.AggregatorUtils;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.Function;
@@ -31,12 +35,15 @@ import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.MetricHostAggregate;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.TimelineClusterMetric;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.aggregators.TimelineMetricReadHelper;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.discovery.TimelineMetricMetadataKey;
+import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.discovery.TimelineMetricMetadataManager;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.Condition;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.ConnectionProvider;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.DefaultPhoenixDataSource;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.SplitByMetricNamesCondition;
 import org.apache.hadoop.yarn.util.timeline.TimelineUtils;
+import org.apache.phoenix.exception.PhoenixIOException;
 import org.apache.phoenix.exception.SQLExceptionCode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.type.TypeReference;
@@ -47,16 +54,23 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Collections;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.AGGREGATE_TABLE_SPLIT_POINTS;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.AGGREGATORS_SKIP_BLOCK_CACHE;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.CLUSTER_DAILY_TABLE_TTL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.CLUSTER_HOUR_TABLE_TTL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.CLUSTER_MINUTE_TABLE_TTL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.CLUSTER_SECOND_TABLE_TTL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.GLOBAL_MAX_RETRIES;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.GLOBAL_RESULT_LIMIT;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.GLOBAL_RETRY_INTERVAL;
@@ -66,24 +80,32 @@ import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.ti
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.HOST_HOUR_TABLE_TTL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.HOST_MINUTE_TABLE_TTL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.OUT_OFF_BAND_DATA_TIME_ALLOWANCE;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.PRECISION_TABLE_SPLIT_POINTS;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.PRECISION_TABLE_TTL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.ALTER_SQL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_HOSTED_APPS_METADATA_TABLE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_AGGREGATE_TABLE_SQL;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_SQL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_CLUSTER_AGGREGATE_TABLE_SQL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_METADATA_TABLE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_TABLE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.DEFAULT_ENCODING;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.DEFAULT_TABLE_COMPRESSION;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.GET_HOSTED_APPS_METADATA_SQL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.GET_METRIC_METADATA_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_AGGREGATE_DAILY_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_AGGREGATE_HOURLY_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_AGGREGATE_MINUTE_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_CLUSTER_AGGREGATE_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.METRICS_RECORD_TABLE_NAME;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_AGGREGATE_RECORD_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_CLUSTER_AGGREGATE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_CLUSTER_AGGREGATE_TIME_SQL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_HOSTED_APPS_METADATA_SQL;
+import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_METADATA_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.UPSERT_METRICS_SQL;
 
 /**
@@ -98,32 +120,35 @@ public class PhoenixHBaseAccessor {
   // cluster and host levels.
   static final long DEFAULT_OUT_OF_BAND_TIME_ALLOWANCE = 300000;
   /**
-   * 4 metrics/min * 60 * 24: Retrieve data for 1 day.
+   * 22 metrics for 2hours in SECONDS (10 second data)
+   * => Reasonable upper bound on the limit such that our Precision calculation for a given time range makes sense.
    */
-  private static final int METRICS_PER_MINUTE = 4;
-  public static int RESULTSET_LIMIT = (int)TimeUnit.DAYS.toMinutes(1) * METRICS_PER_MINUTE;
+  private static final int METRICS_PER_MINUTE = 22;
+  private static final int POINTS_PER_MINUTE = 6;
+  public static int RESULTSET_LIMIT = (int)TimeUnit.HOURS.toMinutes(2) * METRICS_PER_MINUTE * POINTS_PER_MINUTE ;
 
   private static final TimelineMetricReadHelper TIMELINE_METRIC_READ_HELPER = new TimelineMetricReadHelper();
   private static ObjectMapper mapper = new ObjectMapper();
-  private static TypeReference<Map<Long, Double>> metricValuesTypeRef = new TypeReference<Map<Long, Double>>() {};
+  private static TypeReference<TreeMap<Long, Double>> metricValuesTypeRef = new TypeReference<TreeMap<Long, Double>>() {};
 
   private final Configuration hbaseConf;
   private final Configuration metricsConf;
   private final RetryCounterFactory retryCounterFactory;
   private final ConnectionProvider dataSource;
   private final long outOfBandTimeAllowance;
+  private final boolean skipBlockCacheForAggregatorsEnabled;
 
   public PhoenixHBaseAccessor(Configuration hbaseConf,
                               Configuration metricsConf){
     this(hbaseConf, metricsConf, new DefaultPhoenixDataSource(hbaseConf));
   }
 
-  public PhoenixHBaseAccessor(Configuration hbaseConf,
+  PhoenixHBaseAccessor(Configuration hbaseConf,
                               Configuration metricsConf,
                               ConnectionProvider dataSource) {
     this.hbaseConf = hbaseConf;
     this.metricsConf = metricsConf;
-    RESULTSET_LIMIT = metricsConf.getInt(GLOBAL_RESULT_LIMIT, 5760);
+    RESULTSET_LIMIT = metricsConf.getInt(GLOBAL_RESULT_LIMIT, RESULTSET_LIMIT);
     try {
       Class.forName("org.apache.phoenix.jdbc.PhoenixDriver");
     } catch (ClassNotFoundException e) {
@@ -131,72 +156,33 @@ public class PhoenixHBaseAccessor {
       throw new IllegalStateException(e);
     }
     this.dataSource = dataSource;
-    this.retryCounterFactory = new RetryCounterFactory(
-      metricsConf.getInt(GLOBAL_MAX_RETRIES, 10),
+    this.retryCounterFactory = new RetryCounterFactory(metricsConf.getInt(GLOBAL_MAX_RETRIES, 10),
       (int) SECONDS.toMillis(metricsConf.getInt(GLOBAL_RETRY_INTERVAL, 5)));
     this.outOfBandTimeAllowance = metricsConf.getLong(OUT_OFF_BAND_DATA_TIME_ALLOWANCE,
       DEFAULT_OUT_OF_BAND_TIME_ALLOWANCE);
+    this.skipBlockCacheForAggregatorsEnabled = metricsConf.getBoolean(AGGREGATORS_SKIP_BLOCK_CACHE, false);
   }
 
   private static TimelineMetric getLastTimelineMetricFromResultSet(ResultSet rs)
-    throws SQLException, IOException {
+      throws SQLException, IOException {
     TimelineMetric metric = TIMELINE_METRIC_READ_HELPER.getTimelineMetricCommonsFromResultSet(rs);
     metric.setMetricValues(readLastMetricValueFromJSON(rs.getString("METRICS")));
     return metric;
   }
 
-  public static SingleValuedTimelineMetric getAggregatedTimelineMetricFromResultSet(
-      ResultSet rs, Function f) throws SQLException, IOException {
+  private static TreeMap<Long, Double> readLastMetricValueFromJSON(String json)
+      throws IOException {
+    TreeMap<Long, Double> values = readMetricFromJSON(json);
+    Long lastTimeStamp = values.lastKey();
 
-    SingleValuedTimelineMetric metric = new SingleValuedTimelineMetric(
-      rs.getString("METRIC_NAME") + f.getSuffix(),
-      rs.getString("APP_ID"),
-      rs.getString("INSTANCE_ID"),
-      rs.getString("HOSTNAME"),
-      rs.getLong("SERVER_TIME"),
-      rs.getLong("SERVER_TIME"),
-      rs.getString("UNITS")
-    );
-
-    // get functions for metricnames
-
-    double value;
-    switch(f.getReadFunction()){
-      case AVG:
-        value = rs.getDouble("METRIC_SUM") / rs.getInt("METRIC_COUNT");
-        break;
-      case MIN:
-        value = rs.getDouble("METRIC_MIN");
-        break;
-      case MAX:
-        value = rs.getDouble("METRIC_MAX");
-        break;
-      case SUM:
-        value = rs.getDouble("METRIC_SUM");
-        break;
-      default:
-        value = rs.getDouble("METRIC_SUM") / rs.getInt("METRIC_COUNT");
-        break;
-    }
-
-    metric.setSingleTimeseriesValue(rs.getLong("SERVER_TIME"), value);
-
-    return metric;
-  }
-
-  private static Map<Long, Double> readLastMetricValueFromJSON(String json)
-    throws IOException {
-    Map<Long, Double> values = readMetricFromJSON(json);
-    Long lastTimeStamp = Collections.max(values.keySet());
-
-    HashMap<Long, Double> valueMap = new HashMap<Long, Double>(1);
+    TreeMap<Long, Double> valueMap = new TreeMap<Long, Double>();
     valueMap.put(lastTimeStamp, values.get(lastTimeStamp));
     return valueMap;
   }
 
   @SuppressWarnings("unchecked")
-  public static Map<Long, Double>  readMetricFromJSON(String json) throws IOException {
-    return (Map<Long, Double>) mapper.readValue(json, metricValuesTypeRef);
+  public static TreeMap<Long, Double>  readMetricFromJSON(String json) throws IOException {
+    return mapper.readValue(json, metricValuesTypeRef);
   }
 
   private Connection getConnectionRetryingOnException()
@@ -235,22 +221,36 @@ public class PhoenixHBaseAccessor {
 
     String encoding = metricsConf.get(HBASE_ENCODING_SCHEME, DEFAULT_ENCODING);
     String compression = metricsConf.get(HBASE_COMPRESSION_SCHEME, DEFAULT_TABLE_COMPRESSION);
-    String precisionTtl = metricsConf.get(PRECISION_TABLE_TTL, "86400");
-    String hostMinTtl = metricsConf.get(HOST_MINUTE_TABLE_TTL, "604800");
-    String hostHourTtl = metricsConf.get(HOST_HOUR_TABLE_TTL, "2592000");
-    String hostDailyTtl = metricsConf.get(HOST_DAILY_TABLE_TTL, "31536000");
-    String clusterMinTtl = metricsConf.get(CLUSTER_MINUTE_TABLE_TTL, "2592000");
-    String clusterHourTtl = metricsConf.get(CLUSTER_HOUR_TABLE_TTL, "31536000");
-    String clusterDailyTtl = metricsConf.get(CLUSTER_DAILY_TABLE_TTL, "31536000");
+    String precisionTtl = getDaysInSeconds(metricsConf.get(PRECISION_TABLE_TTL, "1"));           //1 day
+    String hostMinTtl = getDaysInSeconds(metricsConf.get(HOST_MINUTE_TABLE_TTL, "7"));           //7 days
+    String hostHourTtl = getDaysInSeconds(metricsConf.get(HOST_HOUR_TABLE_TTL, "30"));           //30 days
+    String hostDailyTtl = getDaysInSeconds(metricsConf.get(HOST_DAILY_TABLE_TTL, "365"));        //1 year
+    String clusterSecTtl = getDaysInSeconds(metricsConf.get(CLUSTER_SECOND_TABLE_TTL, "7"));     //7 days
+    String clusterMinTtl = getDaysInSeconds(metricsConf.get(CLUSTER_MINUTE_TABLE_TTL, "30"));    //30 days
+    String clusterHourTtl = getDaysInSeconds(metricsConf.get(CLUSTER_HOUR_TABLE_TTL, "365"));    //1 year
+    String clusterDailyTtl = getDaysInSeconds(metricsConf.get(CLUSTER_DAILY_TABLE_TTL, "730"));  //2 years
 
     try {
       LOG.info("Initializing metrics schema...");
       conn = getConnectionRetryingOnException();
       stmt = conn.createStatement();
 
+      // Metadata
+      String metadataSql = String.format(CREATE_METRICS_METADATA_TABLE_SQL,
+        encoding, compression);
+      stmt.executeUpdate(metadataSql);
+      String hostedAppSql = String.format(CREATE_HOSTED_APPS_METADATA_TABLE_SQL,
+        encoding, compression);
+      stmt.executeUpdate(hostedAppSql);
+
       // Host level
-      stmt.executeUpdate(String.format(CREATE_METRICS_TABLE_SQL,
-        encoding, precisionTtl, compression));
+      String precisionSql = String.format(CREATE_METRICS_TABLE_SQL,
+        encoding, precisionTtl, compression);
+      String splitPoints = metricsConf.get(PRECISION_TABLE_SPLIT_POINTS);
+      if (!StringUtils.isEmpty(splitPoints)) {
+        precisionSql += getSplitPointsStr(splitPoints);
+      }
+      stmt.executeUpdate(precisionSql);
       stmt.executeUpdate(String.format(CREATE_METRICS_AGGREGATE_TABLE_SQL,
         METRICS_AGGREGATE_MINUTE_TABLE_NAME, encoding, hostMinTtl, compression));
       stmt.executeUpdate(String.format(CREATE_METRICS_AGGREGATE_TABLE_SQL,
@@ -259,11 +259,18 @@ public class PhoenixHBaseAccessor {
         METRICS_AGGREGATE_DAILY_TABLE_NAME, encoding, hostDailyTtl, compression));
 
       // Cluster level
-      stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_TABLE_SQL,
-        METRICS_CLUSTER_AGGREGATE_TABLE_NAME, encoding, clusterMinTtl, compression));
-      stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_SQL,
+      String aggregateSql = String.format(CREATE_METRICS_CLUSTER_AGGREGATE_TABLE_SQL,
+        METRICS_CLUSTER_AGGREGATE_TABLE_NAME, encoding, clusterMinTtl, compression);
+      splitPoints = metricsConf.get(AGGREGATE_TABLE_SPLIT_POINTS);
+      if (!StringUtils.isEmpty(splitPoints)) {
+        aggregateSql += getSplitPointsStr(splitPoints);
+      }
+      stmt.executeUpdate(aggregateSql);
+      stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL,
+        METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME, encoding, clusterHourTtl, compression));
+      stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL,
         METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME, encoding, clusterHourTtl, compression));
-      stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_SQL,
+      stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL,
         METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME, encoding, clusterDailyTtl, compression));
 
       //alter TTL options to update tables
@@ -281,6 +288,9 @@ public class PhoenixHBaseAccessor {
         hostDailyTtl));
       stmt.executeUpdate(String.format(ALTER_SQL,
         METRICS_CLUSTER_AGGREGATE_TABLE_NAME,
+        clusterSecTtl));
+      stmt.executeUpdate(String.format(ALTER_SQL,
+        METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME,
         clusterMinTtl));
       stmt.executeUpdate(String.format(ALTER_SQL,
         METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME,
@@ -323,8 +333,29 @@ public class PhoenixHBaseAccessor {
     }
   }
 
-  public void insertMetricRecords(TimelineMetrics metrics) throws SQLException, IOException {
+  protected String getSplitPointsStr(String splitPoints) {
+    if (StringUtils.isEmpty(splitPoints.trim())) {
+      return "";
+    }
+    String[] points = splitPoints.split(",");
+    if (points.length > 0) {
+      StringBuilder sb = new StringBuilder(" SPLIT ON ");
+      sb.append("(");
+      for (String point : points) {
+        sb.append("'");
+        sb.append(point.trim());
+        sb.append("'");
+        sb.append(",");
+      }
+      sb.deleteCharAt(sb.length() - 1);
+      sb.append(")");
+      return sb.toString();
+    }
+    return "";
+  }
 
+  public void insertMetricRecordsWithMetadata(TimelineMetricMetadataManager metadataManager,
+                                              TimelineMetrics metrics) throws SQLException, IOException {
     List<TimelineMetric> timelineMetrics = metrics.getMetrics();
     if (timelineMetrics == null || timelineMetrics.isEmpty()) {
       LOG.debug("Empty metrics insert request.");
@@ -364,7 +395,7 @@ public class PhoenixHBaseAccessor {
         metricRecordStmt.setString(4, metric.getInstanceId());
         metricRecordStmt.setLong(5, currentTime);
         metricRecordStmt.setLong(6, metric.getStartTime());
-        metricRecordStmt.setString(7, metric.getType());
+        metricRecordStmt.setString(7, metric.getUnits());
         metricRecordStmt.setDouble(8, aggregates[0]);
         metricRecordStmt.setDouble(9, aggregates[1]);
         metricRecordStmt.setDouble(10, aggregates[2]);
@@ -374,11 +405,20 @@ public class PhoenixHBaseAccessor {
 
         try {
           metricRecordStmt.executeUpdate();
+
+          // Write to metadata cache on successful write to store
+          metadataManager.putIfModifiedTimelineMetricMetadata(
+            metadataManager.getTimelineMetricMetadata(metric));
+
+          metadataManager.putIfModifiedHostedAppsMetadata(
+            metric.getHostName(), metric.getAppId());
+
         } catch (SQLException sql) {
-          LOG.error(sql);
+          LOG.error("Failed on insert records to store.", sql);
         }
       }
 
+      // commit() blocked if HBase unavailable
       conn.commit();
 
     } finally {
@@ -399,6 +439,10 @@ public class PhoenixHBaseAccessor {
     }
   }
 
+  public void insertMetricRecords(TimelineMetrics metrics) throws SQLException, IOException {
+    insertMetricRecordsWithMetadata(null, metrics);
+  }
+
   @SuppressWarnings("unchecked")
   public TimelineMetrics getMetricRecords(
     final Condition condition, Map<String, List<Function>> metricFunctions)
@@ -413,14 +457,58 @@ public class PhoenixHBaseAccessor {
 
     try {
       //get latest
-      if(condition.isPointInTime()){
+      if (condition.isPointInTime()){
         getLatestMetricRecords(condition, conn, metrics);
       } else {
-        stmt = PhoenixTransactSQL.prepareGetMetricsSqlStmt(conn, condition);
-        rs = stmt.executeQuery();
-        while (rs.next()) {
-          appendMetricFromResultSet(metrics, condition, metricFunctions, rs);
+        if (condition.getEndTime() >= condition.getStartTime()) {
+          stmt = PhoenixTransactSQL.prepareGetMetricsSqlStmt(conn, condition);
+          rs = stmt.executeQuery();
+          while (rs.next()) {
+            appendMetricFromResultSet(metrics, condition, metricFunctions, rs);
+          }
+        } else {
+          LOG.warn("Skipping metrics query because endTime < startTime");
         }
+      }
+
+    } catch (PhoenixIOException pioe) {
+      Throwable pioe2 = pioe.getCause();
+      // Need to find out if this is exception "Could not find hash cache
+      // for joinId" or another PhoenixIOException
+      if (pioe2 instanceof PhoenixIOException &&
+        pioe2.getCause() instanceof DoNotRetryIOException) {
+        String className = null;
+        for (StackTraceElement ste : pioe2.getCause().getStackTrace()) {
+          className = ste.getClassName();
+        }
+
+        if (className != null && className.equals("HashJoinRegionScanner")) {
+          LOG.error("The cache might have expired and have been removed. Try to" +
+            " increase the cache size by setting bigger value for " +
+            "phoenix.coprocessor.maxMetaDataCacheSize in ams-hbase-site config." +
+            " Falling back to sort-merge join algorithm.");
+          PhoenixTransactSQL.setSortMergeJoinEnabled(true);
+        }
+      }
+      throw pioe;
+    } catch (RuntimeException ex) {
+      // We need to find out if this is a real IO exception
+      // or exception "maxStamp is smaller than minStamp"
+      // which is thrown in hbase TimeRange.java
+      Throwable io = ex.getCause();
+      String className = null;
+      if (io != null) {
+        for (StackTraceElement ste : io.getStackTrace()) {
+          className = ste.getClassName();
+        }
+      }
+      if (className != null && className.equals("TimeRange")) {
+        // This is "maxStamp is smaller than minStamp" exception
+        // Log error and return empty metrics
+        LOG.debug(io);
+        return new TimelineMetrics();
+      } else {
+        throw ex;
       }
 
     } finally {
@@ -451,48 +539,69 @@ public class PhoenixHBaseAccessor {
     return metrics;
   }
 
-  private void appendMetricFromResultSet(
-      TimelineMetrics metrics, Condition condition, Map<String,
-      List<Function>> metricFunctions, ResultSet rs)
-      throws SQLException, IOException {
-    if (condition.getPrecision() == Precision.HOURS
-      || condition.getPrecision() == Precision.MINUTES) {
+  /**
+   * Apply aggregate function to the result if supplied else get precision
+   * or aggregate data with default function applied.
+   */
+  private void appendMetricFromResultSet(TimelineMetrics metrics, Condition condition,
+                                         Map<String, List<Function>> metricFunctions,
+                                         ResultSet rs) throws SQLException, IOException {
+    String metricName = rs.getString("METRIC_NAME");
+    List<Function> functions = metricFunctions.get(metricName);
 
-      String metricName = rs.getString("METRIC_NAME");
-      List<Function> functions = metricFunctions.get(metricName);
-
+    // Apply aggregation function if present
+    if ((functions != null && !functions.isEmpty())) {
+      if (functions.size() > 1) {
+        throw new IllegalArgumentException("Multiple aggregate functions not supported.");
+      }
       for (Function f : functions) {
-        SingleValuedTimelineMetric metric = getAggregatedTimelineMetricFromResultSet(rs, f);
-
-        if (condition.isGrouped()) {
-          metrics.addOrMergeTimelineMetric(metric);
+        if (f.getReadFunction() == Function.ReadFunction.VALUE) {
+          getTimelineMetricsFromResultSet(metrics, condition, rs);
         } else {
-          metrics.getMetrics().add(metric.getTimelineMetric());
+          SingleValuedTimelineMetric metric =
+            TIMELINE_METRIC_READ_HELPER.getAggregatedTimelineMetricFromResultSet(rs, f);
+
+          if (condition.isGrouped()) {
+            metrics.addOrMergeTimelineMetric(metric);
+          } else {
+            metrics.getMetrics().add(metric.getTimelineMetric());
+          }
         }
       }
+    } else {
+      // No aggregation requested
+      // Execution never goes here, function always contain at least 1 element
+      getTimelineMetricsFromResultSet(metrics, condition, rs);
     }
-    else {
-      TimelineMetric metric;
-      metric = TIMELINE_METRIC_READ_HELPER.getTimelineMetricFromResultSet(rs);
+  }
 
+  private void getTimelineMetricsFromResultSet(TimelineMetrics metrics, Condition condition, ResultSet rs) throws SQLException, IOException {
+    if (condition.getPrecision().equals(Precision.SECONDS)) {
+      TimelineMetric metric = TIMELINE_METRIC_READ_HELPER.getTimelineMetricFromResultSet(rs);
       if (condition.isGrouped()) {
         metrics.addOrMergeTimelineMetric(metric);
       } else {
         metrics.getMetrics().add(metric);
       }
+
+    } else {
+      SingleValuedTimelineMetric metric =
+        TIMELINE_METRIC_READ_HELPER.getAggregatedTimelineMetricFromResultSet(rs,
+          Function.DEFAULT_VALUE_FUNCTION);
+      if (condition.isGrouped()) {
+        metrics.addOrMergeTimelineMetric(metric);
+      } else {
+        metrics.getMetrics().add(metric.getTimelineMetric());
+      }
     }
   }
 
-  private void getLatestMetricRecords(
-    Condition condition, Connection conn, TimelineMetrics metrics)
-    throws SQLException, IOException {
+  private void getLatestMetricRecords(Condition condition, Connection conn,
+                                      TimelineMetrics metrics) throws SQLException, IOException {
 
     validateConditionIsNotEmpty(condition);
 
-    PreparedStatement stmt;
-
-    stmt = PhoenixTransactSQL.prepareGetLatestMetricSqlStmt(conn,
-        condition);
+    PreparedStatement stmt = PhoenixTransactSQL.prepareGetLatestMetricSqlStmt(conn, condition);
     ResultSet rs = null;
     try {
       rs = stmt.executeQuery();
@@ -581,7 +690,8 @@ public class PhoenixHBaseAccessor {
     for (Function aggregateFunction : functions) {
       SingleValuedTimelineMetric metric;
 
-      if (condition.getPrecision() == Precision.HOURS
+      if (condition.getPrecision() == Precision.MINUTES
+          || condition.getPrecision() == Precision.HOURS
           || condition.getPrecision() == Precision.DAYS) {
         metric = getAggregateTimelineMetricFromResultSet(rs, aggregateFunction, false);
       } else {
@@ -929,5 +1039,225 @@ public class PhoenixHBaseAccessor {
       LOG.info("Time to save: " + (end - start) + ", " +
         "thread = " + Thread.currentThread().getName());
     }
+  }
+
+  /**
+   * Provide skip block cache hint for aggregator queries.
+   */
+  public boolean isSkipBlockCacheForAggregatorsEnabled() {
+    return skipBlockCacheForAggregatorsEnabled;
+  }
+
+  /**
+   * One time save of metadata when discovering topology during aggregation.
+   * @throws SQLException
+   */
+  public void saveHostAppsMetadata(Map<String, Set<String>> hostedApps) throws SQLException {
+    Connection conn = getConnection();
+    PreparedStatement stmt = null;
+    try {
+      stmt = conn.prepareStatement(UPSERT_HOSTED_APPS_METADATA_SQL);
+      int rowCount = 0;
+
+      for (Map.Entry<String, Set<String>> hostedAppsEntry : hostedApps.entrySet()) {
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("HostedAppsMetadata: " + hostedAppsEntry);
+        }
+
+        stmt.clearParameters();
+        stmt.setString(1, hostedAppsEntry.getKey());
+        stmt.setString(2, StringUtils.join(hostedAppsEntry.getValue(), ","));
+        try {
+          stmt.executeUpdate();
+          rowCount++;
+        } catch (SQLException sql) {
+          LOG.error("Error saving hosted apps metadata.", sql);
+        }
+      }
+
+      conn.commit();
+      LOG.info("Saved " + rowCount + " hosted apps metadata records.");
+
+    } finally {
+      if (stmt != null) {
+        try {
+          stmt.close();
+        } catch (SQLException e) {
+          // Ignore
+        }
+      }
+      if (conn != null) {
+        try {
+          conn.close();
+        } catch (SQLException sql) {
+          // Ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Save metdata on updates.
+   * @param metricMetadata @Collection<@TimelineMetricMetadata>
+   * @throws SQLException
+   */
+  public void saveMetricMetadata(Collection<TimelineMetricMetadata> metricMetadata) throws SQLException {
+    if (metricMetadata.isEmpty()) {
+      LOG.info("No metadata records to save.");
+      return;
+    }
+
+    Connection conn = getConnection();
+    PreparedStatement stmt = null;
+
+    try {
+      stmt = conn.prepareStatement(UPSERT_METADATA_SQL);
+      int rowCount = 0;
+
+      for (TimelineMetricMetadata metadata : metricMetadata) {
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("TimelineMetricMetadata: metricName = " + metadata.getMetricName()
+            + ", appId = " + metadata.getAppId()
+            + ", seriesStartTime = " + metadata.getSeriesStartTime()
+          );
+        }
+
+        stmt.clearParameters();
+        stmt.setString(1, metadata.getMetricName());
+        stmt.setString(2, metadata.getAppId());
+        stmt.setString(3, metadata.getUnits());
+        stmt.setString(4, metadata.getType());
+        stmt.setLong(5, metadata.getSeriesStartTime());
+        stmt.setBoolean(6, metadata.isSupportsAggregates());
+
+        try {
+          stmt.executeUpdate();
+          rowCount++;
+        } catch (SQLException sql) {
+          LOG.error("Error saving metadata.", sql);
+        }
+      }
+
+      conn.commit();
+      LOG.info("Saved " + rowCount + " metadata records.");
+
+    } finally {
+      if (stmt != null) {
+        try {
+          stmt.close();
+        } catch (SQLException e) {
+          // Ignore
+        }
+      }
+      if (conn != null) {
+        try {
+          conn.close();
+        } catch (SQLException sql) {
+          // Ignore
+        }
+      }
+    }
+  }
+
+  public Map<String, Set<String>> getHostedAppsMetadata() throws SQLException {
+    Map<String, Set<String>> hostedAppMap = new HashMap<>();
+    Connection conn = getConnection();
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+
+    try {
+      stmt = conn.prepareStatement(GET_HOSTED_APPS_METADATA_SQL);
+      rs = stmt.executeQuery();
+
+      while (rs.next()) {
+        hostedAppMap.put(rs.getString("HOSTNAME"),
+          new HashSet<>(Arrays.asList(StringUtils.split(rs.getString("APP_IDS"), ","))));
+      }
+
+    } finally {
+      if (rs != null) {
+        try {
+          rs.close();
+        } catch (SQLException e) {
+          // Ignore
+        }
+      }
+      if (stmt != null) {
+        try {
+          stmt.close();
+        } catch (SQLException e) {
+          // Ignore
+        }
+      }
+      if (conn != null) {
+        try {
+          conn.close();
+        } catch (SQLException sql) {
+          // Ignore
+        }
+      }
+    }
+
+    return hostedAppMap;
+  }
+
+  // No filter criteria support for now.
+  public Map<TimelineMetricMetadataKey, TimelineMetricMetadata> getTimelineMetricMetadata() throws SQLException {
+    Map<TimelineMetricMetadataKey, TimelineMetricMetadata> metadataMap = new HashMap<>();
+    Connection conn = getConnection();
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+
+    try {
+      stmt = conn.prepareStatement(GET_METRIC_METADATA_SQL);
+      rs = stmt.executeQuery();
+
+      while (rs.next()) {
+        String metricName = rs.getString("METRIC_NAME");
+        String appId = rs.getString("APP_ID");
+        TimelineMetricMetadata metadata = new TimelineMetricMetadata(
+          metricName,
+          appId,
+          rs.getString("UNITS"),
+          rs.getString("TYPE"),
+          rs.getLong("START_TIME"),
+          rs.getBoolean("SUPPORTS_AGGREGATION")
+        );
+
+        TimelineMetricMetadataKey key = new TimelineMetricMetadataKey(metricName, appId);
+        metadata.setIsPersisted(true); // Always true on retrieval
+        metadataMap.put(key, metadata);
+      }
+
+    } finally {
+      if (rs != null) {
+        try {
+          rs.close();
+        } catch (SQLException e) {
+          // Ignore
+        }
+      }
+      if (stmt != null) {
+        try {
+          stmt.close();
+        } catch (SQLException e) {
+          // Ignore
+        }
+      }
+      if (conn != null) {
+        try {
+          conn.close();
+        } catch (SQLException sql) {
+          // Ignore
+        }
+      }
+    }
+
+    return metadataMap;
+  }
+
+  private String getDaysInSeconds(String daysString) {
+    double days = Double.valueOf(daysString.trim());
+    return String.valueOf((int)(days*86400));
   }
 }

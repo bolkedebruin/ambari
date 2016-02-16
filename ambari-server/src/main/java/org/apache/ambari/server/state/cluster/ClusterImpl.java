@@ -35,6 +35,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import javax.annotation.Nullable;
+import javax.persistence.EntityManager;
 import javax.persistence.RollbackException;
 
 import org.apache.ambari.server.AmbariException;
@@ -53,6 +55,9 @@ import org.apache.ambari.server.controller.ConfigurationResponse;
 import org.apache.ambari.server.controller.MaintenanceStateHelper;
 import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
 import org.apache.ambari.server.controller.ServiceConfigVersionResponse;
+import org.apache.ambari.server.events.AmbariEvent.AmbariEventType;
+import org.apache.ambari.server.events.ClusterEvent;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.ambari.server.orm.RequiresSession;
 import org.apache.ambari.server.orm.cache.HostConfigMapping;
 import org.apache.ambari.server.orm.dao.AlertDefinitionDAO;
@@ -60,13 +65,13 @@ import org.apache.ambari.server.orm.dao.AlertDispatchDAO;
 import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.ClusterStateDAO;
 import org.apache.ambari.server.orm.dao.ClusterVersionDAO;
-import org.apache.ambari.server.orm.dao.ConfigGroupHostMappingDAO;
 import org.apache.ambari.server.orm.dao.HostConfigMappingDAO;
 import org.apache.ambari.server.orm.dao.HostDAO;
 import org.apache.ambari.server.orm.dao.HostVersionDAO;
 import org.apache.ambari.server.orm.dao.RepositoryVersionDAO;
 import org.apache.ambari.server.orm.dao.ServiceConfigDAO;
 import org.apache.ambari.server.orm.dao.StackDAO;
+import org.apache.ambari.server.orm.dao.TopologyRequestDAO;
 import org.apache.ambari.server.orm.dao.UpgradeDAO;
 import org.apache.ambari.server.orm.entities.ClusterConfigEntity;
 import org.apache.ambari.server.orm.entities.ClusterConfigMappingEntity;
@@ -85,6 +90,8 @@ import org.apache.ambari.server.orm.entities.RequestScheduleEntity;
 import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.orm.entities.TopologyRequestEntity;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.security.authorization.AuthorizationHelper;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.ClusterHealthReport;
@@ -98,6 +105,7 @@ import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostHealthStatus;
 import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.MaintenanceState;
+import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.Service;
@@ -108,6 +116,7 @@ import org.apache.ambari.server.state.ServiceComponentHostEventType;
 import org.apache.ambari.server.state.ServiceFactory;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.State;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
 import org.apache.ambari.server.state.configgroup.ConfigGroupFactory;
@@ -115,12 +124,16 @@ import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
 import org.apache.ambari.server.state.scheduler.RequestExecution;
 import org.apache.ambari.server.state.scheduler.RequestExecutionFactory;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostSummary;
+import org.apache.ambari.server.topology.TopologyRequest;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Predicate;
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.inject.Inject;
@@ -143,24 +156,24 @@ public class ClusterImpl implements Cluster {
 
   private StackId desiredStackVersion;
 
+  private volatile boolean desiredStackVersionSet = true;
+
   private volatile Map<String, Service> services = null;
 
   /**
    * [ Config Type -> [ Config Version Tag -> Config ] ]
    */
-  private Map<String, Map<String, Config>> allConfigs;
+  private volatile Map<String, Map<String, Config>> allConfigs;
 
   /**
    * [ ServiceName -> [ ServiceComponentName -> [ HostName -> [ ... ] ] ] ]
    */
-  private Map<String, Map<String, Map<String, ServiceComponentHost>>>
-    serviceComponentHosts;
+  private Map<String, Map<String, Map<String, ServiceComponentHost>>> serviceComponentHosts;
 
   /**
    * [ HostName -> [ ... ] ]
    */
-  private Map<String, List<ServiceComponentHost>>
-    serviceComponentHostsByHost;
+  private Map<String, List<ServiceComponentHost>>  serviceComponentHostsByHost;
 
   /**
    * Map of existing config groups
@@ -178,7 +191,12 @@ public class ClusterImpl implements Cluster {
   private final ReentrantReadWriteLock hostTransitionStateLock = new ReentrantReadWriteLock();
   private final Lock hostTransitionStateWriteLock = hostTransitionStateLock.writeLock();
 
-  private ClusterEntity clusterEntity;
+  /**
+   * The unique ID of the {@link @ClusterEntity}.
+   */
+  private final long clusterId;
+
+  private String clusterName;
 
   @Inject
   private ClusterDAO clusterDAO;
@@ -206,9 +224,6 @@ public class ClusterImpl implements Cluster {
 
   @Inject
   private ConfigGroupFactory configGroupFactory;
-
-  @Inject
-  private ConfigGroupHostMappingDAO configGroupHostMappingDAO;
 
   @Inject
   private RequestExecutionFactory requestExecutionFactory;
@@ -243,6 +258,9 @@ public class ClusterImpl implements Cluster {
   @Inject
   private AmbariSessionManager sessionManager;
 
+  @Inject
+  private TopologyRequestDAO topologyRequestDAO;
+
   /**
    * Data access object used for looking up stacks from the database.
    */
@@ -253,17 +271,24 @@ public class ClusterImpl implements Cluster {
 
   private volatile Multimap<String, String> serviceConfigTypes;
 
+  /**
+   * Used to publish events relating to cluster CRUD operations.
+   */
+  @Inject
+  private AmbariEventPublisher eventPublisher;
+
+
   @Inject
   public ClusterImpl(@Assisted ClusterEntity clusterEntity,
                      Injector injector) throws AmbariException {
     injector.injectMembers(this);
-    this.clusterEntity = clusterEntity;
 
-    serviceComponentHosts = new HashMap<String,
-      Map<String, Map<String, ServiceComponentHost>>>();
+    clusterId = clusterEntity.getClusterId();
+    clusterName = clusterEntity.getClusterName();
 
-    serviceComponentHostsByHost = new HashMap<String,
-      List<ServiceComponentHost>>();
+    serviceComponentHosts = new HashMap<>();
+
+    serviceComponentHostsByHost = new HashMap<>();
 
     desiredStackVersion = new StackId(clusterEntity.getDesiredStack());
 
@@ -382,21 +407,25 @@ public class ClusterImpl implements Cluster {
 
       try {
         if (services == null) {
-          services = new TreeMap<String, Service>();
-          if (!clusterEntity.getClusterServiceEntities().isEmpty()) {
-            for (ClusterServiceEntity serviceEntity : clusterEntity.getClusterServiceEntities()) {
-              StackId stackId = getCurrentStackVersion();
-              try {
-                if (ambariMetaInfo.getService(stackId.getStackName(),
+          ClusterEntity clusterEntity = getClusterEntity();
+          if (clusterEntity != null) {
+            services = new TreeMap<String, Service>();
+
+            if (!clusterEntity.getClusterServiceEntities().isEmpty()) {
+              for (ClusterServiceEntity serviceEntity : clusterEntity.getClusterServiceEntities()) {
+                StackId stackId = getCurrentStackVersion();
+                try {
+                  if (ambariMetaInfo.getService(stackId.getStackName(),
                     stackId.getStackVersion(), serviceEntity.getServiceName()) != null) {
-                  services.put(serviceEntity.getServiceName(),
+                    services.put(serviceEntity.getServiceName(),
                       serviceFactory.createExisting(this, serviceEntity));
-                }
-              } catch (AmbariException e) {
-                LOG.error(String.format(
+                  }
+                } catch (AmbariException e) {
+                  LOG.error(String.format(
                     "Can not get service info: stackName=%s, stackVersion=%s, serviceName=%s",
                     stackId.getStackName(), stackId.getStackVersion(),
                     serviceEntity.getServiceName()));
+                }
               }
             }
           }
@@ -413,11 +442,14 @@ public class ClusterImpl implements Cluster {
 
       try {
         if (clusterConfigGroups == null) {
-          clusterConfigGroups = new HashMap<Long, ConfigGroup>();
-          if (!clusterEntity.getConfigGroupEntities().isEmpty()) {
-            for (ConfigGroupEntity configGroupEntity : clusterEntity.getConfigGroupEntities()) {
-              clusterConfigGroups.put(configGroupEntity.getGroupId(),
+          ClusterEntity clusterEntity = getClusterEntity();
+          if (clusterEntity != null) {
+            clusterConfigGroups = new HashMap<Long, ConfigGroup>();
+            if (!clusterEntity.getConfigGroupEntities().isEmpty()) {
+              for (ConfigGroupEntity configGroupEntity : clusterEntity.getConfigGroupEntities()) {
+                clusterConfigGroups.put(configGroupEntity.getGroupId(),
                   configGroupFactory.createExisting(this, configGroupEntity));
+              }
             }
           }
         }
@@ -432,11 +464,14 @@ public class ClusterImpl implements Cluster {
       clusterGlobalLock.writeLock().lock();
       try {
         if (requestExecutions == null) {
-          requestExecutions = new HashMap<Long, RequestExecution>();
-          if (!clusterEntity.getRequestScheduleEntities().isEmpty()) {
-            for (RequestScheduleEntity scheduleEntity : clusterEntity.getRequestScheduleEntities()) {
-              requestExecutions.put(scheduleEntity.getScheduleId(),
+          ClusterEntity clusterEntity = getClusterEntity();
+          if (clusterEntity != null) {
+            requestExecutions = new HashMap<Long, RequestExecution>();
+            if (!clusterEntity.getRequestScheduleEntities().isEmpty()) {
+              for (RequestScheduleEntity scheduleEntity : clusterEntity.getRequestScheduleEntities()) {
+                requestExecutions.put(scheduleEntity.getScheduleId(),
                   requestExecutionFactory.createExisting(this, scheduleEntity));
+              }
             }
           }
         }
@@ -451,9 +486,18 @@ public class ClusterImpl implements Cluster {
     loadConfigGroups();
     clusterGlobalLock.writeLock().lock();
     try {
+      String hostList = "";
+      if(LOG.isDebugEnabled()) {
+        if (configGroup.getHosts() != null) {
+          for (Host host : configGroup.getHosts().values()) {
+            hostList += host.getHostName() + ", ";
+          }
+        }
+      }
+
       LOG.debug("Adding a new Config group" + ", clusterName = "
-          + getClusterName() + ", groupName = " + configGroup.getName()
-          + ", tag = " + configGroup.getTag());
+        + getClusterName() + ", groupName = " + configGroup.getName()
+        + ", tag = " + configGroup.getTag() + " with hosts " + hostList);
 
       if (clusterConfigGroups.containsKey(configGroup.getId())) {
         // The loadConfigGroups will load all groups to memory
@@ -512,8 +556,8 @@ public class ClusterImpl implements Cluster {
     clusterGlobalLock.writeLock().lock();
     try {
       LOG.info("Adding a new request schedule" + ", clusterName = "
-          + getClusterName() + ", id = " + requestExecution.getId()
-          + ", description = " + requestExecution.getDescription());
+        + getClusterName() + ", id = " + requestExecution.getId()
+        + ", description = " + requestExecution.getDescription());
 
       if (requestExecutions.containsKey(requestExecution.getId())) {
         LOG.debug("Request schedule already exists" + ", clusterName = "
@@ -549,8 +593,8 @@ public class ClusterImpl implements Cluster {
             + "id = " + id);
       }
       LOG.info("Deleting request schedule" + ", clusterName = "
-          + getClusterName() + ", id = " + requestExecution.getId()
-          + ", description = " + requestExecution.getDescription());
+        + getClusterName() + ", id = " + requestExecution.getId()
+        + ", description = " + requestExecution.getDescription());
 
       requestExecution.delete();
       requestExecutions.remove(id);
@@ -560,7 +604,7 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
-  public void deleteConfigGroup(Long id) throws AmbariException {
+  public void deleteConfigGroup(Long id) throws AmbariException, AuthorizationException {
     loadConfigGroups();
     clusterGlobalLock.writeLock().lock();
     try {
@@ -568,6 +612,7 @@ public class ClusterImpl implements Cluster {
       if (configGroup == null) {
         throw new ConfigGroupNotFoundException(getClusterName(), id.toString());
       }
+
       LOG.debug("Deleting Config group" + ", clusterName = " + getClusterName()
           + ", groupName = " + configGroup.getName() + ", groupId = "
           + configGroup.getId() + ", tag = " + configGroup.getTag());
@@ -594,7 +639,7 @@ public class ClusterImpl implements Cluster {
             serviceName, serviceComponentName, hostname);
       }
       return serviceComponentHosts.get(serviceName).get(serviceComponentName).get(
-          hostname);
+        hostname);
     } finally {
       clusterGlobalLock.readLock().unlock();
     }
@@ -602,22 +647,49 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public String getClusterName() {
-    return clusterEntity.getClusterName();
+    return clusterName;
   }
 
   @Override
   public void setClusterName(String clusterName) {
+    String oldName = null;
     clusterGlobalLock.writeLock().lock();
     try {
-      String oldName = clusterEntity.getClusterName();
-      clusterEntity.setClusterName(clusterName);
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        oldName = clusterEntity.getClusterName();
+        clusterEntity.setClusterName(clusterName);
 
-      // RollbackException possibility if UNIQUE constraint violated
-      clusterEntity = clusterDAO.merge(clusterEntity);
-      clusters.updateClusterName(oldName, clusterName);
+        // RollbackException possibility if UNIQUE constraint violated
+        clusterEntity = clusterDAO.merge(clusterEntity);
+        clusters.updateClusterName(oldName, clusterName);
+        this.clusterName = clusterName;
+      }
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
+
+    // if the name changed, fire an event
+    if (!StringUtils.equals(oldName, clusterName)) {
+      ClusterEvent clusterNameChangedEvent = new ClusterEvent(AmbariEventType.CLUSTER_RENAME, clusterId);
+      eventPublisher.publish(clusterNameChangedEvent);
+    }
+  }
+
+  @Override
+  public Long getResourceId() {
+    ClusterEntity clusterEntity = getClusterEntity();
+    if (clusterEntity != null) {
+      ResourceEntity resourceEntity = clusterEntity.getResource();
+      if (resourceEntity == null) {
+        LOG.warn("There is no resource associated with this cluster:\n\tCluster Name: {}\n\tCluster ID: {}",
+          getClusterName(), getClusterId());
+        return null;
+      } else {
+        return resourceEntity.getId();
+      }
+    }
+    return null;
   }
 
   @Override
@@ -696,7 +768,7 @@ public class ClusterImpl implements Cluster {
 
       if (!serviceComponentHostsByHost.containsKey(hostname)) {
         serviceComponentHostsByHost.put(hostname,
-            new ArrayList<ServiceComponentHost>());
+          new ArrayList<ServiceComponentHost>());
       }
 
       if (LOG.isDebugEnabled()) {
@@ -707,7 +779,7 @@ public class ClusterImpl implements Cluster {
       }
 
       serviceComponentHosts.get(serviceName).get(componentName).put(hostname,
-          svcCompHost);
+        svcCompHost);
       serviceComponentHostsByHost.get(hostname).add(svcCompHost);
     } finally {
       clusterGlobalLock.writeLock().unlock();
@@ -776,9 +848,9 @@ public class ClusterImpl implements Cluster {
 
       if (schToRemove == null) {
         LOG.warn("Unavailable in per host cache. ServiceComponentHost"
-            + ", serviceName=" + serviceName
-            + ", serviceComponentName" + componentName
-            + ", hostname= " + hostname);
+          + ", serviceName=" + serviceName
+          + ", serviceComponentName" + componentName
+          + ", hostname= " + hostname);
       }
 
       if (LOG.isDebugEnabled()) {
@@ -799,7 +871,9 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public long getClusterId() {
-    return clusterEntity.getClusterId();
+    // Add cluster creates the managed entity before creating the Cluster
+    // instance so id would not be null.
+    return clusterId;
   }
 
   @Override
@@ -850,8 +924,8 @@ public class ClusterImpl implements Cluster {
     try {
       if (LOG.isDebugEnabled()) {
         LOG.debug("Adding a new Service" + ", clusterName=" + getClusterName()
-            + ", clusterId=" + getClusterId() + ", serviceName="
-            + service.getName());
+          + ", clusterId=" + getClusterId() + ", serviceName="
+          + service.getName());
       }
       if (services.containsKey(service.getName())) {
         throw new AmbariException("Service already exists" + ", clusterName="
@@ -871,7 +945,7 @@ public class ClusterImpl implements Cluster {
     try {
       if (LOG.isDebugEnabled()) {
         LOG.debug("Adding a new Service" + ", clusterName=" + getClusterName()
-            + ", clusterId=" + getClusterId() + ", serviceName=" + serviceName);
+          + ", clusterId=" + getClusterId() + ", serviceName=" + serviceName);
       }
       if (services.containsKey(serviceName)) {
         throw new AmbariException("Service already exists" + ", clusterName="
@@ -887,8 +961,7 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
-  public Service getService(String serviceName)
-    throws AmbariException {
+  public Service getService(String serviceName) throws AmbariException {
     loadServices();
     clusterGlobalLock.readLock().lock();
     try {
@@ -914,6 +987,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public StackId getDesiredStackVersion() {
+    loadStackVersion();
     clusterGlobalLock.readLock().lock();
     try {
       return desiredStackVersion;
@@ -939,42 +1013,46 @@ public class ClusterImpl implements Cluster {
       }
 
       desiredStackVersion = stackId;
-      StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
-          stackId.getStackVersion());
+      StackEntity stackEntity = stackDAO.find(stackId.getStackName(), stackId.getStackVersion());
 
-      clusterEntity.setDesiredStack(stackEntity);
-      clusterEntity = clusterDAO.merge(clusterEntity);
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        clusterEntity.setDesiredStack(stackEntity);
+        clusterEntity = clusterDAO.merge(clusterEntity);
 
-      if (cascade) {
-        for (Service service : getServices().values()) {
-          service.setDesiredStackVersion(stackId);
+        if (cascade) {
+          for (Service service : getServices().values()) {
+            service.setDesiredStackVersion(stackId);
 
-          for (ServiceComponent sc : service.getServiceComponents().values()) {
-            sc.setDesiredStackVersion(stackId);
+            for (ServiceComponent sc : service.getServiceComponents().values()) {
+              sc.setDesiredStackVersion(stackId);
 
-            for (ServiceComponentHost sch : sc.getServiceComponentHosts().values()) {
-              sch.setDesiredStackVersion(stackId);
+              for (ServiceComponentHost sch : sc.getServiceComponentHosts().values()) {
+                sch.setDesiredStackVersion(stackId);
+              }
             }
           }
         }
+        loadServiceConfigTypes();
       }
-
-      loadServiceConfigTypes();
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
   }
 
-
   @Override
   public StackId getCurrentStackVersion() {
     clusterGlobalLock.readLock().lock();
     try {
-      ClusterStateEntity clusterStateEntity = clusterEntity.getClusterStateEntity();
-      if (clusterStateEntity != null) {
-        StackEntity currentStackEntity = clusterStateEntity.getCurrentStack();
-        return new StackId(currentStackEntity);
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        ClusterStateEntity clusterStateEntity = clusterEntity.getClusterStateEntity();
+        if (clusterStateEntity != null) {
+          StackEntity currentStackEntity = clusterStateEntity.getCurrentStack();
+          return new StackId(currentStackEntity);
+        }
       }
+
       return null;
     } finally {
       clusterGlobalLock.readLock().unlock();
@@ -986,10 +1064,13 @@ public class ClusterImpl implements Cluster {
     clusterGlobalLock.readLock().lock();
     State provisioningState = null;
     try {
-      provisioningState = clusterEntity.getProvisioningState();
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        provisioningState = clusterEntity.getProvisioningState();
 
-      if (null == provisioningState) {
-        provisioningState = State.INIT;
+        if (null == provisioningState) {
+          provisioningState = State.INIT;
+        }
       }
 
       return provisioningState;
@@ -1002,8 +1083,11 @@ public class ClusterImpl implements Cluster {
   public void setProvisioningState(State provisioningState) {
     clusterGlobalLock.writeLock().lock();
     try {
-      clusterEntity.setProvisioningState(provisioningState);
-      clusterEntity = clusterDAO.merge(clusterEntity);
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        clusterEntity.setProvisioningState(provisioningState);
+        clusterEntity = clusterDAO.merge(clusterEntity);
+      }
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
@@ -1014,10 +1098,13 @@ public class ClusterImpl implements Cluster {
     clusterGlobalLock.readLock().lock();
     SecurityType securityType = null;
     try {
-      securityType = clusterEntity.getSecurityType();
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        securityType = clusterEntity.getSecurityType();
 
-      if (null == securityType) {
-        securityType = SecurityType.NONE;
+        if (null == securityType) {
+          securityType = SecurityType.NONE;
+        }
       }
 
       return securityType;
@@ -1030,8 +1117,11 @@ public class ClusterImpl implements Cluster {
   public void setSecurityType(SecurityType securityType) {
     clusterGlobalLock.writeLock().lock();
     try {
-      clusterEntity.setSecurityType(securityType);
-      clusterEntity = clusterDAO.merge(clusterEntity);
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        clusterEntity.setSecurityType(securityType);
+        clusterEntity = clusterDAO.merge(clusterEntity);
+      }
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
@@ -1043,7 +1133,15 @@ public class ClusterImpl implements Cluster {
    */
   @Override
   public ClusterVersionEntity getCurrentClusterVersion() {
-    return clusterVersionDAO.findByClusterAndStateCurrent(getClusterName());
+    Collection<ClusterVersionEntity> clusterVersionEntities = getClusterEntity().getClusterVersionEntities();
+    for (ClusterVersionEntity clusterVersionEntity : clusterVersionEntities) {
+      if (clusterVersionEntity.getState() == RepositoryVersionState.CURRENT) {
+//      TODO assuming there's only 1 current version, return 1st found, exception was expected in previous implementation
+        return clusterVersionEntity;
+      }
+    }
+    return null;
+//    return clusterVersionDAO.findByClusterAndStateCurrent(getClusterName());
   }
 
   /**
@@ -1083,8 +1181,8 @@ public class ClusterImpl implements Cluster {
 
       Map<String, HostVersionEntity> existingHostToHostVersionEntity = new HashMap<String, HostVersionEntity>();
       List<HostVersionEntity> existingHostVersionEntities = hostVersionDAO.findByClusterStackAndVersion(
-          getClusterName(), repoVersionStackId,
-          currentClusterVersion.getRepositoryVersion().getVersion());
+        getClusterName(), repoVersionStackId,
+        currentClusterVersion.getRepositoryVersion().getVersion());
 
       if (existingHostVersionEntities != null) {
         for (HostVersionEntity entity : existingHostVersionEntities) {
@@ -1093,7 +1191,7 @@ public class ClusterImpl implements Cluster {
       }
 
       Sets.SetView<String> intersection = Sets.intersection(
-          existingHostToHostVersionEntity.keySet(), hostNames);
+        existingHostToHostVersionEntity.keySet(), hostNames);
 
       for (String hostname : hostNames) {
         List<HostVersionEntity> currentHostVersions = hostVersionDAO.findByClusterHostAndState(
@@ -1112,7 +1210,7 @@ public class ClusterImpl implements Cluster {
             HostVersionEntity hostVersionEntity = existingHostToHostVersionEntity.get(hostname);
             if (hostVersionEntity.getState() != desiredState) {
               hostVersionEntity.setState(desiredState);
-              hostVersionDAO.merge(hostVersionEntity);
+            hostVersionEntity = hostVersionDAO.merge(hostVersionEntity);
             }
 
           // Maintain the invariant that only one HostVersionEntity is allowed
@@ -1123,7 +1221,7 @@ public class ClusterImpl implements Cluster {
               && desiredState == RepositoryVersionState.CURRENT
               && currentHostVersionEntity.getState() == RepositoryVersionState.CURRENT) {
             currentHostVersionEntity.setState(RepositoryVersionState.INSTALLED);
-            hostVersionDAO.merge(currentHostVersionEntity);
+            currentHostVersionEntity = hostVersionDAO.merge(currentHostVersionEntity);
           }
         }
       }
@@ -1169,33 +1267,61 @@ public class ClusterImpl implements Cluster {
 
       // find any hosts that do not have the stack/repo version already
       Sets.SetView<String> hostsMissingRepoVersion = Sets.difference(
-          hosts.keySet(), existingHostsWithClusterStackAndVersion);
+        hosts.keySet(), existingHostsWithClusterStackAndVersion);
 
-      for (String hostname : hosts.keySet()) {
-        // if the host is in maintenance mode, that's an explicit marker which
-        // indicates that it should not be transitioned to INSTALLING; these
-        // hosts are excluded from being transitioned into INSTALLING
-        Host host = hosts.get(hostname);
-        if (host.getMaintenanceState(getClusterId()) != MaintenanceState.OFF) {
-          continue;
-        }
-
-        if (hostsMissingRepoVersion.contains(hostname)) {
-          // Create new host stack version
-          HostEntity hostEntity = hostDAO.findByName(hostname);
-          HostVersionEntity hostVersionEntity = new HostVersionEntity(hostEntity,
-              sourceClusterVersion.getRepositoryVersion(),
-              RepositoryVersionState.INSTALLING);
-          hostVersionDAO.create(hostVersionEntity);
-        } else {
-          // Update existing host stack version
-          HostVersionEntity hostVersionEntity = existingHostStackVersions.get(hostname);
-          hostVersionEntity.setState(RepositoryVersionState.INSTALLING);
-          hostVersionDAO.merge(hostVersionEntity);
-        }
-      }
+      createOrUpdateHostVersionToState(sourceClusterVersion, hosts,
+        existingHostStackVersions, hostsMissingRepoVersion,
+        RepositoryVersionState.INSTALLING);
     } finally {
       clusterGlobalLock.writeLock().unlock();
+    }
+  }
+
+  /**
+   * Moved out to a separate method due to performance reasons
+   * Iterates over all hosts and creates or transitions existing host versions
+   * to a given state. If host version for desired stack/version does not exist,
+   * host version is created and initialized to a given state. Otherwise, existing
+   * host version state is updated
+   * Hosts in maintenance mode are auto skipped.
+   *
+   * @param sourceClusterVersion cluster version to be queried for a stack
+   *                             name/version info when creating a new host version
+   * @param hosts list of all hosts
+   * @param existingHostStackVersions map of existing host versions to be updated
+   * @param hostsMissingRepoVersion set of hostnames of hosts that have no desired host version
+   * @param newState target host version state for transition
+   */
+  @Transactional
+  void createOrUpdateHostVersionToState(ClusterVersionEntity sourceClusterVersion,
+      Map<String, Host> hosts, HashMap<String, HostVersionEntity> existingHostStackVersions,
+      Sets.SetView<String> hostsMissingRepoVersion, RepositoryVersionState newState) {
+
+    for (String hostname : hosts.keySet()) {
+      // start off with the requested new state for each host
+      RepositoryVersionState repositoryVersionState = newState;
+
+      // if the host is in maintenance mode, that's an explicit marker which
+      // indicates that it should not be transitioned to INSTALLING; instead
+      // they will be transitioned to OUT_OF_SYNC
+      Host host = hosts.get(hostname);
+      if (host.getMaintenanceState(getClusterId()) != MaintenanceState.OFF) {
+        repositoryVersionState = RepositoryVersionState.OUT_OF_SYNC;
+      }
+
+      if (hostsMissingRepoVersion.contains(hostname)) {
+        // Create new host stack version
+        HostEntity hostEntity = hostDAO.findByName(hostname);
+        HostVersionEntity hostVersionEntity = new HostVersionEntity(hostEntity,
+            sourceClusterVersion.getRepositoryVersion(), repositoryVersionState);
+
+        hostVersionDAO.create(hostVersionEntity);
+      } else {
+        // Update existing host stack version
+        HostVersionEntity hostVersionEntity = existingHostStackVersions.get(hostname);
+        hostVersionEntity.setState(repositoryVersionState);
+        hostVersionEntity = hostVersionDAO.merge(hostVersionEntity);
+      }
     }
   }
 
@@ -1206,6 +1332,7 @@ public class ClusterImpl implements Cluster {
    * UPGRADE_FAILED: at least one host in UPGRADE_FAILED
    * UPGRADED: all hosts are UPGRADED
    * UPGRADING: at least one host is UPGRADING, and the rest in UPGRADING|INSTALLED
+   * UPGRADING: at least one host is UPGRADED, and the rest in UPGRADING|INSTALLED
    * INSTALLED: all hosts in INSTALLED
    * INSTALL_FAILED: at least one host in INSTALL_FAILED
    * INSTALLING: all hosts in INSTALLING. Notice that if one host is CURRENT and another is INSTALLING, then the
@@ -1236,22 +1363,38 @@ public class ClusterImpl implements Cluster {
     if (stateToHosts.containsKey(RepositoryVersionState.UPGRADING) && !stateToHosts.get(RepositoryVersionState.UPGRADING).isEmpty()) {
       return RepositoryVersionState.UPGRADING;
     }
+    if (stateToHosts.containsKey(RepositoryVersionState.UPGRADED)
+        && !stateToHosts.get(RepositoryVersionState.UPGRADED).isEmpty()
+        && stateToHosts.get(RepositoryVersionState.UPGRADED).size() != totalHosts) {
+      // It is possible that a host has transitioned to UPGRADED state even before any other host has transitioned to UPGRADING state.
+      // Example: Host with single component ZOOKEEPER Server on it which is the first component to be upgraded.
+      return RepositoryVersionState.UPGRADING;
+    }
     if (stateToHosts.containsKey(RepositoryVersionState.INSTALLED) && stateToHosts.get(RepositoryVersionState.INSTALLED).size() == totalHosts) {
       return RepositoryVersionState.INSTALLED;
     }
-    if (stateToHosts.containsKey(RepositoryVersionState.INSTALL_FAILED) && !stateToHosts.get(RepositoryVersionState.INSTALL_FAILED).isEmpty()) {
-      return RepositoryVersionState.INSTALL_FAILED;
+    if (stateToHosts.containsKey(RepositoryVersionState.INSTALL_FAILED) &&
+      !stateToHosts.get(RepositoryVersionState.INSTALL_FAILED).isEmpty()) {
+      // Installation failed on some host(s). But
+      // cluster version state should transition to Install Failed only after
+      // all hosts have finished installation. Otherwise, UI will misbehave
+      // (hide progress dialog before installation is finished)
+      if (! stateToHosts.containsKey(RepositoryVersionState.INSTALLING) ||
+        stateToHosts.get(RepositoryVersionState.INSTALLING).isEmpty()) {
+        return RepositoryVersionState.INSTALL_FAILED;
+      }
     }
 
     final int totalINSTALLING = stateToHosts.containsKey(RepositoryVersionState.INSTALLING) ? stateToHosts.get(RepositoryVersionState.INSTALLING).size() : 0;
     final int totalINSTALLED = stateToHosts.containsKey(RepositoryVersionState.INSTALLED) ? stateToHosts.get(RepositoryVersionState.INSTALLED).size() : 0;
-    if (totalINSTALLING + totalINSTALLED == totalHosts) {
+    final int totalINSTALL_FAILED = stateToHosts.containsKey(RepositoryVersionState.INSTALL_FAILED) ? stateToHosts.get(RepositoryVersionState.INSTALL_FAILED).size() : 0;
+    if (totalINSTALLING + totalINSTALLED + totalINSTALL_FAILED== totalHosts) {
       return RepositoryVersionState.INSTALLING;
     }
 
     // Also returns when have a mix of CURRENT and INSTALLING|INSTALLED|UPGRADING|UPGRADED
     LOG.warn("have a mix of CURRENT and INSTALLING|INSTALLED|UPGRADING|UPGRADED host versions, " +
-            "returning OUT_OF_SYNC as cluster version. Host version states: " + stateToHosts.toString());
+      "returning OUT_OF_SYNC as cluster version. Host version states: " + stateToHosts.toString());
     return RepositoryVersionState.OUT_OF_SYNC;
   }
 
@@ -1328,8 +1471,14 @@ public class ClusterImpl implements Cluster {
               hostVersionDAO.findByClusterStackAndVersion(getClusterName(), stackId, version);
 
       Set<String> hostsWithState = new HashSet<String>();
+      Set<String> hostsInMaintenanceState = new HashSet<>();
       for (HostVersionEntity hostVersionEntity : hostVersionEntities) {
         String hostname = hostVersionEntity.getHostEntity().getHostName();
+        Host host = hosts.get(hostname);
+        if(host != null && host.getMaintenanceState(getClusterId()) == MaintenanceState.ON) {
+          hostsInMaintenanceState.add(hostname);
+          continue;
+        }
         hostsWithState.add(hostname);
         RepositoryVersionState hostState = hostVersionEntity.getState();
 
@@ -1344,6 +1493,7 @@ public class ClusterImpl implements Cluster {
 
       hostsWithoutHostVersion.addAll(hosts.keySet());
       hostsWithoutHostVersion.removeAll(hostsWithState);
+      hostsWithoutHostVersion.removeAll(hostsInMaintenanceState);
 
       // Ensure that all of the hosts without a Host Version only have
       // Components that do not advertise a version.
@@ -1410,8 +1560,8 @@ public class ClusterImpl implements Cluster {
     StackId repoVersionStackId = new StackId(repoVersionStackEntity);
 
     HostVersionEntity hostVersionEntity = hostVersionDAO.findByClusterStackVersionAndHost(
-        getClusterName(), repoVersionStackId, repositoryVersion.getVersion(),
-        host.getHostName());
+      getClusterName(), repoVersionStackId, repositoryVersion.getVersion(),
+      host.getHostName());
 
     hostTransitionStateWriteLock.lock();
     try {
@@ -1435,21 +1585,21 @@ public class ClusterImpl implements Cluster {
         // Alternatively, transition to CURRENT during initial bootstrap if at least one host component advertised a version
         if (hostSummary.isUpgradeFinished() && hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADING) || performingInitialBootstrap) {
           hostVersionEntity.setState(RepositoryVersionState.CURRENT);
-          hostVersionDAO.merge(hostVersionEntity);
+          hostVersionEntity = hostVersionDAO.merge(hostVersionEntity);
         }
       } else {
-        // Handle transitions during a Rolling Upgrade
+        // Handle transitions during a Stack Upgrade
 
         // If a host only has one Component to update, that single report can still transition the host version from
         // INSTALLED->UPGRADING->UPGRADED in one shot.
         if (hostSummary.isUpgradeInProgress(currentVersionEntity.getRepositoryVersion().getVersion()) && hostVersionEntity.getState().equals(RepositoryVersionState.INSTALLED)) {
           hostVersionEntity.setState(RepositoryVersionState.UPGRADING);
-          hostVersionDAO.merge(hostVersionEntity);
+          hostVersionEntity = hostVersionDAO.merge(hostVersionEntity);
         }
 
         if (hostSummary.isUpgradeFinished() && hostVersionEntity.getState().equals(RepositoryVersionState.UPGRADING)) {
           hostVersionEntity.setState(RepositoryVersionState.UPGRADED);
-          hostVersionDAO.merge(hostVersionEntity);
+          hostVersionEntity = hostVersionDAO.merge(hostVersionEntity);
         }
       }
     } finally {
@@ -1465,8 +1615,10 @@ public class ClusterImpl implements Cluster {
       List<ClusterVersionEntity> clusterVersionEntities = clusterVersionDAO.findByCluster(getClusterName());
       StackId currentStackId = getCurrentStackVersion();
       for (ClusterVersionEntity clusterVersionEntity : clusterVersionEntities) {
-        if (clusterVersionEntity.getRepositoryVersion().getStack().equals(
-            currentStackId.getStackId())
+        RepositoryVersionEntity repositoryVersionEntity = clusterVersionEntity.getRepositoryVersion();
+        StackId repoVersionStackId = repositoryVersionEntity.getStackId();
+
+        if (repoVersionStackId.equals(currentStackId)
             && clusterVersionEntity.getState() != RepositoryVersionState.CURRENT) {
           recalculateClusterVersionState(clusterVersionEntity.getRepositoryVersion());
         }
@@ -1507,7 +1659,7 @@ public class ClusterImpl implements Cluster {
     }
 
     ClusterVersionEntity existing = clusterVersionDAO.findByClusterAndStackAndVersion(
-        getClusterName(), stackId, version);
+      getClusterName(), stackId, version);
     if (existing != null) {
       throw new DuplicateResourceException(
           "Duplicate item, a cluster version with stack=" + stackId
@@ -1516,15 +1668,20 @@ public class ClusterImpl implements Cluster {
     }
 
     RepositoryVersionEntity repositoryVersionEntity = repositoryVersionDAO.findByStackAndVersion(
-        stackId, version);
+      stackId, version);
     if (repositoryVersionEntity == null) {
       LOG.warn("Could not find repository version for stack=" + stackId
           + ", version=" + version);
       return;
     }
 
-    ClusterVersionEntity clusterVersionEntity = new ClusterVersionEntity(clusterEntity, repositoryVersionEntity, state, System.currentTimeMillis(), System.currentTimeMillis(), userName);
+    ClusterEntity clusterEntity = getClusterEntity();
+    ClusterVersionEntity clusterVersionEntity = new ClusterVersionEntity(
+        clusterEntity, repositoryVersionEntity, state,
+      System.currentTimeMillis(), System.currentTimeMillis(), userName);
     clusterVersionDAO.create(clusterVersionEntity);
+    clusterEntity.getClusterVersionEntities().add(clusterVersionEntity);
+    clusterEntity = clusterDAO.merge(clusterEntity);
   }
 
   /**
@@ -1553,142 +1710,146 @@ public class ClusterImpl implements Cluster {
     Set<RepositoryVersionState> allowedStates = new HashSet<RepositoryVersionState>();
     clusterGlobalLock.writeLock().lock();
     try {
-      ClusterVersionEntity existingClusterVersion = clusterVersionDAO.findByClusterAndStackAndVersion(
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        ClusterVersionEntity existingClusterVersion = clusterVersionDAO.findByClusterAndStackAndVersion(
           getClusterName(), stackId, version);
 
-      if (existingClusterVersion == null) {
-        throw new AmbariException(
+        if (existingClusterVersion == null) {
+          throw new AmbariException(
             "Existing cluster version not found for cluster="
-                + getClusterName() + ", stack=" + stackId + ", version="
-                + version);
-      }
-
-      // NOOP
-      if (existingClusterVersion.getState() == state) {
-        return;
-      }
-
-      switch (existingClusterVersion.getState()) {
-        case CURRENT:
-          // If CURRENT state is changed here cluster will not have CURRENT
-          // state.
-          // CURRENT state will be changed to INSTALLED when another CURRENT
-          // state is added.
-          // allowedStates.add(RepositoryVersionState.INSTALLED);
-          break;
-        case INSTALLING:
-          allowedStates.add(RepositoryVersionState.INSTALLED);
-          allowedStates.add(RepositoryVersionState.INSTALL_FAILED);
-          allowedStates.add(RepositoryVersionState.OUT_OF_SYNC);
-          break;
-        case INSTALL_FAILED:
-          allowedStates.add(RepositoryVersionState.INSTALLING);
-          break;
-        case INSTALLED:
-          allowedStates.add(RepositoryVersionState.INSTALLING);
-          allowedStates.add(RepositoryVersionState.UPGRADING);
-          allowedStates.add(RepositoryVersionState.OUT_OF_SYNC);
-          break;
-        case OUT_OF_SYNC:
-          allowedStates.add(RepositoryVersionState.INSTALLING);
-          break;
-        case UPGRADING:
-          allowedStates.add(RepositoryVersionState.UPGRADED);
-          allowedStates.add(RepositoryVersionState.UPGRADE_FAILED);
-          if (clusterVersionDAO.findByClusterAndStateCurrent(getClusterName()) == null) {
-            allowedStates.add(RepositoryVersionState.CURRENT);
-          }
-          break;
-        case UPGRADED:
-          allowedStates.add(RepositoryVersionState.CURRENT);
-          break;
-        case UPGRADE_FAILED:
-          allowedStates.add(RepositoryVersionState.UPGRADING);
-          break;
-      }
-
-      if (!allowedStates.contains(state)) {
-        throw new AmbariException("Invalid cluster version transition from "
-            + existingClusterVersion.getState() + " to " + state);
-      }
-
-      // There must be at most one cluster version whose state is CURRENT at
-      // all times.
-      if (state == RepositoryVersionState.CURRENT) {
-        ClusterVersionEntity currentVersion = clusterVersionDAO.findByClusterAndStateCurrent(getClusterName());
-        if (currentVersion != null) {
-          currentVersion.setState(RepositoryVersionState.INSTALLED);
-          clusterVersionDAO.merge(currentVersion);
+              + getClusterName() + ", stack=" + stackId + ", version="
+              + version);
         }
-      }
 
-      existingClusterVersion.setState(state);
-      existingClusterVersion.setEndTime(System.currentTimeMillis());
-      clusterVersionDAO.merge(existingClusterVersion);
+        // NOOP
+        if (existingClusterVersion.getState() == state) {
+          return;
+        }
 
-      if (state == RepositoryVersionState.CURRENT) {
-        for (HostEntity hostEntity : clusterEntity.getHostEntities()) {
-          if (hostHasReportables(existingClusterVersion.getRepositoryVersion(),
-              hostEntity)) {
-            continue;
+        switch (existingClusterVersion.getState()) {
+          case CURRENT:
+            // If CURRENT state is changed here cluster will not have CURRENT
+            // state.
+            // CURRENT state will be changed to INSTALLED when another CURRENT
+            // state is added.
+            // allowedStates.add(RepositoryVersionState.INSTALLED);
+            break;
+          case INSTALLING:
+            allowedStates.add(RepositoryVersionState.INSTALLED);
+            allowedStates.add(RepositoryVersionState.INSTALL_FAILED);
+            allowedStates.add(RepositoryVersionState.OUT_OF_SYNC);
+            break;
+          case INSTALL_FAILED:
+            allowedStates.add(RepositoryVersionState.INSTALLING);
+            break;
+          case INSTALLED:
+            allowedStates.add(RepositoryVersionState.INSTALLING);
+            allowedStates.add(RepositoryVersionState.UPGRADING);
+            allowedStates.add(RepositoryVersionState.OUT_OF_SYNC);
+            break;
+          case OUT_OF_SYNC:
+            allowedStates.add(RepositoryVersionState.INSTALLING);
+            break;
+          case UPGRADING:
+            allowedStates.add(RepositoryVersionState.UPGRADED);
+            allowedStates.add(RepositoryVersionState.UPGRADE_FAILED);
+            if (clusterVersionDAO.findByClusterAndStateCurrent(getClusterName()) == null) {
+              allowedStates.add(RepositoryVersionState.CURRENT);
+            }
+            break;
+          case UPGRADED:
+            allowedStates.add(RepositoryVersionState.CURRENT);
+            break;
+          case UPGRADE_FAILED:
+            allowedStates.add(RepositoryVersionState.UPGRADING);
+            break;
+        }
+
+        if (!allowedStates.contains(state)) {
+          throw new AmbariException("Invalid cluster version transition from "
+            + existingClusterVersion.getState() + " to " + state);
+        }
+
+        // There must be at most one cluster version whose state is CURRENT at
+        // all times.
+        if (state == RepositoryVersionState.CURRENT) {
+          ClusterVersionEntity currentVersion = clusterVersionDAO.findByClusterAndStateCurrent(getClusterName());
+          if (currentVersion != null) {
+            currentVersion.setState(RepositoryVersionState.INSTALLED);
+            currentVersion = clusterVersionDAO.merge(currentVersion);
           }
+        }
 
-          Collection<HostVersionEntity> versions = hostVersionDAO.findByHost(hostEntity.getHostName());
+        existingClusterVersion.setState(state);
+        existingClusterVersion.setEndTime(System.currentTimeMillis());
+        existingClusterVersion = clusterVersionDAO.merge(existingClusterVersion);
 
-          HostVersionEntity target = null;
-          if (null != versions) {
-            // Set anything that was previously marked CURRENT as INSTALLED, and
-            // the matching version as CURRENT
-            for (HostVersionEntity entity : versions) {
-              if (entity.getRepositoryVersion().getId().equals(
+        if (state == RepositoryVersionState.CURRENT) {
+          for (HostEntity hostEntity : clusterEntity.getHostEntities()) {
+            if (hostHasReportables(existingClusterVersion.getRepositoryVersion(), hostEntity)) {
+              continue;
+            }
+
+            Collection<HostVersionEntity> versions = hostVersionDAO.findByHost(hostEntity.getHostName());
+
+            HostVersionEntity target = null;
+            if (null != versions) {
+              // Set anything that was previously marked CURRENT as INSTALLED, and
+              // the matching version as CURRENT
+              for (HostVersionEntity entity : versions) {
+                if (entity.getRepositoryVersion().getId().equals(
                   existingClusterVersion.getRepositoryVersion().getId())) {
-                target = entity;
-                target.setState(state);
-                hostVersionDAO.merge(target);
-              } else if (entity.getState() == RepositoryVersionState.CURRENT) {
-                entity.setState(RepositoryVersionState.INSTALLED);
-                hostVersionDAO.merge(entity);
+                  target = entity;
+                  target.setState(state);
+                  target = hostVersionDAO.merge(target);
+                } else if (entity.getState() == RepositoryVersionState.CURRENT) {
+                  entity.setState(RepositoryVersionState.INSTALLED);
+                  entity = hostVersionDAO.merge(entity);
+                }
               }
+            }
+
+            if (null == target) {
+              // If no matching version was found, create one with the desired
+              // state
+              HostVersionEntity hve = new HostVersionEntity(hostEntity,
+                existingClusterVersion.getRepositoryVersion(), state);
+
+              hostVersionDAO.create(hve);
             }
           }
 
-          if (null == target) {
-            // If no matching version was found, create one with the desired
-            // state
-            HostVersionEntity hve = new HostVersionEntity(hostEntity,
-                existingClusterVersion.getRepositoryVersion(), state);
+          // when setting the cluster's state to current, we must also
+          // bring the desired stack and current stack in line with each other
+          StackEntity desiredStackEntity = clusterEntity.getDesiredStack();
+          StackId desiredStackId = new StackId(desiredStackEntity);
 
-            hostVersionDAO.create(hve);
-          }
-        }
-
-        // when setting the cluster's state to current, we must also
-        // bring the desired stack and current stack in line with each other
-        StackEntity desiredStackEntity = clusterEntity.getDesiredStack();
-        StackId desiredStackId = new StackId(desiredStackEntity);
-
-        // if the desired stack ID doesn't match the target when setting the
-        // cluster to CURRENT, then there's a problem
-        if (!desiredStackId.equals(stackId)) {
-          String message = MessageFormat.format(
+          // if the desired stack ID doesn't match the target when setting the
+          // cluster to CURRENT, then there's a problem
+          if (!desiredStackId.equals(stackId)) {
+            String message = MessageFormat.format(
               "The desired stack ID {0} must match {1} when transitioning the cluster''s state to {2}",
               desiredStackId, stackId, RepositoryVersionState.CURRENT);
 
-          throw new AmbariException(message);
-        }
+            throw new AmbariException(message);
+          }
 
-        setCurrentStackVersion(stackId);
+          setCurrentStackVersion(stackId);
+        }
       }
     } catch (RollbackException e) {
       String message = MessageFormat.format(
-          "Unable to transition stack {0} at version {1} for cluster {2} to state {3}",
-          stackId, version, getClusterName(), state);
+        "Unable to transition stack {0} at version {1} for cluster {2} to state {3}",
+        stackId, version, getClusterName(), state);
 
       LOG.warn(message);
       throw new AmbariException(message, e);
+
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
+
   }
 
   /**
@@ -1716,27 +1877,30 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
-  public void setCurrentStackVersion(StackId stackId)
-    throws AmbariException {
+  @Transactional
+  public void setCurrentStackVersion(StackId stackId) throws AmbariException {
     clusterGlobalLock.writeLock().lock();
     try {
       StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
-          stackId.getStackVersion());
+        stackId.getStackVersion());
 
-      ClusterStateEntity clusterStateEntity = clusterStateDAO.findByPK(clusterEntity.getClusterId());
-      if (clusterStateEntity == null) {
-        clusterStateEntity = new ClusterStateEntity();
-        clusterStateEntity.setClusterId(clusterEntity.getClusterId());
-        clusterStateEntity.setCurrentStack(stackEntity);
-        clusterStateEntity.setClusterEntity(clusterEntity);
-        clusterStateDAO.create(clusterStateEntity);
-        clusterStateEntity = clusterStateDAO.merge(clusterStateEntity);
-        clusterEntity.setClusterStateEntity(clusterStateEntity);
-        clusterEntity = clusterDAO.merge(clusterEntity);
-      } else {
-        clusterStateEntity.setCurrentStack(stackEntity);
-        clusterStateDAO.merge(clusterStateEntity);
-        clusterEntity = clusterDAO.merge(clusterEntity);
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        ClusterStateEntity clusterStateEntity = clusterStateDAO.findByPK(clusterEntity.getClusterId());
+        if (clusterStateEntity == null) {
+          clusterStateEntity = new ClusterStateEntity();
+          clusterStateEntity.setClusterId(clusterEntity.getClusterId());
+          clusterStateEntity.setCurrentStack(stackEntity);
+          clusterStateEntity.setClusterEntity(clusterEntity);
+          clusterStateDAO.create(clusterStateEntity);
+          clusterStateEntity = clusterStateDAO.merge(clusterStateEntity);
+          clusterEntity.setClusterStateEntity(clusterStateEntity);
+          clusterEntity = clusterDAO.merge(clusterEntity);
+        } else {
+          clusterStateEntity.setCurrentStack(stackEntity);
+          clusterStateEntity = clusterStateDAO.merge(clusterStateEntity);
+          clusterEntity = clusterDAO.merge(clusterEntity);
+        }
       }
     } catch (RollbackException e) {
       LOG.warn("Unable to set version " + stackId + " for cluster "
@@ -1750,6 +1914,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Map<String, Config> getConfigsByType(String configType) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       if (!allConfigs.containsKey(configType)) {
@@ -1764,6 +1929,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Config getConfig(String configType, String versionTag) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       if (!allConfigs.containsKey(configType)
@@ -1777,7 +1943,26 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
+  public Config getConfigByVersion(String configType, Long configVersion) {
+    clusterGlobalLock.readLock().lock();
+    try {
+      if (!allConfigs.containsKey(configType)) {
+        return null;
+      }
+      for(Map.Entry<String, Config> entry: allConfigs.get(configType).entrySet()) {
+        if(entry.getValue().getVersion().equals(configVersion)) {
+          return entry.getValue();
+        }
+      }
+      return null;
+    } finally {
+      clusterGlobalLock.readLock().unlock();
+    }
+  }
+
+  @Override
   public void addConfig(Config config) {
+    loadConfigurations();
     clusterGlobalLock.writeLock().lock();
     try {
       if (config.getType() == null || config.getType().isEmpty()) {
@@ -1795,6 +1980,7 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Collection<Config> getAllConfigs() {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       List<Config> list = new ArrayList<Config>();
@@ -1812,6 +1998,7 @@ public class ClusterImpl implements Cluster {
   @Override
   public ClusterResponse convertToResponse()
     throws AmbariException {
+    loadStackVersion();
     String clusterName = getClusterName();
     Map<String, Host> hosts = clusters.getHostsForCluster(clusterName);
     clusterGlobalLock.readLock().lock();
@@ -1828,6 +2015,7 @@ public class ClusterImpl implements Cluster {
   @Override
   public void debugDump(StringBuilder sb) {
     loadServices();
+    loadStackVersion();
     clusterGlobalLock.readLock().lock();
     try {
       sb.append("Cluster={ clusterName=").append(getClusterName()).append(
@@ -1855,7 +2043,7 @@ public class ClusterImpl implements Cluster {
   public void refresh() {
     clusterGlobalLock.writeLock().lock();
     try {
-      clusterEntity = clusterDAO.findById(clusterEntity.getClusterId());
+      ClusterEntity clusterEntity = getClusterEntity();
       clusterDAO.refresh(clusterEntity);
     } finally {
       clusterGlobalLock.writeLock().unlock();
@@ -1869,7 +2057,7 @@ public class ClusterImpl implements Cluster {
     clusterGlobalLock.writeLock().lock();
     try {
       LOG.info("Deleting all services for cluster" + ", clusterName="
-          + getClusterName());
+        + getClusterName());
       for (Service service : services.values()) {
         if (!service.canBeRemoved()) {
           throw new AmbariException(
@@ -1880,9 +2068,8 @@ public class ClusterImpl implements Cluster {
       }
 
       for (Service service : services.values()) {
-        service.delete();
+        deleteService(service);
       }
-
       services.clear();
     } finally {
       clusterGlobalLock.writeLock().unlock();
@@ -1904,10 +2091,38 @@ public class ClusterImpl implements Cluster {
           + ", clusterName=" + getClusterName()
           + ", serviceName=" + service.getName());
       }
-      service.delete();
+      deleteService(service);
       services.remove(serviceName);
+
     } finally {
       clusterGlobalLock.writeLock().unlock();
+    }
+  }
+
+  /**
+   * Deletes the specified service also removes references to it from {@link this.serviceComponentHosts}
+   * and references to ServiceComponentHost objects that belong to the service from {@link this.serviceComponentHostsByHost}
+   * <p>
+   *   Note: This method must be called only with write lock acquired.
+   * </p>
+   * @param service the service to be deleted
+   * @throws AmbariException
+   * @see   ServiceComponentHost
+   */
+  private void deleteService(Service service) throws AmbariException {
+    final String serviceName = service.getName();
+
+    service.delete();
+
+    serviceComponentHosts.remove(serviceName);
+
+    for (List<ServiceComponentHost> serviceComponents: serviceComponentHostsByHost.values()){
+      Iterables.removeIf(serviceComponents, new Predicate<ServiceComponentHost>() {
+        @Override
+        public boolean apply(ServiceComponentHost serviceComponentHost) {
+          return serviceComponentHost.getServiceName().equals(serviceName);
+        }
+      });
     }
   }
 
@@ -1950,6 +2165,7 @@ public class ClusterImpl implements Cluster {
     alertDefinitionDAO.removeAll(clusterId);
     alertDispatchDAO.removeAllGroups(clusterId);
     upgradeDAO.removeAll(clusterId);
+    topologyRequestDAO.removeAll(clusterId);
     clusterDAO.removeByPK(clusterId);
   }
 
@@ -1997,22 +2213,80 @@ public class ClusterImpl implements Cluster {
     }
   }
 
+  /**
+   * Gets all versions of the desired configurations for the cluster.
+   * @return a map of type-to-configuration information.
+   */
+  @Override
+  public Map<String, Set<DesiredConfig>> getAllDesiredConfigVersions() {
+    return getDesiredConfigs(true);
+  }
+
+  /**
+   * Gets the active desired configurations for the cluster.
+   * @return a map of type-to-configuration information.
+   */
   @Override
   public Map<String, DesiredConfig> getDesiredConfigs() {
+
+    Map<String, Set<DesiredConfig>> activeConfigsByType = getDesiredConfigs(false);
+
+    return Maps.transformEntries(
+        activeConfigsByType,
+        new Maps.EntryTransformer<String, Set<DesiredConfig>, DesiredConfig>() {
+          @Override
+          public DesiredConfig transformEntry(@Nullable String key, @Nullable Set<DesiredConfig> value) {
+            return value.iterator().next();
+          }
+        });
+  }
+
+
+  /**
+   * Gets desired configurations for the cluster.
+   * @param allVersions specifies if all versions of the desired configurations to be returned
+   *                    or only the active ones. It is expected that there is one and only one active
+   *                    desired configuration per config type.
+   * @return a map of type-to-configuration information.
+   */
+  private Map<String, Set<DesiredConfig>> getDesiredConfigs(boolean allVersions) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
-      Map<String, DesiredConfig> map = new HashMap<String, DesiredConfig>();
-      Collection<String> types = new HashSet<String>();
+      Map<String, Set<DesiredConfig>> map = new HashMap<>();
+      Collection<String> types = new HashSet<>();
 
-      for (ClusterConfigMappingEntity e : clusterEntity.getConfigMappingEntities()) {
-        if (e.isSelected() > 0) {
+      for (ClusterConfigMappingEntity e : getClusterEntity().getConfigMappingEntities()) {
+        if (allVersions || e.isSelected() > 0) {
           DesiredConfig c = new DesiredConfig();
           c.setServiceName(null);
           c.setTag(e.getTag());
           c.setUser(e.getUser());
-          c.setVersion(allConfigs.get(e.getType()).get(e.getTag()).getVersion());
+          if(!allConfigs.containsKey(e.getType())) {
+            LOG.error("Config inconsistency exists:" +
+                " unknown configType=" + e.getType());
+            continue;
+          }
 
-          map.put(e.getType(), c);
+          Map<String, Config> configMap = allConfigs.get(e.getType());
+          if(!configMap.containsKey(e.getTag())) {
+            LOG.debug("Config inconsistency exists for typeName=" +
+                    e.getType() +
+                    ", unknown versionTag=" + e.getTag());
+            continue;
+          }
+
+          Config config = configMap.get(e.getTag());
+          c.setVersion(config.getVersion());
+
+          Set<DesiredConfig> configs = map.get(e.getType());
+          if (configs == null) {
+            configs = new HashSet<>();
+          }
+
+          configs.add(c);
+
+          map.put(e.getType(), configs);
           types.add(e.getType());
         }
       }
@@ -2021,10 +2295,10 @@ public class ClusterImpl implements Cluster {
       Map<Long, String> hostIdToName = new HashMap<Long, String>();
 
       if (!map.isEmpty()) {
-        Map<String, List<HostConfigMapping>> hostMappingsByType = hostConfigMappingDAO.findSelectedHostsByTypes(
-            clusterEntity.getClusterId(), types);
+        Map<String, List<HostConfigMapping>> hostMappingsByType =
+          hostConfigMappingDAO.findSelectedHostsByTypes(clusterId, types);
 
-        for (Entry<String, DesiredConfig> entry : map.entrySet()) {
+        for (Entry<String, Set<DesiredConfig>> entry : map.entrySet()) {
           List<DesiredConfig.HostOverride> hostOverrides = new ArrayList<DesiredConfig.HostOverride>();
           for (HostConfigMapping mappingEntity : hostMappingsByType.get(entry.getKey())) {
 
@@ -2036,7 +2310,10 @@ public class ClusterImpl implements Cluster {
             hostOverrides.add(new DesiredConfig.HostOverride(
                 hostIdToName.get(mappingEntity.getHostId()), mappingEntity.getVersion()));
           }
-          entry.getValue().setHostOverrides(hostOverrides);
+
+          for (DesiredConfig c: entry.getValue()) {
+            c.setHostOverrides(hostOverrides);
+          }
         }
       }
 
@@ -2045,6 +2322,7 @@ public class ClusterImpl implements Cluster {
       clusterGlobalLock.readLock().unlock();
     }
   }
+
 
 
   @Override
@@ -2056,45 +2334,47 @@ public class ClusterImpl implements Cluster {
 
     clusterGlobalLock.writeLock().lock();
     try {
-      // set config group
-      if (configGroup != null) {
-        serviceConfigEntity.setGroupId(configGroup.getId());
-        Collection<Config> configs = configGroup.getConfigurations().values();
-        List<ClusterConfigEntity> configEntities = new ArrayList<ClusterConfigEntity>(configs.size());
-        for (Config config : configs) {
-          configEntities.add(clusterDAO.findConfig(getClusterId(), config.getType(), config.getTag()));
+      ClusterEntity clusterEntity = getClusterEntity();
+      if (clusterEntity != null) {
+        // set config group
+        if (configGroup != null) {
+          serviceConfigEntity.setGroupId(configGroup.getId());
+          Collection<Config> configs = configGroup.getConfigurations().values();
+          List<ClusterConfigEntity> configEntities = new ArrayList<ClusterConfigEntity>(configs.size());
+          for (Config config : configs) {
+            configEntities.add(clusterDAO.findConfig(getClusterId(), config.getType(), config.getTag()));
+          }
+
+          serviceConfigEntity.setClusterConfigEntities(configEntities);
+        } else {
+          List<ClusterConfigEntity> configEntities = getClusterConfigEntitiesByService(serviceName);
+          serviceConfigEntity.setClusterConfigEntities(configEntities);
         }
 
-        serviceConfigEntity.setClusterConfigEntities(configEntities);
-      } else {
-        List<ClusterConfigEntity> configEntities = getClusterConfigEntitiesByService(serviceName);
-        serviceConfigEntity.setClusterConfigEntities(configEntities);
-      }
 
+        long nextServiceConfigVersion = serviceConfigDAO.findNextServiceConfigVersion(clusterId, serviceName);
 
-      long nextServiceConfigVersion = serviceConfigDAO.findNextServiceConfigVersion(
-          clusterEntity.getClusterId(), serviceName);
+        serviceConfigEntity.setServiceName(serviceName);
+        serviceConfigEntity.setClusterEntity(clusterEntity);
+        serviceConfigEntity.setVersion(nextServiceConfigVersion);
+        serviceConfigEntity.setUser(user);
+        serviceConfigEntity.setNote(note);
+        serviceConfigEntity.setStack(clusterEntity.getDesiredStack());
 
-      serviceConfigEntity.setServiceName(serviceName);
-      serviceConfigEntity.setClusterEntity(clusterEntity);
-      serviceConfigEntity.setVersion(nextServiceConfigVersion);
-      serviceConfigEntity.setUser(user);
-      serviceConfigEntity.setNote(note);
-      serviceConfigEntity.setStack(clusterEntity.getDesiredStack());
-
-      serviceConfigDAO.create(serviceConfigEntity);
-      if (configGroup != null) {
-        serviceConfigEntity.setHostIds(new ArrayList<Long>(configGroup.getHosts().keySet()));
-        serviceConfigDAO.merge(serviceConfigEntity);
+        serviceConfigDAO.create(serviceConfigEntity);
+        if (configGroup != null) {
+          serviceConfigEntity.setHostIds(new ArrayList<Long>(configGroup.getHosts().keySet()));
+          serviceConfigEntity = serviceConfigDAO.merge(serviceConfigEntity);
+        }
       }
     } finally {
       clusterGlobalLock.writeLock().unlock();
     }
 
     configChangeLog.info("Cluster '{}' changed by: '{}'; service_name='{}' config_group='{}' config_group_id='{}' " +
-      "version='{}'", getClusterName(), user, serviceName,
-      configGroup==null?"default":configGroup.getName(),
-      configGroup==null?"-1":configGroup.getId(),
+        "version='{}'", getClusterName(), user, serviceName,
+      configGroup == null ? "default" : configGroup.getName(),
+      configGroup == null ? "-1" : configGroup.getId(),
       serviceConfigEntity.getVersion());
 
     String configGroupName = configGroup != null ? configGroup.getName() : null;
@@ -2115,8 +2395,8 @@ public class ClusterImpl implements Cluster {
         if (StringUtils.equals(entry.getValue(), configType)) {
           if (serviceName != null) {
             if (entry.getKey()!=null && !StringUtils.equals(serviceName, entry.getKey())) {
-              throw new IllegalArgumentException("Config type {} belongs to {} service, " +
-                "but config group qualified for {}");
+              throw new IllegalArgumentException(String.format("Config type %s belongs to %s service, " +
+                "but also qualified for %s", configType, serviceName, entry.getKey()));
             }
           } else {
             serviceName = entry.getKey();
@@ -2177,8 +2457,8 @@ public class ClusterImpl implements Cluster {
   }
 
   @Override
-  @RequiresSession
   public List<ServiceConfigVersionResponse> getServiceConfigVersions() {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
       List<ServiceConfigVersionResponse> serviceConfigVersionResponses = new ArrayList<ServiceConfigVersionResponse>();
@@ -2198,7 +2478,7 @@ public class ClusterImpl implements Cluster {
           serviceConfigVersionResponse.getConfigurations().add(
               new ConfigurationResponse(getClusterName(), config.getStackId(),
                   config.getType(), config.getTag(), config.getVersion(),
-                  config.getProperties(), config.getPropertiesAttributes()));
+                  config.getProperties(), config.getPropertiesAttributes(), config.getPropertiesTypes()));
         }
 
         serviceConfigVersionResponses.add(serviceConfigVersionResponse);
@@ -2291,12 +2571,14 @@ public class ClusterImpl implements Cluster {
     //disable all configs related to service
     if (serviceConfigEntity.getGroupId() == null) {
       Collection<String> configTypes = serviceConfigTypes.get(serviceName);
-      for (ClusterConfigMappingEntity entity : clusterEntity.getConfigMappingEntities()) {
+      List<ClusterConfigMappingEntity> mappingEntities =
+          clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
+      for (ClusterConfigMappingEntity entity : mappingEntities) {
         if (configTypes.contains(entity.getType()) && entity.isSelected() > 0) {
           entity.setSelected(0);
+          entity = clusterDAO.mergeConfigMapping(entity);
         }
       }
-      clusterEntity = clusterDAO.merge(clusterEntity);
 
       for (ClusterConfigEntity configEntity : serviceConfigEntity.getClusterConfigEntities()) {
         selectConfig(configEntity.getType(), configEntity.getTag(), user);
@@ -2330,6 +2612,7 @@ public class ClusterImpl implements Cluster {
       }
     }
 
+    ClusterEntity clusterEntity = getClusterEntity();
     long nextServiceConfigVersion = serviceConfigDAO.findNextServiceConfigVersion(
         clusterEntity.getClusterId(), serviceName);
 
@@ -2353,15 +2636,18 @@ public class ClusterImpl implements Cluster {
 
   @Transactional
   void selectConfig(String type, String tag, String user) {
-    Collection<ClusterConfigMappingEntity> entities = clusterEntity.getConfigMappingEntities();
+    Collection<ClusterConfigMappingEntity> entities =
+        clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
 
     //disable previous config
     for (ClusterConfigMappingEntity e : entities) {
       if (e.isSelected() > 0 && e.getType().equals(type)) {
         e.setSelected(0);
+        e = clusterDAO.mergeConfigMapping(e);
       }
     }
 
+    ClusterEntity clusterEntity = getClusterEntity();
     ClusterConfigMappingEntity entity = new ClusterConfigMappingEntity();
     entity.setClusterEntity(clusterEntity);
     entity.setClusterId(clusterEntity.getClusterId());
@@ -2370,9 +2656,10 @@ public class ClusterImpl implements Cluster {
     entity.setUser(user);
     entity.setType(type);
     entity.setTag(tag);
-    entities.add(entity);
+    clusterDAO.persistConfigMapping(entity);
 
-    clusterEntity = clusterDAO.merge(clusterEntity);
+    clusterEntity.getConfigMappingEntities().add(entity);
+    clusterDAO.merge(clusterEntity);
   }
 
   @Transactional
@@ -2386,10 +2673,11 @@ public class ClusterImpl implements Cluster {
             serviceName = entry.getKey();
             break;
           } else if (!serviceName.equals(entry.getKey())) {
-            String error = "Updating configs for multiple services by a " +
-                "single API request isn't supported";
+            String error = String.format("Updating configs for multiple services by a " +
+                "single API request isn't supported. Conflicting services %s and %s for %s",
+                                         serviceName, entry.getKey(), config.getType());
             IllegalArgumentException exception = new IllegalArgumentException(error);
-            LOG.error(error + ", config version not created");
+            LOG.error(error + ", config version not created for {}", serviceName);
             throw exception;
           } else {
             break;
@@ -2403,7 +2691,11 @@ public class ClusterImpl implements Cluster {
     }
 
     if (serviceName == null) {
-      LOG.error("No service found for config type '{}', service config version not created");
+      ArrayList<String> configTypes = new ArrayList<>();
+      for (Config config: configs) {
+        configTypes.add(config.getType());
+      }
+      LOG.error("No service found for config types '{}', service config version not created", configTypes);
       return null;
     } else {
       return createServiceConfigVersion(serviceName, user, serviceConfigVersionNote);
@@ -2422,7 +2714,7 @@ public class ClusterImpl implements Cluster {
 
     //add configs from this service
     Collection<String> configTypes = serviceConfigTypes.get(serviceName);
-    for (ClusterConfigMappingEntity mappingEntity : clusterEntity.getConfigMappingEntities()) {
+    for (ClusterConfigMappingEntity mappingEntity : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
       if (mappingEntity.isSelected() > 0 && configTypes.contains(mappingEntity.getType())) {
         ClusterConfigEntity configEntity =
           clusterDAO.findConfig(getClusterId(), mappingEntity.getType(), mappingEntity.getTag());
@@ -2439,15 +2731,32 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Config getDesiredConfigByType(String configType) {
+    loadConfigurations();
     clusterGlobalLock.readLock().lock();
     try {
-      for (ClusterConfigMappingEntity e : clusterEntity.getConfigMappingEntities()) {
+      for (ClusterConfigMappingEntity e : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
         if (e.isSelected() > 0 && e.getType().equals(configType)) {
           return getConfig(e.getType(), e.getTag());
         }
       }
 
       return null;
+    } finally {
+      clusterGlobalLock.readLock().unlock();
+    }
+  }
+
+  @Override
+  public boolean isConfigTypeExists(String configType) {
+    clusterGlobalLock.readLock().lock();
+    try {
+      for (ClusterConfigMappingEntity e : clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId())) {
+        if (e.getType().equals(configType)) {
+          return true;
+        }
+      }
+
+      return false;
     } finally {
       clusterGlobalLock.readLock().unlock();
     }
@@ -2486,7 +2795,7 @@ public class ClusterImpl implements Cluster {
 
     Collection<Long> hostIds;
     try {
-      hostIds = clusters.getHostIdsForCluster(clusterEntity.getClusterName()).keySet();
+      hostIds = clusters.getHostIdsForCluster(clusterName).keySet();
     } catch (AmbariException ignored) {
       return Collections.emptyMap();
     }
@@ -2499,7 +2808,7 @@ public class ClusterImpl implements Cluster {
    */
   @Override
   public Long getNextConfigVersion(String type) {
-    return clusterDAO.findNextConfigVersion(clusterEntity.getClusterId(), type);
+    return clusterDAO.findNextConfigVersion(clusterId, type);
   }
 
   /**
@@ -2640,9 +2949,6 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public Collection<Host> getHosts() {
-    //todo: really, this class doesn't have a getName() method???
-    String clusterName = clusterEntity.getClusterName();
-
     Map<String, Host> hosts;
 
     try {
@@ -2745,14 +3051,17 @@ public class ClusterImpl implements Cluster {
 
   @Override
   public boolean checkPermission(PrivilegeEntity privilegeEntity, boolean readOnly) {
-    ResourceEntity resourceEntity = clusterEntity.getResource();
-    if (resourceEntity != null) {
-      Integer permissionId = privilegeEntity.getPermission().getId();
-      // CLUSTER.READ or CLUSTER.OPERATE for the given cluster resource.
-      if (privilegeEntity.getResource().equals(resourceEntity)) {
-        if ((readOnly && permissionId.equals(PermissionEntity.CLUSTER_READ_PERMISSION)) ||
-            permissionId.equals(PermissionEntity.CLUSTER_OPERATE_PERMISSION)) {
-          return true;
+    ClusterEntity clusterEntity = getClusterEntity();
+    if (clusterEntity != null) {
+      ResourceEntity resourceEntity = clusterEntity.getResource();
+      if (resourceEntity != null) {
+        Integer permissionId = privilegeEntity.getPermission().getId();
+        // CLUSTER.USER or CLUSTER.ADMINISTRATOR for the given cluster resource.
+        if (privilegeEntity.getResource().equals(resourceEntity)) {
+          if ((readOnly && permissionId.equals(PermissionEntity.CLUSTER_USER_PERMISSION)) ||
+            permissionId.equals(PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION)) {
+            return true;
+          }
         }
       }
     }
@@ -2828,33 +3137,43 @@ public class ClusterImpl implements Cluster {
    * {@inheritDoc}
    */
   @Override
-  @Transactional
   public void applyLatestConfigurations(StackId stackId) {
     clusterGlobalLock.writeLock().lock();
     try {
+      ClusterEntity clusterEntity = getClusterEntity();
       Collection<ClusterConfigMappingEntity> configMappingEntities = clusterEntity.getConfigMappingEntities();
 
-      // disable previous config
+      // disable all configs
       for (ClusterConfigMappingEntity e : configMappingEntities) {
+        LOG.debug("{} with tag {} is unselected", e.getType(), e.getTag());
         e.setSelected(0);
       }
 
-      List<ClusterConfigEntity> clusterConfigsToMakeSelected = clusterDAO.getLatestConfigurations(
+      List<ClusterConfigMappingEntity> clusterConfigMappingsForStack = clusterDAO.getClusterConfigMappingsByStack(
           clusterEntity.getClusterId(), stackId);
 
-      for( ClusterConfigEntity clusterConfigToMakeSelected : clusterConfigsToMakeSelected ){
-        for (ClusterConfigMappingEntity configMappingEntity : configMappingEntities) {
-          String tag = configMappingEntity.getTag();
-          String type = configMappingEntity.getType();
+      Collection<ClusterConfigMappingEntity> latestConfigMappingByStack = getLatestConfigMapping(
+          clusterConfigMappingsForStack);
 
-          if (clusterConfigToMakeSelected.getTag().equals(tag)
-              && clusterConfigToMakeSelected.getType().equals(type)) {
-            configMappingEntity.setSelected(1);
+      // loop through all configs and set the latest to enabled for the
+      // specified stack
+      for(ClusterConfigMappingEntity e: configMappingEntities){
+        String type = e.getType();
+        String tag =  e.getTag();
+
+        for (ClusterConfigMappingEntity latest : latestConfigMappingByStack) {
+          String t = latest.getType();
+          String tagLatest = latest.getTag();
+          if(type.equals(t) && tag.equals(tagLatest) ){//find the latest config of a given mapping entity
+            LOG.info("{} with version tag {} is selected for stack {}", type, tag, stackId.toString());
+            e.setSelected(1);
           }
         }
       }
 
+      clusterEntity.setConfigMappingEntities(configMappingEntities);
       clusterEntity = clusterDAO.merge(clusterEntity);
+      clusterDAO.mergeConfigMappings(configMappingEntities);
 
       cacheConfigurations();
     } finally {
@@ -2862,70 +3181,128 @@ public class ClusterImpl implements Cluster {
     }
   }
 
+  public Collection<ClusterConfigMappingEntity> getLatestConfigMapping(List<ClusterConfigMappingEntity> clusterConfigMappingEntities){
+    Map<String, ClusterConfigMappingEntity> temp = new HashMap<String, ClusterConfigMappingEntity>();
+    for (ClusterConfigMappingEntity e : clusterConfigMappingEntities) {
+      String type = e.getType();
+      if(temp.containsKey(type)){
+        ClusterConfigMappingEntity entityStored = temp.get(type);
+        Long timestampStored = entityStored.getCreateTimestamp();
+        Long timestamp = e.getCreateTimestamp();
+        if(timestamp > timestampStored){
+          temp.put(type, e); //find a newer config for the given type
+        }
+      } else {
+        temp.put(type, e); //first time encounter a type, add it
+      }
+    }
+
+    return temp.values();
+  }
+
   /**
    * {@inheritDoc}
    */
   @Override
+  public Map<PropertyInfo.PropertyType, Set<String>> getConfigPropertiesTypes(String configType){
+    try {
+      StackId stackId = getCurrentStackVersion();
+      StackInfo stackInfo = ambariMetaInfo.getStack(stackId.getStackName(), stackId.getStackVersion());
+      return stackInfo.getConfigPropertiesTypes(configType);
+    } catch (AmbariException e) {
+
+    }
+    return new HashMap<>();
+  }
+
+  /**
+   * Removes all configurations associated with the specified stack. The caller
+   * should make sure the cluster global write lock is acquired.
+   *
+   * @param stackId
+   * @see Cluster#getClusterGlobalLock()
+   */
   @Transactional
+  void removeAllConfigsForStack(StackId stackId) {
+    ClusterEntity clusterEntity = getClusterEntity();
+
+    // make sure the entity isn't stale in the current unit of work.
+    clusterDAO.refresh(clusterEntity);
+
+    long clusterId = clusterEntity.getClusterId();
+
+    // this will keep track of cluster config mappings that need removal
+    // since there is no relationship between configs and their mappings, we
+    // have to do it manually
+    List<ClusterConfigEntity> removedClusterConfigs = new ArrayList<ClusterConfigEntity>(50);
+    Collection<ClusterConfigEntity> clusterConfigEntities = clusterEntity.getClusterConfigEntities();
+
+    List<ServiceConfigEntity> serviceConfigs = serviceConfigDAO.getAllServiceConfigsForClusterAndStack(
+      clusterId, stackId);
+
+    // remove all service configurations and associated configs
+    Collection<ServiceConfigEntity> serviceConfigEntities = clusterEntity.getServiceConfigEntities();
+
+    for (ServiceConfigEntity serviceConfig : serviceConfigs) {
+      for (ClusterConfigEntity configEntity : serviceConfig.getClusterConfigEntities()) {
+        clusterConfigEntities.remove(configEntity);
+        clusterDAO.removeConfig(configEntity);
+        removedClusterConfigs.add(configEntity);
+      }
+
+      serviceConfig.getClusterConfigEntities().clear();
+      serviceConfigDAO.remove(serviceConfig);
+      serviceConfigEntities.remove(serviceConfig);
+    }
+
+    // remove any leftover cluster configurations that don't have a service
+    // configuration (like cluster-env)
+    List<ClusterConfigEntity> clusterConfigs = clusterDAO.getAllConfigurations(
+      clusterId, stackId);
+
+    for (ClusterConfigEntity clusterConfig : clusterConfigs) {
+      clusterConfigEntities.remove(clusterConfig);
+      clusterDAO.removeConfig(clusterConfig);
+      removedClusterConfigs.add(clusterConfig);
+    }
+
+    clusterEntity.setClusterConfigEntities(clusterConfigEntities);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+
+    // remove config mappings
+    Collection<ClusterConfigMappingEntity> configMappingEntities =
+        clusterDAO.getClusterConfigMappingEntitiesByCluster(getClusterId());
+
+    for (ClusterConfigEntity removedClusterConfig : removedClusterConfigs) {
+      String removedClusterConfigType = removedClusterConfig.getType();
+      String removedClusterConfigTag = removedClusterConfig.getTag();
+
+      Iterator<ClusterConfigMappingEntity> clusterConfigMappingIterator = configMappingEntities.iterator();
+      while (clusterConfigMappingIterator.hasNext()) {
+        ClusterConfigMappingEntity clusterConfigMapping = clusterConfigMappingIterator.next();
+        String mappingType = clusterConfigMapping.getType();
+        String mappingTag = clusterConfigMapping.getTag();
+
+        if (removedClusterConfigTag.equals(mappingTag)
+          && removedClusterConfigType.equals(mappingType)) {
+          clusterConfigMappingIterator.remove();
+          clusterDAO.removeConfigMapping(clusterConfigMapping);
+        }
+      }
+    }
+
+    clusterEntity.setConfigMappingEntities(configMappingEntities);
+    clusterEntity = clusterDAO.merge(clusterEntity);
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
   public void removeConfigurations(StackId stackId) {
     clusterGlobalLock.writeLock().lock();
     try {
-      long clusterId = clusterEntity.getClusterId();
-
-      // this will keep track of cluster config mappings that need removal
-      // since there is no relationship between configs and their mappings, we
-      // have to do it manually
-      List<ClusterConfigEntity> removedClusterConfigs = new ArrayList<ClusterConfigEntity>(50);
-      Collection<ClusterConfigEntity> clusterConfigEntities = clusterEntity.getClusterConfigEntities();
-
-      List<ClusterConfigEntity> clusterConfigs = clusterDAO.getAllConfigurations(
-          clusterId, stackId);
-
-      // remove any lefover cluster configurations that don't have a service
-      // configuration (like cluster-env)
-      for (ClusterConfigEntity clusterConfig : clusterConfigs) {
-        clusterDAO.removeConfig(clusterConfig);
-        clusterConfigEntities.remove(clusterConfig);
-
-        removedClusterConfigs.add(clusterConfig);
-      }
-
-      clusterEntity = clusterDAO.merge(clusterEntity);
-
-      List<ServiceConfigEntity> serviceConfigs = serviceConfigDAO.getAllServiceConfigsForClusterAndStack(
-          clusterId, stackId);
-
-      // remove all service configurations
-      Collection<ServiceConfigEntity> serviceConfigEntities = clusterEntity.getServiceConfigEntities();
-      for (ServiceConfigEntity serviceConfig : serviceConfigs) {
-        serviceConfigDAO.remove(serviceConfig);
-        serviceConfigEntities.remove(serviceConfig);
-      }
-
-      clusterEntity = clusterDAO.merge(clusterEntity);
-
-      // remove config mappings
-      Collection<ClusterConfigMappingEntity> configMappingEntities = clusterEntity.getConfigMappingEntities();
-      for (ClusterConfigEntity removedClusterConfig : removedClusterConfigs) {
-        String removedClusterConfigType = removedClusterConfig.getType();
-        String removedClusterConfigTag = removedClusterConfig.getTag();
-
-        Iterator<ClusterConfigMappingEntity> clusterConfigMappingIterator = configMappingEntities.iterator();
-        while (clusterConfigMappingIterator.hasNext()) {
-          ClusterConfigMappingEntity clusterConfigMapping = clusterConfigMappingIterator.next();
-          String mappingType = clusterConfigMapping.getType();
-          String mappingTag = clusterConfigMapping.getTag();
-
-          if (removedClusterConfigTag.equals(mappingTag)
-              && removedClusterConfigType.equals(mappingType)) {
-            clusterConfigMappingIterator.remove();
-            clusterDAO.removeConfigMapping(clusterConfigMapping);
-          }
-        }
-      }
-
-      clusterEntity = clusterDAO.merge(clusterEntity);
-
+      removeAllConfigsForStack(stackId);
       cacheConfigurations();
     } finally {
       clusterGlobalLock.writeLock().unlock();
@@ -2936,23 +3313,130 @@ public class ClusterImpl implements Cluster {
    * Caches all of the {@link ClusterConfigEntity}s in {@link #allConfigs}.
    */
   private void cacheConfigurations() {
-    if (null == allConfigs) {
-      allConfigs = new HashMap<String, Map<String, Config>>();
-    }
+    ClusterEntity clusterEntity = getClusterEntity();
+    if (clusterEntity != null) {
+      if (null == allConfigs) {
+        allConfigs = new HashMap<String, Map<String, Config>>();
+      }
 
-    allConfigs.clear();
+      allConfigs.clear();
 
-    if (!clusterEntity.getClusterConfigEntities().isEmpty()) {
-      for (ClusterConfigEntity entity : clusterEntity.getClusterConfigEntities()) {
+      if (!clusterEntity.getClusterConfigEntities().isEmpty()) {
+        for (ClusterConfigEntity entity : clusterEntity.getClusterConfigEntities()) {
 
-        if (!allConfigs.containsKey(entity.getType())) {
-          allConfigs.put(entity.getType(), new HashMap<String, Config>());
+          if (!allConfigs.containsKey(entity.getType())) {
+            allConfigs.put(entity.getType(), new HashMap<String, Config>());
+          }
+
+          Config config = configFactory.createExisting(this, entity);
+
+          allConfigs.get(entity.getType()).put(entity.getTag(), config);
         }
-
-        Config config = configFactory.createExisting(this, entity);
-
-        allConfigs.get(entity.getType()).put(entity.getTag(), config);
       }
     }
+  }
+
+  private void loadConfigurations() {
+    if (allConfigs != null) {
+      return;
+    }
+    clusterGlobalLock.writeLock().lock();
+    try {
+      if (allConfigs != null) {
+        return;
+      }
+      cacheConfigurations();
+
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
+  }
+
+  private void loadStackVersion() {
+    if (desiredStackVersionSet) {
+      return;
+    }
+    clusterGlobalLock.writeLock().lock();
+    try {
+
+      if (desiredStackVersionSet) {
+        return;
+      }
+
+      desiredStackVersion = new StackId(getClusterEntity().getDesiredStack());
+
+      if (!StringUtils.isEmpty(desiredStackVersion.getStackName()) && !
+          StringUtils.isEmpty(desiredStackVersion.getStackVersion())) {
+        try {
+          loadServiceConfigTypes();
+        } catch (AmbariException e) {
+          //TODO recheck wrapping exception here, required for lazy loading after invalidation
+          throw new RuntimeException(e);
+        }
+      }
+
+      desiredStackVersionSet = true;
+
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
+
+  }
+
+  /**
+   * Purpose of this method is to clear all cached data to re-read it from database.
+   * To be used in case of desync.
+   */
+  @Override
+  public void invalidateData() {
+    clusterGlobalLock.writeLock().lock();
+    try {
+      allConfigs = null;
+      services = null;
+      desiredStackVersionSet = false;
+
+      serviceComponentHosts.clear();
+      serviceComponentHostsByHost.clear();
+      svcHostsLoaded = false;
+
+      clusterConfigGroups = null;
+
+      //TODO investigate reset request executions, it has separate api which is not too heavy
+
+      refresh();
+
+    } finally {
+      clusterGlobalLock.writeLock().unlock();
+    }
+  }
+
+  /**
+   * Returns whether this cluster was provisioned by a Blueprint or not.
+   * @return true if the cluster was deployed with a Blueprint otherwise false.
+   */
+  @Override
+  public boolean isBluePrintDeployed() {
+
+    List<TopologyRequestEntity> topologyRequests = topologyRequestDAO.findByClusterId(getClusterId());
+
+    // Iterate through the topology requests associated with this cluster and look for PROVISION request
+    for (TopologyRequestEntity topologyRequest: topologyRequests) {
+      TopologyRequest.Type requestAction = TopologyRequest.Type.valueOf(topologyRequest.getAction());
+      if (requestAction == TopologyRequest.Type.PROVISION) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Gets the {@link ClusterEntity} for this {@link Cluster} from the
+   * {@link EntityManager} cache.
+   *
+   * @return
+   */
+  private ClusterEntity getClusterEntity() {
+    return clusterDAO.findById(clusterId);
   }
 }

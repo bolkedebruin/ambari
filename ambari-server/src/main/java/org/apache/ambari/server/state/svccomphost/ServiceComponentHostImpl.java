@@ -20,7 +20,6 @@ package org.apache.ambari.server.state.svccomphost;
 
 import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -78,7 +77,6 @@ import org.apache.ambari.server.state.fsm.SingleArcTransition;
 import org.apache.ambari.server.state.fsm.StateMachine;
 import org.apache.ambari.server.state.fsm.StateMachineFactory;
 import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
-import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,8 +90,6 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
 
   private static final Logger LOG =
       LoggerFactory.getLogger(ServiceComponentHostImpl.class);
-
-  // FIXME need more debug logs
 
   private final ReadWriteLock clusterGlobalLock;
   private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
@@ -142,7 +138,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   @Inject
   private StackDAO stackDAO;
 
-  // TODO : caching the JPA entities here causes issues if they become stale and get re-merged.
+  // Only used when object state is not persisted
   private HostComponentStateEntity stateEntity;
   private HostComponentDesiredStateEntity desiredStateEntity;
 
@@ -150,6 +146,11 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
    * The desired component state entity PK.
    */
   private final HostComponentDesiredStateEntityPK desiredStateEntityPK;
+
+  /**
+   * Cache the generated id for host component state for fast lookups.
+   */
+  private Long hostComponentStateId;
 
   private long lastOpStartTime;
   private long lastOpEndTime;
@@ -170,8 +171,8 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   // define the state machine of a HostServiceComponent for runnable
   // components
 
-  .addTransition(State.INIT, 
-      State.INSTALLING, 
+  .addTransition(State.INIT,
+      State.INSTALLING,
       ServiceComponentHostEventType.HOST_SVCCOMP_INSTALL,
       new ServiceComponentHostOpStartedTransition())
 
@@ -195,12 +196,12 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_IN_PROGRESS,
       new ServiceComponentHostOpInProgressTransition())
 
-  .addTransition(State.INSTALLING, 
+  .addTransition(State.INSTALLING,
       State.INSTALLING,
       ServiceComponentHostEventType.HOST_SVCCOMP_INSTALL,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALLING, 
+  .addTransition(State.INSTALLING,
       State.INSTALL_FAILED,
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_FAILED,
       new ServiceComponentHostOpCompletedTransition())
@@ -210,49 +211,49 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_RESTART,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALL_FAILED, 
+  .addTransition(State.INSTALL_FAILED,
       State.INSTALLING,
       ServiceComponentHostEventType.HOST_SVCCOMP_INSTALL,
       new ServiceComponentHostOpStartedTransition())
 
   // Allow transition on abort
-  .addTransition(State.INSTALL_FAILED, 
+  .addTransition(State.INSTALL_FAILED,
       State.INSTALL_FAILED,
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_FAILED,
       new ServiceComponentHostOpCompletedTransition())
 
-  .addTransition(State.INSTALLED, 
-      State.STARTING, 
+  .addTransition(State.INSTALLED,
+      State.STARTING,
       ServiceComponentHostEventType.HOST_SVCCOMP_START,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALLED, 
+  .addTransition(State.INSTALLED,
       State.UNINSTALLING,
       ServiceComponentHostEventType.HOST_SVCCOMP_UNINSTALL,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALLED, 
+  .addTransition(State.INSTALLED,
       State.INSTALLING,
       ServiceComponentHostEventType.HOST_SVCCOMP_INSTALL,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALLED, 
+  .addTransition(State.INSTALLED,
       State.STOPPING,
       ServiceComponentHostEventType.HOST_SVCCOMP_STOP,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALLED, 
+  .addTransition(State.INSTALLED,
       State.UPGRADING,
       ServiceComponentHostEventType.HOST_SVCCOMP_UPGRADE,
       new ServiceComponentHostOpStartedTransition())
 
-  .addTransition(State.INSTALLED, 
+  .addTransition(State.INSTALLED,
       State.INSTALLED,
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_IN_PROGRESS,
       new ServiceComponentHostOpInProgressTransition())
 
   .addTransition(State.INSTALLED,
-      State.STARTED, 
+      State.STARTED,
       ServiceComponentHostEventType.HOST_SVCCOMP_STARTED,
       new ServiceComponentHostOpCompletedTransition())
 
@@ -267,12 +268,12 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       new ServiceComponentHostOpInProgressTransition())
 
   .addTransition(State.STARTING,
-      State.STARTING, 
+      State.STARTING,
       ServiceComponentHostEventType.HOST_SVCCOMP_START,
       new ServiceComponentHostOpStartedTransition())
 
   .addTransition(State.STARTING,
-      State.STARTED, 
+      State.STARTED,
       ServiceComponentHostEventType.HOST_SVCCOMP_STARTED,
       new ServiceComponentHostOpCompletedTransition())
 
@@ -287,12 +288,12 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       new ServiceComponentHostOpStartedTransition())
 
   .addTransition(State.STARTED,
-      State.STARTED, 
+      State.STARTED,
       ServiceComponentHostEventType.HOST_SVCCOMP_STARTED,
       new ServiceComponentHostOpCompletedTransition())
 
   .addTransition(State.STARTED,
-      State.STOPPING, 
+      State.STOPPING,
       ServiceComponentHostEventType.HOST_SVCCOMP_STOP,
       new ServiceComponentHostOpStartedTransition())
 
@@ -302,7 +303,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       new ServiceComponentHostOpInProgressTransition())
 
   .addTransition(State.STARTED,
-      State.INSTALLED, 
+      State.INSTALLED,
       ServiceComponentHostEventType.HOST_SVCCOMP_STOPPED,
       new ServiceComponentHostOpCompletedTransition())
 
@@ -346,7 +347,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_IN_PROGRESS,
       new ServiceComponentHostOpInProgressTransition())
 
-  .addTransition(State.UPGRADING, 
+  .addTransition(State.UPGRADING,
       State.INSTALLED,
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_SUCCEEDED,
       new ServiceComponentHostOpCompletedTransition())
@@ -417,12 +418,12 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       new ServiceComponentHostOpCompletedTransition())
 
   .addTransition(State.DISABLED,
-      State.DISABLED, 
+      State.DISABLED,
       ServiceComponentHostEventType.HOST_SVCCOMP_DISABLE,
       new ServiceComponentHostOpCompletedTransition())
 
   .addTransition(State.UNKNOWN,
-      State.DISABLED, 
+      State.DISABLED,
       ServiceComponentHostEventType.HOST_SVCCOMP_DISABLE,
       new ServiceComponentHostOpCompletedTransition())
 
@@ -431,7 +432,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       ServiceComponentHostEventType.HOST_SVCCOMP_OP_IN_PROGRESS,
       new ServiceComponentHostOpCompletedTransition())
 
-  .addTransition(State.INSTALL_FAILED, 
+  .addTransition(State.INSTALL_FAILED,
       State.DISABLED,
       ServiceComponentHostEventType.HOST_SVCCOMP_DISABLE,
       new ServiceComponentHostOpCompletedTransition())
@@ -784,6 +785,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
     this.stateEntity = stateEntity;
 
     desiredStateEntityPK = getHostComponentDesiredStateEntityPK(desiredStateEntity);
+    hostComponentStateId = stateEntity.getId();
 
     //TODO implement State Machine init as now type choosing is hardcoded in above code
     if (serviceComponent.isClientComponent()) {
@@ -816,8 +818,17 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
     writeLock.lock();
     try {
       stateMachine.setCurrentState(state);
-      getStateEntity().setCurrentState(state);
-      saveIfPersisted();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        getStateEntity().setCurrentState(state);
+        saveComponentStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       writeLock.unlock();
     }
@@ -827,18 +838,35 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public String getVersion() {
     readLock.lock();
     try {
-      return stateEntity.getVersion();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        return stateEntity.getVersion();
+      } else {
+        LOG.warn("Trying to fetch a member from an entity object that may " +
+          "have been previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
     } finally {
       readLock.unlock();
     }
+    return null;
   }
 
   @Override
   public void setVersion(String version) {
     writeLock.lock();
     try {
-      getStateEntity().setVersion(version);
-      saveIfPersisted();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        getStateEntity().setVersion(version);
+        saveComponentStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
     } finally {
       writeLock.unlock();
     }
@@ -848,18 +876,37 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public SecurityState getSecurityState() {
     readLock.lock();
     try {
-      return stateEntity.getSecurityState();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        return getStateEntity().getSecurityState();
+      } else {
+        LOG.warn("Trying to fetch a member from an entity object that may " +
+          "have been previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       readLock.unlock();
     }
+    return null;
   }
 
   @Override
   public void setSecurityState(SecurityState securityState) {
     writeLock.lock();
     try {
-      getStateEntity().setSecurityState(securityState);
-      saveIfPersisted();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        getStateEntity().setSecurityState(securityState);
+        saveComponentStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       writeLock.unlock();
     }
@@ -869,10 +916,20 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public SecurityState getDesiredSecurityState() {
     readLock.lock();
     try {
-      return desiredStateEntity.getSecurityState();
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        return getDesiredStateEntity().getSecurityState();
+      } else {
+        LOG.warn("Trying to fetch a member from an entity object that may " +
+          "have been previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       readLock.unlock();
     }
+    return null;
   }
 
   @Override
@@ -883,14 +940,17 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
 
     writeLock.lock();
     try {
+      LOG.debug("Set DesiredSecurityState on serviceName = {} componentName = {} hostName = {} to {}",
+        getServiceName(), getServiceComponentName(), getHostName(), securityState);
+
       getDesiredStateEntity().setSecurityState(securityState);
-      saveIfPersisted();
+      saveComponentDesiredStateEntityIfPersisted();
     } finally {
       writeLock.unlock();
     }
   }
 
-  /***
+  /**
    * To be called during the upgrade of a specific Component in a host.
    * The potential upgrade states are NONE (default), PENDING, IN_PROGRESS, FAILED.
    * If the upgrade completes successfully, the upgradeState should be set back to NONE.
@@ -903,12 +963,44 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public void setUpgradeState(UpgradeState upgradeState) {
     writeLock.lock();
     try {
-      getStateEntity().setUpgradeState(upgradeState);
-      saveIfPersisted();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        stateEntity.setUpgradeState(upgradeState);
+        saveComponentStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       writeLock.unlock();
     }
   }
+
+  @Override
+  public UpgradeState getUpgradeState() {
+    readLock.lock();
+
+    try {
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        return stateEntity.getUpgradeState();
+      } else {
+        LOG.warn("Trying to fetch a state entity from an object that may " +
+          "have been previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
+    } finally {
+      readLock.unlock();
+    }
+
+    return UpgradeState.NONE;
+  }
+
 
   @Override
   public void handleEvent(ServiceComponentHostEvent event)
@@ -926,14 +1018,14 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
         try {
           stateMachine.doTransition(event.getType(), event);
           getStateEntity().setCurrentState(stateMachine.getCurrentState());
-          saveIfPersisted();
+          saveComponentStateEntityIfPersisted();
           // TODO Audit logs
         } catch (InvalidStateTransitionException e) {
           LOG.error("Can't handle ServiceComponentHostEvent event at"
               + " current state"
               + ", serviceComponentName=" + getServiceComponentName()
               + ", hostName=" + getHostName()
-              + ", currentState=" + oldState
+            + ", currentState=" + oldState
               + ", eventType=" + event.getType()
               + ", event=" + event);
           throw e;
@@ -1083,8 +1175,17 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
 
     writeLock.lock();
     try {
-      getStateEntity().setCurrentStack(stackEntity);
-      saveIfPersisted();
+      HostComponentStateEntity stateEntity = getStateEntity();
+      if (stateEntity != null) {
+        stateEntity.setCurrentStack(stackEntity);
+        saveComponentStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       writeLock.unlock();
     }
@@ -1094,18 +1195,39 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public State getDesiredState() {
     readLock.lock();
     try {
-      return desiredStateEntity.getDesiredState();
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        return desiredStateEntity.getDesiredState();
+      } else {
+        LOG.warn("Trying to fetch a member from an entity object that may " +
+          "have been previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       readLock.unlock();
     }
+    return null;
   }
 
   @Override
   public void setDesiredState(State state) {
     writeLock.lock();
     try {
-      getDesiredStateEntity().setDesiredState(state);
-      saveIfPersisted();
+      LOG.debug("Set DesiredState on serviceName = {} componentName = {} hostName = {} to {} ",
+        getServiceName(), getServiceComponentName(), getHostName(), state);
+
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        desiredStateEntity.setDesiredState(state);
+        saveComponentDesiredStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() +
+          "hostName = " + getHostName());
+      }
     } finally {
       writeLock.unlock();
     }
@@ -1115,23 +1237,39 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public StackId getDesiredStackVersion() {
     readLock.lock();
     try {
-      StackEntity desiredStackEntity = desiredStateEntity.getDesiredStack();
-      return new StackId(desiredStackEntity.getStackName(),
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        StackEntity desiredStackEntity = desiredStateEntity.getDesiredStack();
+        return new StackId(desiredStackEntity.getStackName(),
           desiredStackEntity.getStackVersion());
+      } else {
+        LOG.warn("Trying to fetch a member from an entity object that may " +
+          "have been previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() + ", " +
+          "hostName = " + getHostName());
+      }
+
     } finally {
       readLock.unlock();
     }
+    return null;
   }
 
   @Override
   public void setDesiredStackVersion(StackId stackId) {
     writeLock.lock();
     try {
-      StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
+      LOG.debug("Set DesiredStackVersion on serviceName = {} componentName = {} hostName = {} to {}",
+        getServiceName(), getServiceComponentName(), getHostName(), stackId);
+
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
           stackId.getStackVersion());
 
-      getDesiredStateEntity().setDesiredStack(stackEntity);
-      saveIfPersisted();
+        desiredStateEntity.setDesiredStack(stackEntity);
+        saveComponentDesiredStateEntityIfPersisted();
+      }
     } finally {
       writeLock.unlock();
     }
@@ -1141,23 +1279,39 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public HostComponentAdminState getComponentAdminState() {
     readLock.lock();
     try {
-      HostComponentAdminState adminState = desiredStateEntity.getAdminState();
-      if (adminState == null && !serviceComponent.isClientComponent()
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        HostComponentAdminState adminState = desiredStateEntity.getAdminState();
+        if (adminState == null && !serviceComponent.isClientComponent()
           && !serviceComponent.isMasterComponent()) {
-        adminState = HostComponentAdminState.INSERVICE;
+          adminState = HostComponentAdminState.INSERVICE;
+        }
+        return adminState;
       }
-      return adminState;
+
     } finally {
       readLock.unlock();
     }
+    return null;
   }
 
   @Override
   public void setComponentAdminState(HostComponentAdminState attribute) {
     writeLock.lock();
     try {
-      getDesiredStateEntity().setAdminState(attribute);
-      saveIfPersisted();
+      LOG.debug("Set ComponentAdminState on serviceName = {} componentName = {} hostName = {} to {}",
+        getServiceName(), getServiceComponentName(), getHostName(), attribute);
+
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        desiredStateEntity.setAdminState(attribute);
+        saveComponentDesiredStateEntityIfPersisted();
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() +
+          "hostName = " + getHostName());
+      }
     } finally {
       writeLock.unlock();
     }
@@ -1223,7 +1377,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
           getStackVersion()).append(", state=").append(getState()).append(
           ", securityState=").append(getSecurityState()).append(
           ", desiredSecurityState=").append(getDesiredSecurityState()).append(
-          " }");
+        " }");
     } finally {
       readLock.unlock();
     }
@@ -1269,8 +1423,11 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
 
           // these should still be done with the internal lock
           refresh();
-          host.refresh();
-          serviceComponent.refresh();
+          // There refresh calls are no longer needed with cached references
+          // not used on getters/setters
+          // NOTE: Refreshing parents is a bad pattern.
+          //host.refresh();
+          //serviceComponent.refresh();
 
           // publish the service component installed event
           StackId stackId = getDesiredStackVersion();
@@ -1281,7 +1438,8 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
 
           eventPublisher.publish(event);
         } else {
-          saveIfPersisted();
+          saveComponentStateEntityIfPersisted();
+          saveComponentDesiredStateEntityIfPersisted();
         }
       } finally {
         writeLock.unlock();
@@ -1315,6 +1473,11 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
     hostComponentStateDAO.create(stateEntity);
     hostComponentDesiredStateDAO.create(desiredStateEntity);
 
+    HostComponentStateEntity stateEntity = hostComponentStateDAO.findByIndex(serviceComponent.getClusterId(),
+      serviceComponent.getServiceName(), serviceComponent.getName(), hostEntity.getHostId());
+
+    hostComponentStateId = stateEntity.getId();
+
     serviceComponentDesiredStateDAO.merge(serviceComponentDesiredStateEntity);
     hostDAO.merge(hostEntity);
   }
@@ -1331,18 +1494,32 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   }
 
   /**
-   * Merges the encapsulated {@link HostComponentStateEntity} and
-   * {@link HostComponentDesiredStateEntity} inside of a new transaction. This
+   * Merges the encapsulated {@link HostComponentStateEntity} inside of a new transaction. This
    * method assumes that the appropriate write lock has already been acquired
    * from {@link #readWriteLock}.
    */
   @Transactional
-  private void saveIfPersisted() {
+  void saveComponentStateEntityIfPersisted() {
     if (isPersisted()) {
       hostComponentStateDAO.merge(stateEntity);
+    }
+  }
+
+  /**
+   * Merges the encapsulated {@link HostComponentDesiredStateEntity} inside of a new transaction. This
+   * method assumes that the appropriate write lock has already been acquired
+   * from {@link #readWriteLock}.
+   */
+  @Transactional
+  void saveComponentDesiredStateEntityIfPersisted() {
+    if (isPersisted()) {
+      LOG.debug("Save desiredStateEntity serviceName = {} componentName = {} hostName = {} desiredState = {}",
+        getServiceName(), getServiceComponentName(), getHostName(), desiredStateEntity.getDesiredState());
+
       hostComponentDesiredStateDAO.merge(desiredStateEntity);
     }
   }
+
 
   @Override
   public boolean canBeRemoved() {
@@ -1362,7 +1539,6 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
     }
   }
 
-
   @Override
   public void delete() {
     boolean fireRemovalEvent = false;
@@ -1373,6 +1549,12 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
       try {
         if (persisted) {
           removeEntities();
+
+          // host must be re-loaded from db to refresh the cached JPA HostEntity
+          // that references HostComponentDesiredStateEntity
+          // and HostComponentStateEntity JPA entities
+          host.refresh();
+
           persisted = false;
           fireRemovalEvent = true;
         }
@@ -1409,21 +1591,17 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   @Transactional
   protected void removeEntities() {
     HostComponentStateEntity stateEntity = getStateEntity();
-    if (null != stateEntity) {
+    if (stateEntity != null) {
+      // make sure that the state entities are removed from the associated (detached) host entity
+      // Also refresh before delete
+      stateEntity.getHostEntity().removeHostComponentStateEntity(stateEntity);
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      desiredStateEntity.getHostEntity().removeHostComponentDesiredStateEntity(desiredStateEntity);
+
+      hostComponentDesiredStateDAO.remove(desiredStateEntity);
+
       hostComponentStateDAO.remove(stateEntity);
     }
-
-    HostComponentDesiredStateEntityPK desiredPK = new HostComponentDesiredStateEntityPK();
-    desiredPK.setClusterId(desiredStateEntity.getClusterId());
-    desiredPK.setComponentName(desiredStateEntity.getComponentName());
-    desiredPK.setServiceName(desiredStateEntity.getServiceName());
-    desiredPK.setHostId(desiredStateEntity.getHostId());
-
-    hostComponentDesiredStateDAO.removeByPK(desiredPK);
-
-    // make sure that the state entities are removed from the associated (detached) host entity
-    stateEntity.getHostEntity().removeHostComponentStateEntity(stateEntity);
-    desiredStateEntity.getHostEntity().removeHostComponentDesiredStateEntity(desiredStateEntity);
   }
 
   @Override
@@ -1494,13 +1672,23 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public void setMaintenanceState(MaintenanceState state) {
     writeLock.lock();
     try {
-      getDesiredStateEntity().setMaintenanceState(state);
-      saveIfPersisted();
+      LOG.debug("Set MaintenanceState on serviceName = {} componentName = {} hostName = {} to {}",
+        getServiceName(), getServiceComponentName(), getHostName(), state);
 
-      // broadcast the maintenance mode change
-      MaintenanceModeEvent event = new MaintenanceModeEvent(state, this);
-      eventPublisher.publish(event);
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        desiredStateEntity.setMaintenanceState(state);
+        saveComponentDesiredStateEntityIfPersisted();
 
+        // broadcast the maintenance mode change
+        MaintenanceModeEvent event = new MaintenanceModeEvent(state, this);
+        eventPublisher.publish(event);
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() +
+          ", hostName = " + getHostName());
+      }
     } finally {
       writeLock.unlock();
     }
@@ -1510,7 +1698,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public MaintenanceState getMaintenanceState() {
     readLock.lock();
     try {
-      return desiredStateEntity.getMaintenanceState();
+      return getDesiredStateEntity().getMaintenanceState();
     } finally {
       readLock.unlock();
     }
@@ -1540,7 +1728,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public boolean isRestartRequired() {
     readLock.lock();
     try {
-      return desiredStateEntity.isRestartRequired();
+      return getDesiredStateEntity().isRestartRequired();
     } finally {
       readLock.unlock();
     }
@@ -1550,21 +1738,33 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
   public void setRestartRequired(boolean restartRequired) {
     writeLock.lock();
     try {
-      getDesiredStateEntity().setRestartRequired(restartRequired);
-      saveIfPersisted();
-      helper.invalidateStaleConfigsCache(this);
+      LOG.debug("Set RestartRequired on serviceName = {} componentName = {} hostName = {} to {}",
+        getServiceName(), getServiceComponentName(), getHostName(), restartRequired);
+
+      HostComponentDesiredStateEntity desiredStateEntity = getDesiredStateEntity();
+      if (desiredStateEntity != null) {
+        desiredStateEntity.setRestartRequired(restartRequired);
+        saveComponentDesiredStateEntityIfPersisted();
+        helper.invalidateStaleConfigsCache(this);
+      } else {
+        LOG.warn("Setting a member on an entity object that may have been " +
+          "previously deleted, serviceName = " + getServiceName() + ", " +
+          "componentName = " + getServiceComponentName() +
+          ", hostName = " + getHostName());
+      }
+
     } finally {
       writeLock.unlock();
     }
   }
 
   @Transactional
-  private RepositoryVersionEntity createRepositoryVersion(String version, final StackId stackId, final StackInfo stackInfo) throws AmbariException {
+  RepositoryVersionEntity createRepositoryVersion(String version, final StackId stackId, final StackInfo stackInfo) throws AmbariException {
     // During an Ambari Upgrade from 1.7.0 -> 2.0.0, the Repo Version will not exist, so bootstrap it.
     LOG.info("Creating new repository version " + stackId.getStackName() + "-" + version);
 
     StackEntity stackEntity = stackDAO.find(stackId.getStackName(),
-        stackId.getStackVersion());
+      stackId.getStackVersion());
 
     // Ensure that the version provided is part of the Stack.
     // E.g., version 2.3.0.0 is part of HDP 2.3, so is 2.3.0.0-1234
@@ -1577,7 +1777,6 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
         stackEntity,
         version,
         stackId.getStackName() + "-" + version,
-        repositoryVersionHelper.getUpgradePackageNameSafe(stackId.getStackName(), stackId.getStackVersion(), version),
         repositoryVersionHelper.serializeOperatingSystems(stackInfo.getRepositories()));
   }
 
@@ -1640,23 +1839,7 @@ public class ServiceComponentHostImpl implements ServiceComponentHost {
    */
   private HostComponentStateEntity getStateEntity() {
     if (isPersisted()) {
-      final HostEntity host = hostDAO.findById(stateEntity.getHostId());
-      Collection<HostComponentStateEntity> hostComponentStateEntities = host.getHostComponentStateEntities();
-      for (HostComponentStateEntity hostComponentStateEntity : hostComponentStateEntities) {
-        String serviceName = stateEntity.getServiceName();
-        String componentName = stateEntity.getComponentName();
-        Long clusterId = stateEntity.getClusterId();
-        Long hostId = stateEntity.getHostId();
-
-        if (StringUtils.equals(hostComponentStateEntity.getServiceName(), serviceName)
-            && StringUtils.equals(hostComponentStateEntity.getComponentName(), componentName)
-            && hostComponentStateEntity.getClusterId() == clusterId
-            && hostComponentStateEntity.getHostId() == hostId) {
-
-          stateEntity = hostComponentStateEntity;
-          return stateEntity;
-        }
-      }
+      stateEntity = hostComponentStateDAO.findById(hostComponentStateId);
     }
 
     return stateEntity;

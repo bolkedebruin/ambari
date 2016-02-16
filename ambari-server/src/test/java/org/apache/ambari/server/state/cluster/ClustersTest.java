@@ -18,18 +18,12 @@
 
 package org.apache.ambari.server.state.cluster;
 
-import static org.junit.Assert.fail;
-
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import javax.persistence.EntityManager;
-
+import com.google.common.collect.Maps;
+import com.google.inject.Guice;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
+import junit.framework.Assert;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.DuplicateResourceException;
@@ -43,6 +37,7 @@ import org.apache.ambari.server.orm.dao.ClusterStateDAO;
 import org.apache.ambari.server.orm.dao.HostComponentDesiredStateDAO;
 import org.apache.ambari.server.orm.dao.HostComponentStateDAO;
 import org.apache.ambari.server.orm.dao.HostDAO;
+import org.apache.ambari.server.orm.dao.TopologyRequestDAO;
 import org.apache.ambari.server.orm.entities.ClusterStateEntity;
 import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntityPK;
 import org.apache.ambari.server.orm.entities.HostEntity;
@@ -52,21 +47,34 @@ import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigFactory;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.RepositoryVersionState;
+import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceComponentHost;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.State;
+import org.apache.ambari.server.topology.Blueprint;
+import org.apache.ambari.server.topology.Configuration;
+import org.apache.ambari.server.topology.HostGroupInfo;
+import org.apache.ambari.server.topology.PersistedState;
+import org.apache.ambari.server.topology.TopologyRequest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.inject.Guice;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
+import javax.persistence.EntityManager;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-import junit.framework.Assert;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.junit.Assert.fail;
 
 public class ClustersTest {
 
@@ -78,6 +86,13 @@ public class ClustersTest {
   private OrmTestHelper helper;
   @Inject
   private HostDAO hostDAO;
+
+  @Inject
+  private TopologyRequestDAO topologyRequestDAO;
+
+
+  @Inject
+  private PersistedState persistedState;
 
   @Before
   public void setup() throws Exception {
@@ -165,6 +180,19 @@ public class ClustersTest {
 
   }
 
+  @Test
+  public void testAddAndGetClusterWithSecurityType() throws AmbariException {
+    StackId stackId = new StackId("HDP-2.1.1");
+
+    String c1 = "foo";
+    SecurityType securityType = SecurityType.KERBEROS;
+    clusters.addCluster(c1, stackId, securityType);
+
+    Assert.assertNotNull(clusters.getCluster(c1));
+
+    Assert.assertEquals(c1, clusters.getCluster(c1).getClusterName());
+    Assert.assertEquals(securityType, clusters.getCluster(c1).getSecurityType());
+  }
 
   @Test
   public void testAddAndGetHost() throws AmbariException {
@@ -440,25 +468,52 @@ public class ClustersTest {
     hkdspk.setComponentName(nameNodeHost.getServiceComponentName());
 
     Assert.assertNotNull(injector.getInstance(HostComponentStateDAO.class).findByIndex(
-        nameNodeHost.getClusterId(), nameNodeHost.getServiceName(),
-        nameNodeHost.getServiceComponentName(), nameNodeHostEntity.getHostId()));
+      nameNodeHost.getClusterId(), nameNodeHost.getServiceName(),
+      nameNodeHost.getServiceComponentName(), nameNodeHostEntity.getHostId()));
 
     Assert.assertNotNull(injector.getInstance(HostComponentDesiredStateDAO.class).findByPK(hkdspk));
     Assert.assertEquals(2, injector.getProvider(EntityManager.class).get().createQuery("SELECT config FROM ClusterConfigEntity config").getResultList().size());
     Assert.assertEquals(1, injector.getProvider(EntityManager.class).get().createQuery("SELECT state FROM ClusterStateEntity state").getResultList().size());
     Assert.assertEquals(1, injector.getProvider(EntityManager.class).get().createQuery("SELECT config FROM ClusterConfigMappingEntity config").getResultList().size());
 
+    // add topology request
+    Blueprint bp = createNiceMock(Blueprint.class);
+    expect(bp.getName()).andReturn("TestBluePrint").anyTimes();
+
+    Configuration clusterConfig = new Configuration(
+      Maps.<String, Map<String, String>>newHashMap(),
+      Maps.<String, Map<String, Map<String, String>>>newHashMap()
+      );
+
+    Map<String, HostGroupInfo> hostGroups = Maps.newHashMap();
+
+    TopologyRequest topologyRequest = createNiceMock(TopologyRequest.class);
+    expect(topologyRequest.getType()).andReturn(TopologyRequest.Type.PROVISION).anyTimes();
+    expect(topologyRequest.getBlueprint()).andReturn(bp).anyTimes();
+    expect(topologyRequest.getClusterId()).andReturn(cluster.getClusterId()).anyTimes();
+    expect(topologyRequest.getConfiguration()).andReturn(clusterConfig).anyTimes();
+    expect(topologyRequest.getDescription()).andReturn("Test description").anyTimes();
+    expect(topologyRequest.getHostGroupInfo()).andReturn(hostGroups).anyTimes();
+
+
+    replay(bp, topologyRequest);
+
+    persistedState.persistTopologyRequest(topologyRequest);
+
+    Assert.assertEquals(1, topologyRequestDAO.findByClusterId(cluster.getClusterId()).size());
+
     clusters.deleteCluster(c1);
 
     Assert.assertEquals(2, hostDAO.findAll().size());
     Assert.assertNull(injector.getInstance(HostComponentStateDAO.class).findByIndex(
-        nameNodeHost.getClusterId(), nameNodeHost.getServiceName(),
-        nameNodeHost.getServiceComponentName(), nameNodeHostEntity.getHostId()));
+      nameNodeHost.getClusterId(), nameNodeHost.getServiceName(),
+      nameNodeHost.getServiceComponentName(), nameNodeHostEntity.getHostId()));
 
     Assert.assertNull(injector.getInstance(HostComponentDesiredStateDAO.class).findByPK(hkdspk));
     Assert.assertEquals(0, injector.getProvider(EntityManager.class).get().createQuery("SELECT config FROM ClusterConfigEntity config").getResultList().size());
     Assert.assertEquals(0, injector.getProvider(EntityManager.class).get().createQuery("SELECT state FROM ClusterStateEntity state").getResultList().size());
     Assert.assertEquals(0, injector.getProvider(EntityManager.class).get().createQuery("SELECT config FROM ClusterConfigMappingEntity config").getResultList().size());
+    Assert.assertEquals(0, topologyRequestDAO.findByClusterId(cluster.getClusterId()).size());
   }
 
   @Test

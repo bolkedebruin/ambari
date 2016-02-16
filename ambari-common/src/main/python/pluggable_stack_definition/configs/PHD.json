@@ -5,7 +5,7 @@
   "textReplacements": [
     ["hdp-select", "distro-select"]
    ],
-  "preservedText": ["ext-2.2", "HDP-oozie", "hdp.version", "HDP_VERSION"],
+  "preservedText": ["ext-2.2", "HDP-oozie", "hdp.version", "HDP_VERSION", "192.168."],
   "uiMapping": [
     {
       "stackVersionNumber": "3.0",
@@ -14,12 +14,6 @@
     }
   ],
   "ambariProperties": {
-    "jdk.download.supported" : "false",
-    "jce.download.supported" : "false",
-    "jdk1.7.url" : "http://DOWNLOAD_NOT_SUPPORTED",
-    "jdk1.8.url" : "http://DOWNLOAD_NOT_SUPPORTED",
-    "jdk1.7.jcpol-url" : "http://DOWNLOAD_NOT_SUPPORTED",
-    "jdk1.8.jcpol-url" : "http://DOWNLOAD_NOT_SUPPORTED",
     "rolling.upgrade.min.stack" : "PHD-3.0"
   },
   "versions": [
@@ -65,6 +59,9 @@
         },
         {
           "name": "PIG"
+        },
+        {
+          "name": "GANGLIA"
         }
       ]
     },
@@ -136,7 +133,7 @@
             {
               "family": "redhat6,suse11",
               "packages": [
-                "hbase_3_0_*"
+                "hbase_${stack_version}"
               ]
             }
           ]
@@ -159,7 +156,7 @@
             {
               "family": "redhat6,suse11",
               "packages": [
-                "oozie_3_0_*"
+                "oozie_${stack_version}"
               ]
             },
             {
@@ -177,13 +174,28 @@
             {
               "family": "redhat6,suse11",
               "packages": [
-                "knox_3_0_*"
+                "knox_${stack_version}"
               ]
             }
           ]
         },
         {
           "name": "PIG"
+        },
+        {
+          "name": "SPARK"
+        },
+        {
+          "name": "RANGER",
+          "packages":[
+            {
+              "family": "redhat6,suse11",
+              "packages": [
+                "ranger_${stack_version}-admin",
+                "ranger_${stack_version}-usersync"
+              ]
+            }
+          ]
         }
       ]
     },
@@ -229,9 +241,9 @@
             {
               "family": "redhat6,redhat7,suse11",
               "packages": [
-                "hive_3_3_*",
-                "hive_3_3_*-hcatalog",
-                "hive_3_3_*-webhcat"
+                "hive_${stack_version}",
+                "hive_${stack_version}-hcatalog",
+                "hive_${stack_version}-webhcat"
               ]
             },
             {
@@ -285,7 +297,7 @@
             {
               "family": "redhat6,redhat7,suse11",
               "packages": [
-                "oozie_3_3_*"
+                "oozie_${stack_version}"
               ]
             },
             {
@@ -310,7 +322,33 @@
             {
               "family": "redhat6,redhat7,suse11",
               "packages": [
-                "pig_3_3_*"
+                "pig_${stack_version}"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "SPARK"
+        },
+        {
+          "name": "RANGER",
+          "packages":[
+            {
+              "family": "redhat6,redhat7,suse11",
+              "packages": [
+                "ranger_${stack_version}-admin",
+                "ranger_${stack_version}-usersync"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "RANGER_KMS",
+          "packages":[
+            {
+              "family": "redhat6,redhat7,suse11",
+              "packages": [
+                "ranger_${stack_version}-kms"
               ]
             }
           ]

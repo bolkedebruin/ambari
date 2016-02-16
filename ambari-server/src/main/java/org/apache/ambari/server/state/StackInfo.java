@@ -31,6 +31,7 @@ import java.util.Set;
 import org.apache.ambari.server.controller.StackVersionResponse;
 import org.apache.ambari.server.stack.Validable;
 import org.apache.ambari.server.state.stack.StackRoleCommandOrder;
+import org.apache.ambari.server.state.stack.ConfigUpgradePack;
 import org.apache.ambari.server.state.stack.UpgradePack;
 
 public class StackInfo implements Comparable<StackInfo>, Validable{
@@ -67,8 +68,11 @@ public class StackInfo implements Comparable<StackInfo>, Validable{
   private List<PropertyInfo> properties;
   private Map<String, Map<String, Map<String, String>>> configTypes;
   private Map<String, UpgradePack> upgradePacks;
+  private ConfigUpgradePack configUpgradePack;
   private StackRoleCommandOrder roleCommandOrder;
   private boolean valid = true;
+  private Map<String, Map<PropertyInfo.PropertyType, Set<String>>> propertiesTypesCache =
+      Collections.synchronizedMap(new HashMap<String, Map<PropertyInfo.PropertyType, Set<String>>>());
 
   /**
    * 
@@ -373,23 +377,40 @@ public class StackInfo implements Comparable<StackInfo>, Validable{
   }
 
   /**
+   * Obtain all stack upgrade packs.
+   *
+   * @return map of upgrade pack name to upgrade pack or {@code null} if no packs
+   */
+  public Map<String, UpgradePack> getUpgradePacks() {
+    return upgradePacks;
+  }
+
+  /**
    * Set upgrade packs.
    *
-   * @param upgradePacks  map of upgrade packs
+   * @param upgradePacks map of upgrade packs
    */
   public void setUpgradePacks(Map<String, UpgradePack> upgradePacks) {
     this.upgradePacks = upgradePacks;
   }
 
   /**
-   * Obtain all stack upgrade packs.
-   *
-   * @return map of upgrade pack name to upgrade pack or {@code null} of no packs
+   * Get config upgrade pack for stack
+   * @return config upgrade pack for stack or null if it is
+   * not defined
    */
-  public Map<String, UpgradePack> getUpgradePacks() {
-    return upgradePacks;
+  public ConfigUpgradePack getConfigUpgradePack() {
+    return configUpgradePack;
   }
 
+  /**
+   * Set config upgrade pack for stack
+   * @param configUpgradePack config upgrade pack for stack or null if it is
+   * not defined
+   */
+  public void setConfigUpgradePack(ConfigUpgradePack configUpgradePack) {
+    this.configUpgradePack = configUpgradePack;
+  }
 
   @Override
   public int compareTo(StackInfo o) {
@@ -417,4 +438,26 @@ public class StackInfo implements Comparable<StackInfo>, Validable{
     }
     return result;
   }
+
+  public Map<PropertyInfo.PropertyType, Set<String>> getConfigPropertiesTypes(String configType) {
+    if(!propertiesTypesCache.containsKey(configType)) {
+      Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes = new HashMap<>();
+      Collection<ServiceInfo> services = getServices();
+      for (ServiceInfo serviceInfo : services) {
+        for (PropertyInfo propertyInfo : serviceInfo.getProperties()) {
+          if (propertyInfo.getFilename().contains(configType) && !propertyInfo.getPropertyTypes().isEmpty()) {
+            Set<PropertyInfo.PropertyType> types = propertyInfo.getPropertyTypes();
+            for (PropertyInfo.PropertyType propertyType : types) {
+              if (!propertiesTypes.containsKey(propertyType))
+                propertiesTypes.put(propertyType, new HashSet<String>());
+              propertiesTypes.get(propertyType).add(propertyInfo.getName());
+            }
+          }
+        }
+      }
+      propertiesTypesCache.put(configType, propertiesTypes);
+    }
+    return propertiesTypesCache.get(configType);
+  }
+
 }

@@ -62,15 +62,28 @@
             <timeout>1200</timeout>
           </commandScript>
         </component>
+        <component>
+          <name>METRICS_GRAFANA</name>
+          <displayName>Grafana</displayName>
+          <category>MASTER</category>
+          <cardinality>0-1</cardinality>
+          <versionAdvertised>false</versionAdvertised>
+          <commandScript>
+            <script>scripts/metrics_grafana.py</script>
+            <scriptType>PYTHON</scriptType>
+            <timeout>1200</timeout>
+          </commandScript>
+        </component>
       </components>
 
       <osSpecifics>
         <osSpecific>
-          <osFamily>redhat7,redhat6,suse11</osFamily>
+          <osFamily>redhat7,amazon2015,redhat6,suse11</osFamily>
           <packages>
             <package>
               <name>ambari-metrics-collector</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_ams_collector</condition>
             </package>
             <package>
               <name>ambari-metrics-monitor</name>
@@ -79,6 +92,11 @@
             <package>
               <name>ambari-metrics-hadoop-sink</name>
               <skipUpgrade>true</skipUpgrade>
+            </package>
+            <package>
+              <name>ambari-metrics-grafana</name>
+              <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_ams_grafana</condition>
             </package>
             <package>
               <name>gcc</name>
@@ -119,7 +137,7 @@
       <commandScript>
         <script>scripts/service_check.py</script>
         <scriptType>PYTHON</scriptType>
-        <timeout>300</timeout>
+        <timeout>600</timeout>
       </commandScript>
 
       <requiredServices>
@@ -135,11 +153,20 @@
         <config-type>ams-hbase-security-site</config-type>
         <config-type>ams-hbase-env</config-type>
         <config-type>ams-hbase-log4j</config-type>
+        <config-type>ams-grafana-env</config-type>
+        <config-type>ams-grafana-ini</config-type>
       </configuration-dependencies>
 
       <excluded-config-types>
         <config-type>storm-site</config-type>
       </excluded-config-types>
+
+      <quickLinksConfigurations>
+        <quickLinksConfiguration>
+          <fileName>quicklinks.json</fileName>
+          <default>true</default>
+        </quickLinksConfiguration>
+      </quickLinksConfigurations>
 
     </service>
   </services>

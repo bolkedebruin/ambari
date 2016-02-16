@@ -19,6 +19,7 @@
 var App = require('app');
 
 App.ServiceConfigView.SCPOverriddenRowsView = Ember.View.extend({
+  classNames: ['overriden-value'],
   templateName: require('templates/common/configs/overriddenProperty'),
   serviceConfigProperty: null, // is passed dynamically at runtime where ever
   // we are declaring this from configs.hbs ( we are initializing this from UI )
@@ -76,17 +77,6 @@ App.ServiceConfigView.SCPOverriddenRowsView = Ember.View.extend({
       var controller = this.get('controller');
       var group = controller.get('selectedService.configGroups').findProperty('name', controller.get('selectedConfigGroup.name'));
       group.get('properties').removeObject(scpToBeRemoved);
-    }
-    if (App.get('isClusterSupportsEnhancedConfigs')) {
-      var deletedConfig = App.ConfigProperty.find().find(function(cp) {
-        return cp.get('name') === scpToBeRemoved.get('name')
-          && cp.get('fileName') === scpToBeRemoved.get('filename')
-          && cp.get('configVersion.groupName') === this.get('controller.selectedConfigGroup.name');
-      }, this);
-      if (deletedConfig) {
-        deletedConfig.deleteRecord();
-        App.store.commit();
-      }
     }
     overrides = overrides.without(scpToBeRemoved);
     this.set('serviceConfigProperty.overrides', overrides);

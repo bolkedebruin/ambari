@@ -17,6 +17,8 @@
 
 var App = require('app');
 
+require('models/repository');
+
 App.WizardStep1View = Em.View.extend({
 
   templateName: require('templates/wizard/step1'),
@@ -69,41 +71,31 @@ App.WizardStep1View = Em.View.extend({
    * Verify if some repo has empty base-url
    * @type {bool}
    */
-  invalidFormatUrlExist: function () {
-    return this.get('allRepositories').someProperty('invalidFormatError', true);
-  }.property('allRepositories.@each.invalidFormatError'),
+  invalidFormatUrlExist: Em.computed.someBy('allRepositories', 'invalidFormatError', true),
 
   /**
    * Disable submit button flag
    * @type {bool}
    */
-  isSubmitDisabled: function () {
-    return this.get('invalidFormatUrlExist') || this.get('isNoOsChecked') || this.get('invalidUrlExist') || this.get('controller.content.isCheckInProgress');
-  }.property('invalidFormatUrlExist', 'isNoOsChecked', 'invalidUrlExist', 'controller.content.isCheckInProgress'),
+  isSubmitDisabled: Em.computed.or('invalidFormatUrlExist', 'isNoOsChecked', 'invalidUrlExist', 'controller.content.isCheckInProgress'),
 
   /**
    * Enable error count badge
    * @type {bool}
    */
-  showErrorsWarningCount: function () {
-    return this.get('isSubmitDisabled') && !!this.get('totalErrorCnt');
-  }.property('isSubmitDisabled', 'totalErrorCnt'),
+  showErrorsWarningCount: Em.computed.and('isSubmitDisabled', 'totalErrorCnt'),
 
   /**
    * Verify if some invalid repo-urls exist
    * @type {bool}
    */
-  invalidUrlExist: function () {
-    return this.get('allRepositories').someProperty('validation', App.Repository.validation['INVALID']);
-  }.property('allRepositories.@each.validation'),
+  invalidUrlExist: Em.computed.someBy('allRepositories', 'validation', App.Repository.validation['INVALID']),
 
   /**
    * If all repo links are unchecked
    * @type {bool}
    */
-  isNoOsChecked: function () {
-    return this.get('operatingSystems').everyProperty('isSelected', false);
-  }.property('operatingSystems.@each.isSelected'),
+  isNoOsChecked: Em.computed.everyBy('operatingSystems', 'isSelected', false),
 
   /**
    * Overall errors count
@@ -128,9 +120,7 @@ App.WizardStep1View = Em.View.extend({
   stackRadioButton: Em.Checkbox.extend({
     tagName: 'input',
     attributeBindings: [ 'type', 'checked' ],
-    checked: function () {
-      return this.get('content.isSelected');
-    }.property('content.isSelected'),
+    checked: Em.computed.alias('content.isSelected'),
     type: 'radio',
 
     click: function () {

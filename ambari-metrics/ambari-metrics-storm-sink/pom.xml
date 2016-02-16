@@ -22,16 +22,17 @@ limitations under the License.
   <parent>
     <artifactId>ambari-metrics</artifactId>
     <groupId>org.apache.ambari</groupId>
-    <version>2.0.0-SNAPSHOT</version>
+    <version>2.0.0.0-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>ambari-metrics-storm-sink</artifactId>
-  <version>2.0.0-SNAPSHOT</version>
+  <version>2.0.0.0-SNAPSHOT</version>
   <name>Ambari Metrics Storm Sink</name>
   <packaging>jar</packaging>
 
   <properties>
-    <storm.version>0.9.3.2.2.1.0-2340</storm.version>
+    <!--<storm.version>0.9.3.2.2.1.0-2340</storm.version>-->
+    <storm.version>0.10.0.2.3.0.0-2557</storm.version>
   </properties>
 
   <build>
@@ -60,8 +61,8 @@ limitations under the License.
             <configuration>
               <name>ambariVersion</name>
               <value>${project.version}</value>
-              <regex>^([0-9]+)\.([0-9]+)\.([0-9]+)(\.|-).*</regex>
-              <replacement>$1.$2.$3</replacement>
+              <regex>^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)(\.|-).*</regex>
+              <replacement>$1.$2.$3.$4</replacement>
               <failIfNoMatch>false</failIfNoMatch>
             </configuration>
           </execution>
@@ -101,23 +102,15 @@ limitations under the License.
               <include>org.codehaus.jackson:jackson-core-asl</include>
               <include>org.codehaus.jackson:jackson-xc</include>
               <include>org.apache.hadoop:hadoop-annotations</include>
-              <include>commons-httpclient:commons-httpclient</include>
               <include>commons-logging:commons-logging</include>
-              <include>commons-lang:commons-lang</include>
+              <include>org.apache.commons:commons-lang3</include>
+              <include>commons-codec:commons-codec</include>
             </includes>
           </artifactSet>
           <relocations>
             <relocation>
               <pattern>org.apache.commons.logging</pattern>
               <shadedPattern>org.apache.hadoop.metrics2.sink.relocated.commons.logging</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.commons.httpclient</pattern>
-              <shadedPattern>org.apache.hadoop.metrics2.sink.relocated.commons.httpclient</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.commons.lang</pattern>
-              <shadedPattern>org.apache.hadoop.metrics2.sink.relocated.commons.lang</shadedPattern>
             </relocation>
             <relocation>
               <pattern>org.apache.hadoop.classification</pattern>
@@ -127,12 +120,51 @@ limitations under the License.
               <pattern>org.codehaus.jackson</pattern>
               <shadedPattern>org.apache.hadoop.metrics2.sink.relocated.jackson</shadedPattern>
             </relocation>
+            <relocation>
+              <pattern>org.apache.commons.lang3</pattern>
+              <shadedPattern>org.apache.hadoop.metrics2.sink.relocated.commons.lang3</shadedPattern>
+            </relocation>
+            <relocation>
+              <pattern>org.apache.commons.codec</pattern>
+              <shadedPattern>org.apache.hadoop.metrics2.sink.relocated.commons.codec</shadedPattern>
+            </relocation>
           </relocations>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.vafer</groupId>
+        <artifactId>jdeb</artifactId>
+        <version>1.0.1</version>
+        <executions>
+          <execution>
+            <!--Stub execution on direct plugin call - workaround for ambari deb build process-->
+            <id>stub-execution</id>
+            <phase>none</phase>
+            <goals>
+              <goal>jdeb</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <skip>true</skip>
+          <attach>false</attach>
+          <submodules>false</submodules>
+          <controlDir>${project.basedir}/../src/main/package/deb/control</controlDir>
         </configuration>
       </plugin>
     </plugins>
   </build>
   <dependencies>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.3.2</version>
+    </dependency>
+    <dependency>
+      <groupId>commons-codec</groupId>
+      <artifactId>commons-codec</artifactId>
+      <version>1.8</version>
+    </dependency>
     <dependency>
       <groupId>org.apache.storm</groupId>
       <artifactId>storm-core</artifactId>

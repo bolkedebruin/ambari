@@ -60,6 +60,7 @@ import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
 import org.apache.ambari.server.state.stack.Metric;
 import org.apache.ambari.server.state.stack.MetricDefinition;
 import org.apache.ambari.server.state.stack.OsFamily;
+import org.apache.ambari.server.state.stack.ConfigUpgradePack;
 import org.apache.ambari.server.state.stack.UpgradePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +93,7 @@ import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGRE
 public class AmbariMetaInfo {
   public static final String SERVICE_CONFIG_FOLDER_NAME = "configuration";
   public static final String SERVICE_THEMES_FOLDER_NAME = "themes";
+  public static final String SERVICE_QUICKLINKS_CONFIGURATIONS_FOLDER_NAME = "quicklinks";
   public static final String SERVICE_CONFIG_FILE_NAME_POSTFIX = ".xml";
   public static final String RCO_FILE_NAME = "role_command_order.json";
   public static final String SERVICE_METRIC_FILE_NAME = "metrics.json";
@@ -997,7 +999,7 @@ public class AmbariMetaInfo {
     }
 
     return alertDefinitionFactory.getAlertDefinitions(alertsFile,
-        service.getName());
+            service.getName());
   }
 
   /**
@@ -1203,6 +1205,24 @@ public class AmbariMetaInfo {
     }
 
     return Collections.emptyMap();
+  }
+
+  /**
+   * Get all upgrade config pack if it is available for a stack.
+   *
+   * @param stackName the stack name
+   * @param stackVersion the stack version
+   * @return config upgrade pack for stack or null if it is
+   * not defined for stack
+   */
+  public ConfigUpgradePack getConfigUpgradePack(String stackName, String stackVersion) {
+    try {
+      StackInfo stack = getStack(stackName, stackVersion);
+      return stack.getConfigUpgradePack();
+    } catch (AmbariException e) {
+      LOG.debug("Cannot load config upgrade pack for non-existent stack {}-{}", stackName, stackVersion, e);
+      return null;
+    }
   }
 
   /**

@@ -35,6 +35,9 @@ from resource_management.libraries.resources.xml_config import XmlConfig
 from resource_management.libraries.functions.format import format
 from resource_management.core.exceptions import Fail
 from resource_management.core.shell import as_sudo
+from resource_management.core.shell import quote_bash_args
+from resource_management.core.logger import Logger
+from resource_management.core import utils
 
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons import OSConst
@@ -132,8 +135,8 @@ def hive(name=None):
     # *********************************
     # HDP 2.2 or higher, copy mapreduce.tar.gz to HDFS
     if params.hdp_stack_version_major != "" and compare_versions(params.hdp_stack_version_major, '2.2') >= 0:
-      copy_to_hdfs("mapreduce", params.user_group, params.hdfs_user)
-      copy_to_hdfs("tez", params.user_group, params.hdfs_user)
+      copy_to_hdfs("mapreduce", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
+      copy_to_hdfs("tez", params.user_group, params.hdfs_user, host_sys_prepped=params.host_sys_prepped)
 
     # Always copy pig.tar.gz and hive.tar.gz using the appropriate mode.
     # This can use a different source and dest location to account for both HDP 2.1 and 2.2
@@ -142,13 +145,15 @@ def hive(name=None):
                  params.hdfs_user,
                  file_mode=params.tarballs_mode,
                  custom_source_file=params.pig_tar_source,
-                 custom_dest_file=params.pig_tar_dest_file)
+                 custom_dest_file=params.pig_tar_dest_file,
+                 host_sys_prepped=params.host_sys_prepped)
     copy_to_hdfs("hive",
                  params.user_group,
                  params.hdfs_user,
                  file_mode=params.tarballs_mode,
                  custom_source_file=params.hive_tar_source,
-                 custom_dest_file=params.hive_tar_dest_file)
+                 custom_dest_file=params.hive_tar_dest_file,
+                 host_sys_prepped=params.host_sys_prepped)
 
     wildcard_tarballs = ["sqoop", "hadoop_streaming"]
     for tarball_name in wildcard_tarballs:
@@ -168,7 +173,8 @@ def hive(name=None):
                      params.hdfs_user,
                      file_mode=params.tarballs_mode,
                      custom_source_file=source_file,
-                     custom_dest_file=dest_file)
+                     custom_dest_file=dest_file,
+                     host_sys_prepped=params.host_sys_prepped)
     # ******* End Copy Tarballs *******
     # *********************************
 
@@ -234,7 +240,7 @@ def hive(name=None):
 
   # On some OS this folder could be not exists, so we will create it before pushing there files
   Directory(params.limits_conf_dir,
-            recursive=True,
+            create_parents = True,
             owner='root',
             group='root'
             )
@@ -246,7 +252,7 @@ def hive(name=None):
        content=Template("hive.conf.j2")
        )
 
-  if name == 'metastore' or name == 'hiveserver2':
+  if (name == 'metastore' or name == 'hiveserver2') and not os.path.exists(params.target):
     jdbc_connector()
 
   File(format("/usr/lib/ambari-agent/{check_db_connection_jar_name}"),
@@ -272,6 +278,15 @@ def hive(name=None):
                                         "-userName {hive_metastore_user_name} "
                                         "-passWord {hive_metastore_user_passwd!p}"), params.hive_user)
 
+      # HACK: in cases with quoted passwords and as_user (which does the quoting as well) !p won't work for hiding passwords.
+      # Fixing it with the hack below:
+      quoted_hive_metastore_user_passwd = quote_bash_args(quote_bash_args(params.hive_metastore_user_passwd))
+      if quoted_hive_metastore_user_passwd[0] == "'" and quoted_hive_metastore_user_passwd[-1] == "'" \
+          or quoted_hive_metastore_user_passwd[0] == '"' and quoted_hive_metastore_user_passwd[-1] == '"':
+        quoted_hive_metastore_user_passwd = quoted_hive_metastore_user_passwd[1:-1]
+      Logger.sensitive_strings[repr(check_schema_created_cmd)] = repr(check_schema_created_cmd.replace(
+          format("-passWord {quoted_hive_metastore_user_passwd}"), "-passWord " + utils.PASSWORDS_HIDE_STRING))
+
       Execute(create_schema_cmd,
               not_if = check_schema_created_cmd,
               user = params.hive_user
@@ -293,7 +308,7 @@ def fill_conf_dir(component_conf_dir):
   Directory(component_conf_dir,
             owner=params.hive_user,
             group=params.user_group,
-            recursive=True
+            create_parents = True
   )
 
   XmlConfig("mapred-site.xml",
@@ -344,7 +359,7 @@ def crt_directory(name):
   import params
 
   Directory(name,
-            recursive=True,
+            create_parents = True,
             cd_access='a',
             owner=params.hive_user,
             group=params.user_group,
@@ -380,14 +395,14 @@ def jdbc_connector():
 
       Execute(untar_sqla_type2_driver, sudo = True)
 
-      Execute(as_sudo(['yes', '|', 'cp', params.jars_path_in_archive, params.hive_lib], auto_escape=False),
-              path=["/bin", "/usr/bin/"])
+      Execute(format("yes | {sudo} cp {jars_path_in_archive} {hive_lib}"))
 
       Directory(params.jdbc_libs_dir,
-                recursive=True)
+                create_parents = True)
 
-      Execute(as_sudo(['yes', '|', 'cp', params.libs_path_in_archive, params.jdbc_libs_dir], auto_escape=False),
-              path=["/bin", "/usr/bin/"])
+      Execute(format("yes | {sudo} cp {libs_path_in_archive} {jdbc_libs_dir}"))
+
+      Execute(format("{sudo} chown -R {hive_user}:{user_group} {hive_lib}/*"))
 
     else:
       Execute(('cp', '--remove-destination', params.downloaded_custom_connector, params.target),

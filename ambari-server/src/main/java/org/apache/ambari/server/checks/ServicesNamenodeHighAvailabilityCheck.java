@@ -17,6 +17,7 @@
  */
 package org.apache.ambari.server.checks;
 
+import java.util.Arrays;
 import java.util.Map;
 
 import org.apache.ambari.server.AmbariException;
@@ -34,7 +35,7 @@ import com.google.inject.Singleton;
  * Checks that namenode high availability is enabled.
  */
 @Singleton
-@UpgradeCheck(group = UpgradeCheckGroup.NAMENODE_HA, order = 1.0f)
+@UpgradeCheck(group = UpgradeCheckGroup.NAMENODE_HA, order = 16.1f)
 public class ServicesNamenodeHighAvailabilityCheck extends AbstractCheckDescriptor {
 
   /**
@@ -46,17 +47,7 @@ public class ServicesNamenodeHighAvailabilityCheck extends AbstractCheckDescript
 
   @Override
   public boolean isApplicable(PrereqCheckRequest request) throws AmbariException {
-    if (!super.isApplicable(request)) {
-      return false;
-    }
-
-    final Cluster cluster = clustersProvider.get().getCluster(request.getClusterName());
-    try {
-      cluster.getService("HDFS");
-    } catch (ServiceNotFoundException ex) {
-      return false;
-    }
-    return true;
+    return super.isApplicable(request, Arrays.asList("HDFS"), true);
   }
 
   @Override

@@ -18,49 +18,21 @@
 
 var App = require('app');
 require('config');
+require('utils/configs_collection');
 require('utils/config');
 require('models/service/hdfs');
 var setups = require('test/init_model_test');
-var modelSetup = setups.configs;
+
+function dummyCopy(val) {
+  return JSON.parse(JSON.stringify(val));
+}
 
 describe('App.config', function () {
 
-  var loadServiceSpecificConfigs = function(context, serviceName) {
-    context.configGroups = modelSetup.setupConfigGroupsObject(serviceName);
-    context.advancedConfigs = modelSetup.setupAdvancedConfigsObject();
-    context.tags = modelSetup.setupServiceConfigTagsObject(serviceName);
-    context.result = App.config.mergePreDefinedWithLoaded(context.configGroups, context.advancedConfigs, context.tags, App.Service.find().findProperty('id', serviceName).get('serviceName'));
-  };
-
-  var loadAllServicesConfigs = function(context, serviceNames) {
-    context.configGroups = modelSetup.setupConfigGroupsObject();
-  };
-
-  var loadServiceModelsData = function(serviceNames) {
-    serviceNames.forEach(function(serviceName) {
-      App.store.load(App.Service, {
-        id: serviceName,
-        service_name: serviceName
-      });
-    });
-  };
-
-  describe('#handleSpecialProperties', function () {
-    var config = {};
-    it('value should be transformed to "1024" from "1024m"', function () {
-      config = {
-        displayType: 'int',
-        value: '1024m',
-        savedValue: '1024m'
-      };
-      App.config.handleSpecialProperties(config);
-      expect(config.value).to.equal('1024');
-      expect(config.savedValue).to.equal('1024');
-    });
-  });
-
   describe('#fileConfigsIntoTextarea', function () {
+
     var filename = 'capacity-scheduler.xml';
+
     var configs = [
       {
         name: 'config1',
@@ -75,69 +47,110 @@ describe('App.config', function () {
         filename: 'capacity-scheduler.xml'
       }
     ];
-    it('two configs into textarea', function () {
-      var result = App.config.fileConfigsIntoTextarea.call(App.config, configs, filename);
-      expect(result.length).to.equal(1);
-      expect(result[0].value).to.equal('config1=value1\nconfig2=value2\n');
-      expect(result[0].recommendedValue).to.equal('config1=value1\nconfig2=value2\n');
-    });
-    it('three config into textarea', function () {
-      configs.push({
-        name: 'config3',
-        value: 'value3',
-        recommendedValue: 'value3',
-        filename: 'capacity-scheduler.xml'
+
+    var c3 = {
+      name: 'config3',
+      value: 'value3',
+      recommendedValue: 'value3',
+      filename: 'capacity-scheduler.xml'
+    };
+
+    describe('two configs into textarea', function () {
+      var result;
+      beforeEach(function () {
+        result = App.config.fileConfigsIntoTextarea(configs, filename);
       });
-      var result = App.config.fileConfigsIntoTextarea.call(App.config, configs, filename);
-      expect(result.length).to.equal(1);
-      expect(result[0].value).to.equal('config1=value1\nconfig2=value2\nconfig3=value3\n');
-      expect(result[0].recommendedValue).to.equal('config1=value1\nconfig2=value2\nconfig3=value3\n');
+      it('One config is returned', function () {
+        expect(result.length).to.equal(1);
+      });
+      it('value is valid', function () {
+        expect(result[0].value).to.equal('config1=value1\nconfig2=value2\n');
+      });
+      it('recommendedValue is valid', function () {
+        expect(result[0].recommendedValue).to.equal('config1=value1\nconfig2=value2\n');
+      });
     });
-    it('one of three configs has different filename', function () {
-      configs[1].filename = 'another filename';
-      var result = App.config.fileConfigsIntoTextarea.call(App.config, configs, filename);
-      //result contains two configs: one with different filename and one textarea config
-      expect(result.length).to.equal(2);
-      expect(result[1].value).to.equal('config1=value1\nconfig3=value3\n');
-      expect(result[1].recommendedValue).to.equal('config1=value1\nconfig3=value3\n');
+
+    describe('three config into textarea', function () {
+      var newConfigs = dummyCopy(configs);
+      newConfigs.push(dummyCopy(c3));
+      var result;
+      beforeEach(function () {
+        result = App.config.fileConfigsIntoTextarea(newConfigs, filename);
+      });
+      it('One config is returned', function () {
+        expect(result.length).to.equal(1);
+      });
+      it('valid is valid', function () {
+        expect(result[0].value).to.equal('config1=value1\nconfig2=value2\nconfig3=value3\n');
+      });
+      it('recommendedValue is valid', function () {
+        expect(result[0].recommendedValue).to.equal('config1=value1\nconfig2=value2\nconfig3=value3\n');
+      });
     });
-    it('none configs into empty textarea', function () {
-      filename = 'capacity-scheduler.xml';
-      configs.clear();
-      var result = App.config.fileConfigsIntoTextarea.call(App.config, configs, filename);
-      expect(result.length).to.equal(1);
-      expect(result[0].value).to.equal('');
-      expect(Em.isNone(result[0].recommendedValue)).to.be.true;
-      expect(Em.isNone(result[0].savedValue)).to.be.true;
+
+    describe('one of three configs has different filename', function () {
+      var newConfigs = dummyCopy(configs);
+      newConfigs.push(dummyCopy(c3));
+      newConfigs[1].filename = 'another filename';
+      var result;
+
+      beforeEach(function () {
+        result = App.config.fileConfigsIntoTextarea(newConfigs, filename);
+      });
+
+      it('Two configs are returned', function () {
+        //result contains two configs: one with different filename and one textarea config
+        expect(result.length).to.equal(2);
+      });
+      it('Value is valid', function () {
+        expect(result[1].value).to.equal('config1=value1\nconfig3=value3\n');
+      });
+      it('RecommendedValue is valid', function () {
+        expect(result[1].recommendedValue).to.equal('config1=value1\nconfig3=value3\n');
+      });
     });
-    it("filename has configs that shouldn't be included in textarea", function () {
-      var configs = [
-        {
-          name: 'config1',
-          value: 'value1',
-          recommendedValue: 'value1',
-          filename: filename
-        },
-        {
-          name: 'config2',
-          value: 'value2',
-          recommendedValue: 'value2',
-          filename: filename
-        }
-      ];
-      var cfg = {
-        name: 'config3',
-        value: 'value3',
-        recommendedValue: 'value3',
-        filename: filename
-      };
-      configs.push(cfg);
-      var result = App.config.fileConfigsIntoTextarea.call(App.config, configs, filename, [cfg]);
-      expect(result.length).to.equal(2);
-      expect(result[1].value).to.equal('config1=value1\nconfig2=value2\n');
-      expect(result[1].recommendedValue).to.equal('config1=value1\nconfig2=value2\n');
-      expect(configs.findProperty('name', 'config3')).to.eql(cfg);
+
+    describe('none configs into empty textarea', function () {
+      var result;
+      beforeEach(function () {
+        result = App.config.fileConfigsIntoTextarea([], 'capacity-scheduler.xml');
+      });
+      it('One config is returned', function () {
+        expect(result.length).to.equal(1);
+      });
+      it('value is empty', function () {
+        expect(result[0].value).to.equal('');
+      });
+      it('recommendedValue is none', function () {
+        expect(Em.isNone(result[0].recommendedValue)).to.be.true;
+      });
+      it('savedValue is none', function () {
+        expect(Em.isNone(result[0].savedValue)).to.be.true;
+      });
     });
+
+    describe("filename has configs that shouldn't be included in textarea", function () {
+      var newConfigs = dummyCopy(configs);
+      newConfigs.push(dummyCopy(c3));
+      var result;
+      beforeEach(function () {
+        result = App.config.fileConfigsIntoTextarea(newConfigs, 'capacity-scheduler.xml', [c3]);
+      });
+      it('Two configs are returned', function () {
+        expect(result.length).to.equal(2);
+      });
+      it('value is correct', function () {
+        expect(result[1].value).to.equal('config1=value1\nconfig2=value2\n');
+      });
+      it('recommendedValue is correct', function () {
+        expect(result[1].recommendedValue).to.equal('config1=value1\nconfig2=value2\n');
+      });
+      it('skipped config is correct', function () {
+        expect(newConfigs.findProperty('name', 'config3')).to.eql(c3);
+      });
+    });
+
   });
 
   describe('#textareaIntoFileConfigs', function () {
@@ -177,35 +190,85 @@ describe('App.config', function () {
       }
     ];
 
-    it('config1=value1 to one config', function () {
-      var result = App.config.textareaIntoFileConfigs.call(App.config, testData[0].configs, filename);
-      expect(result.length).to.equal(1);
-      expect(result[0].value).to.equal('value1');
-      expect(result[0].name).to.equal('config1');
-      expect(result[0].isRequiredByAgent).to.be.true;
+    describe('config1=value1 to one config', function () {
+      var result;
+      beforeEach(function () {
+        result = App.config.textareaIntoFileConfigs(testData[0].configs, filename);
+      });
+      it('One config is returned', function () {
+        expect(result.length).to.equal(1);
+      });
+      it('value is correct', function () {
+        expect(result[0].value).to.equal('value1');
+      });
+      it('name is correct', function () {
+        expect(result[0].name).to.equal('config1');
+      });
+      it('isRequiredByAgent is true', function () {
+        expect(result[0].isRequiredByAgent).to.be.true;
+      });
     });
-    it('config1=value1\\nconfig2=value2\\n to two configs', function () {
-      var result = App.config.textareaIntoFileConfigs.call(App.config, testData[1].configs, filename);
-      expect(result.length).to.equal(2);
-      expect(result[0].value).to.equal('value1');
-      expect(result[0].name).to.equal('config1');
-      expect(result[1].value).to.equal('value2');
-      expect(result[1].name).to.equal('config2');
-      expect(result[0].isRequiredByAgent).to.be.false;
-      expect(result[1].isRequiredByAgent).to.be.false;
+
+    describe('config1=value1\\nconfig2=value2\\n to two configs', function () {
+      var result;
+      beforeEach(function () {
+        result = App.config.textareaIntoFileConfigs(testData[1].configs, filename);
+      });
+      it('Two configs are returned', function (){
+        expect(result.length).to.equal(2);
+      });
+      it('1st value is valid', function (){
+        expect(result[0].value).to.equal('value1');
+      });
+      it('1st name is valid', function (){
+        expect(result[0].name).to.equal('config1');
+      });
+      it('2nd value is valid', function (){
+        expect(result[1].value).to.equal('value2');
+      });
+      it('2nd name is valid', function (){
+        expect(result[1].name).to.equal('config2');
+      });
+      it('1st isRequiredByAgent is false', function (){
+        expect(result[0].isRequiredByAgent).to.be.false;
+      });
+      it('2nd isRequiredByAgent is false', function (){
+        expect(result[1].isRequiredByAgent).to.be.false;
+      });
     });
-    it('config1=value1,value2\n to one config', function () {
-      var result = App.config.textareaIntoFileConfigs.call(App.config, testData[2].configs, filename);
-      expect(result.length).to.equal(1);
-      expect(result[0].value).to.equal('value1,value2');
-      expect(result[0].name).to.equal('config1');
-      expect(result[0].isRequiredByAgent).to.be.true;
+
+    describe('config1=value1,value2\n to one config', function () {
+      var result;
+      beforeEach(function () {
+        result = App.config.textareaIntoFileConfigs(testData[2].configs, filename);
+      });
+      it('One config is returned', function () {
+        expect(result.length).to.equal(1);
+      });
+      it('value is correct', function () {
+        expect(result[0].value).to.equal('value1,value2');
+      });
+      it('name is correct', function () {
+        expect(result[0].name).to.equal('config1');
+      });
+      it('isRequiredByAgent is true', function () {
+        expect(result[0].isRequiredByAgent).to.be.true;
+      });
     });
-    it('config1=value1 config2=value2 to two configs', function () {
-      var result = App.config.textareaIntoFileConfigs.call(App.config, testData[3].configs, filename);
-      expect(result.length).to.equal(1);
-      expect(result[0].isRequiredByAgent).to.be.false;
+
+    describe('config1=value1 config2=value2 to two configs', function () {
+      var result;
+      beforeEach(function () {
+        result = App.config.textareaIntoFileConfigs(testData[3].configs, filename);
+      });
+      it('One config is returned', function () {
+        expect(result.length).to.equal(1);
+      });
+      it('isRequiredByAgent is false', function () {
+        expect(result[0].isRequiredByAgent).to.be.false;
+      });
     });
+
   });
 
   describe('#trimProperty',function() {
@@ -257,21 +320,21 @@ describe('App.config', function () {
       },
       {
         config: {
-          displayType: 'advanced',
+          displayType: 'string',
           value: ' value'
         },
         e: ' value'
       },
       {
         config: {
-          displayType: 'advanced',
+          displayType: 'string',
           value: ' value'
         },
         e: ' value'
       },
       {
         config: {
-          displayType: 'advanced',
+          displayType: 'string',
           value: 'http://localhost ',
           name: 'javax.jdo.option.ConnectionURL'
         },
@@ -279,7 +342,7 @@ describe('App.config', function () {
       },
       {
         config: {
-          displayType: 'advanced',
+          displayType: 'string',
           value: 'http://localhost    ',
           name: 'oozie.service.JPAService.jdbc.url'
         },
@@ -294,7 +357,7 @@ describe('App.config', function () {
       },
       {
         config: {
-          displayType: 'masterHosts',
+          displayType: 'componentHosts',
           value: ['host1.com', 'host2.com']
         },
         e: ['host1.com', 'host2.com']
@@ -344,28 +407,13 @@ describe('App.config', function () {
     });
   });
 
-  describe('#preDefinedSiteProperties-hdp2', function () {
-    before(function() {
-      setups.setupStackVersion(this, 'HDP-2.0');
-    });
-
-    it('HDP2 should use New MySQL Database as its default hive metastore database', function () {
-      App.StackService.createRecord({serviceName: 'HIVE'});
-      expect(App.config.get('preDefinedSiteProperties').findProperty('recommendedValue', 'New MySQL Database')).to.be.ok;
-    });
-
-    after(function() {
-      setups.restoreStackVersion(this);
-    });
-  });
-
   describe('#generateConfigPropertiesByName', function() {
     var tests = [
       {
         names: ['property_1', 'property_2'],
         properties: undefined,
         e: {
-          keys: ['name', 'displayName', 'isVisible', 'isReconfigurable']
+          keys: ['name']
         },
         m: 'Should generate base property object without additional fields'
       },
@@ -373,7 +421,7 @@ describe('App.config', function () {
         names: ['property_1', 'property_2'],
         properties: { category: 'SomeCat', serviceName: 'SERVICE_NAME' },
         e: {
-          keys: ['name', 'displayName', 'isVisible', 'isReconfigurable', 'category', 'serviceName']
+          keys: ['name', 'category', 'serviceName']
         },
         m: 'Should generate base property object without additional fields'
       }
@@ -428,13 +476,6 @@ describe('App.config', function () {
       var miscCategory = App.config.get('preDefinedServiceConfigs').findProperty('serviceName', 'MISC');
       expect(Em.keys(miscCategory.get('configTypes'))).to.eql(['cluster-env', 'hadoop-env', 'oozie-env']);
     });
-
-    it('should not load configs for missed config types', function() {
-      var hdfsService = App.config.get('preDefinedServiceConfigs').findProperty('serviceName', 'HDFS');
-      var rangerRelatedConfigs = hdfsService.get('configs').filterProperty('filename', 'ranger-hdfs-plugin-properties.xml');
-      expect(rangerRelatedConfigs.length).to.be.eql(0);
-      expect(hdfsService.get('configs.length') > 0).to.be.true;
-    });
   });
   
   describe('#isManagedMySQLForHiveAllowed', function () {
@@ -459,333 +500,6 @@ describe('App.config', function () {
       it(title.format(item.expected, item.osFamily), function () {
         expect(App.config.isManagedMySQLForHiveAllowed(item.osFamily)).to.equal(item.expected);
       });
-    });
-
-  });
-
-
-  describe('#replaceConfigValues', function () {
-
-    var cases = [
-      {
-        name: 'name',
-        express: '<templateName[0]>',
-        value: '<templateName[0]>',
-        globValue: 'v',
-        expected: 'v',
-        title: 'default case'
-      },
-      {
-        name: 'templeton.hive.properties',
-        express: '<templateName[0]>',
-        value: 'hive.matestore.uris=<templateName[0]>',
-        globValue: 'thrift://h0:9933,thrift://h1:9933,thrift://h2:9933',
-        expected: 'hive.matestore.uris=thrift://h0:9933\\,thrift://h1:9933\\,thrift://h2:9933',
-        title: 'should escape commas for templeton.hive.properties'
-      }
-    ];
-
-    cases.forEach(function (item) {
-      it(item.title, function () {
-        expect(App.config.replaceConfigValues(item.name, item.express, item.value, item.globValue)).to.equal(item.expected);
-      });
-    });
-
-  });
-
-  describe('#advancedConfigIdentityData', function () {
-
-    var configs = [
-      {
-        input: {
-          property_type: ['USER'],
-          property_name: 'hdfs_user'
-        },
-        output: {
-          id: 'puppet var',
-          category: 'Users and Groups',
-          isVisible: true,
-          serviceName: 'MISC',
-          isOverridable: false,
-          isReconfigurable: false,
-          displayName: 'HDFS User',
-          displayType: 'user',
-          index: 30
-        },
-        title: 'user, no service name specified, default display name behaviour'
-      },
-      {
-        input: {
-          property_type: ['GROUP'],
-          property_name: 'knox_group',
-          service_name: 'KNOX'
-        },
-        output: {
-          id: 'puppet var',
-          category: 'Users and Groups',
-          isVisible: true,
-          serviceName: 'MISC',
-          isOverridable: false,
-          isReconfigurable: false,
-          displayName: 'Knox Group',
-          displayType: 'user',
-          index: 0
-        },
-        title: 'group, service_name = KNOX, default display name behaviour'
-      },
-      {
-        input: {
-          property_type: ['USER']
-        },
-        output: {
-          isVisible: false
-        },
-        isHDPWIN: true,
-        title: 'HDPWIN stack'
-      },
-      {
-        input: {
-          property_type: ['USER'],
-          property_name: 'smokeuser',
-          service_name: 'MISC'
-        },
-        output: {
-          displayName: 'Smoke Test User',
-          serviceName: 'MISC',
-          belongsToService: ['MISC'],
-          index: 30
-        },
-        title: 'smokeuser, service_name = MISC'
-      },
-      {
-        input: {
-          property_type: ['GROUP'],
-          property_name: 'user_group'
-        },
-        output: {
-          displayName: 'Hadoop Group'
-        },
-        title: 'user_group'
-      },
-      {
-        input: {
-          property_type: ['USER'],
-          property_name: 'mapred_user'
-        },
-        output: {
-          displayName: 'MapReduce User'
-        },
-        title: 'mapred_user'
-      },
-      {
-        input: {
-          property_type: ['USER'],
-          property_name: 'zk_user'
-        },
-        output: {
-          displayName: 'ZooKeeper User'
-        },
-        title: 'zk_user'
-      },
-      {
-        input: {
-          property_type: ['USER'],
-          property_name: 'ignore_groupsusers_create'
-        },
-        output: {
-          displayName: 'Skip group modifications during install',
-          displayType: 'checkbox'
-        },
-        title: 'ignore_groupsusers_create'
-      },
-      {
-        input: {
-          property_type: ['GROUP'],
-          property_name: 'proxyuser_group'
-        },
-        output: {
-          belongsToService: ['HIVE', 'OOZIE', 'FALCON']
-        },
-        title: 'proxyuser_group'
-      },
-      {
-        input: {
-          property_type: ['PASSWORD'],
-          property_name: 'javax.jdo.option.ConnectionPassword'
-        },
-        output: {
-          displayType: 'password'
-        },
-        title: 'password'
-      }
-    ];
-
-    before(function () {
-      sinon.stub(App.StackService, 'find').returns([
-        {
-          serviceName: 'KNOX'
-        }
-      ]);
-    });
-
-    afterEach(function () {
-      App.get.restore();
-    });
-
-    after(function () {
-      App.StackService.find.restore();
-    });
-
-    configs.forEach(function (item) {
-      it(item.title, function () {
-        sinon.stub(App, 'get').withArgs('isHadoopWindowsStack').returns(Boolean(item.isHDPWIN));
-        var propertyData = App.config.advancedConfigIdentityData(item.input);
-        Em.keys(item.output).forEach(function (key) {
-          expect(propertyData[key]).to.eql(item.output[key]);
-        });
-      });
-    });
-
-  });
-
-  describe('#setConfigValue', function () {
-
-    Em.A([
-        {
-          mappedConfigs: [
-            {
-              name: 'falcon_user',
-              value: 'fu'
-            }
-          ],
-          allConfigs: [],
-          m: 'in mapped, value used',
-          e: {
-            _name: 'hadoop.proxyuser.fu.groups',
-            value: 'fu',
-            noMatchSoSkipThisConfig: false
-          }
-        },
-        {
-          mappedConfigs: [],
-          allConfigs: [
-            {
-              name: 'falcon_user',
-              value: 'fu'
-            }
-          ],
-          m: 'in all, value used',
-          e: {
-            _name: 'hadoop.proxyuser.fu.groups',
-            value: 'fu',
-            noMatchSoSkipThisConfig: false
-          }
-        },
-        {
-          mappedConfigs: [],
-          allConfigs: [
-            {
-              name: 'falcon_user',
-              value: '',
-              recommendedValue: 'fu'
-            }
-          ],
-          m: 'in all, default value used',
-          e: {
-            _name: 'hadoop.proxyuser.fu.groups',
-            value: 'fu',
-            noMatchSoSkipThisConfig: false
-          }
-        },
-        {
-          mappedConfigs: [],
-          allConfigs: [],
-          m: 'not found',
-          e: {
-            _name: 'hadoop.proxyuser.<foreignKey[0]>.groups',
-            value: '<foreignKey[0]>',
-            noMatchSoSkipThisConfig: true
-          }
-        }
-      ]).forEach(function (test) {
-        it(test.m, function () {
-          var config = {
-            name: "hadoop.proxyuser.<foreignKey[0]>.groups",
-            templateName: ["proxyuser_group"],
-            foreignKey: ["falcon_user"],
-            noMatchSoSkipThisConfig: false,
-            value: "<foreignKey[0]>"
-          };
-          App.config.setConfigValue(test.mappedConfigs, test.allConfigs, config);
-          expect(config.value).to.equal(test.e.value);
-          if(test.e.noMatchSoSkipThisConfig) {
-            expect(Em.isNone(config._name)).to.be.true;
-          }
-          else {
-            expect(config._name).to.equal(test.e._name);
-          }
-          expect(config.noMatchSoSkipThisConfig).to.equal(test.e.noMatchSoSkipThisConfig);
-        });
-
-        Em.A([
-          {
-            mappedConfigs: [],
-            allConfigs: [
-              {
-                name: 'falcon_user',
-                value: 'fu'
-              },
-              {
-                name: 'proxyuser_group',
-                value: 'pg'
-              }
-            ],
-            m: 'in all, template in all',
-            e: {
-              _name: 'hadoop.proxyuser.fu.groups',
-              value: 'fupg'
-            }
-          },
-            {
-              mappedConfigs: [
-                {
-                  name: 'falcon_user',
-                  value: 'fu'
-                },
-                {
-                  name: 'proxyuser_group',
-                  value: 'pg'
-                }
-              ],
-              allConfigs: [],
-              m: 'in mapped, template in mapped',
-              e: {
-                _name: 'hadoop.proxyuser.fu.groups',
-                value: 'fupg'
-              }
-            },
-            {
-              mappedConfigs: [],
-              allConfigs: [],
-              m: 'not found (template not found too)',
-              e: {
-                _name: 'hadoop.proxyuser.<foreignKey[0]>.groups',
-                value: null
-              }
-            }
-        ]).forEach(function (test) {
-            it(test.m, function () {
-              var config = {
-                name: "hadoop.proxyuser.<foreignKey[0]>.groups",
-                templateName: ["proxyuser_group"],
-                foreignKey: ["falcon_user"],
-                noMatchSoSkipThisConfig: false,
-                value: "<foreignKey[0]><templateName[0]>"
-              };
-              App.config.setConfigValue(test.mappedConfigs, test.allConfigs, config);
-            });
-          });
-
     });
 
   });
@@ -851,6 +565,65 @@ describe('App.config', function () {
 
   });
 
+  describe('#shouldSupportAddingForbidden', function () {
+
+    var cases = [
+      {
+        shouldSupportAddingForbidden: false,
+        title: 'no service name specified'
+      },
+      {
+        serviceName: 's0',
+        shouldSupportAddingForbidden: false,
+        title: 'no filename specified'
+      },
+      {
+        serviceName: 'MISC',
+        shouldSupportAddingForbidden: false,
+        title: 'MISC'
+      },
+      {
+        serviceName: 's0',
+        filename: 's0-site',
+        shouldSupportAddingForbidden: true,
+        title: 'adding forbidden supported'
+      },
+      {
+        serviceName: 's0',
+        filename: 's0-properties',
+        shouldSupportAddingForbidden: false,
+        title: 'adding forbidden not supported'
+      }
+    ];
+
+    beforeEach(function () {
+      sinon.stub(App.StackService, 'find').returns([
+        Em.Object.create({
+          serviceName: 's0',
+          configTypes: {
+            's0-size': {},
+            's0-properties': {}
+          }
+        })
+      ]);
+      sinon.stub(App.config, 'getConfigTypesInfoFromService').returns({
+        supportsAddingForbidden: ['s0-site']
+      });
+    });
+
+    afterEach(function () {
+      App.StackService.find.restore();
+      App.config.getConfigTypesInfoFromService.restore();
+    });
+
+    cases.forEach(function (item) {
+      it(item.title, function () {
+        expect(App.config.shouldSupportAddingForbidden(item.serviceName, item.filename)).to.equal(item.shouldSupportAddingForbidden);
+      });
+    });
+
+  });
+
   describe('#removeRangerConfigs', function () {
 
     it('should remove ranger configs and categories', function () {
@@ -900,35 +673,46 @@ describe('App.config', function () {
 
     var group = Em.Object.create({name: "group1"});
 
-    it('creates override with save properties as original config', function() {
-      var override = App.config.createOverride(configProperty, {}, group);
-      for (var key in template) {
-        expect(override.get(key)).to.eql(template[key]);
-      }
+    Object.keys(template).forEach(function (key) {
+      it(key, function () {
+        var override = App.config.createOverride(configProperty, {}, group);
+        expect(override.get(key)).to.equal(template[key]);
+      });
     });
 
-    it('overrides some values that should be different for override', function() {
-      var override = App.config.createOverride(configProperty, {}, group);
-      expect(override.get('isOriginalSCP')).to.be.false;
-      expect(override.get('overrides')).to.be.null;
-      expect(override.get('group')).to.eql(group);
-      expect(override.get('parentSCP')).to.eql(configProperty);
+    describe('overrides some values that should be different for override', function() {
+      var override;
+      beforeEach(function () {
+        override = App.config.createOverride(configProperty, {}, group);
+      });
+      it('isOriginalSCP is false', function () {
+        expect(override.get('isOriginalSCP')).to.be.false;
+      });
+      it('overrides is null', function () {
+        expect(override.get('overrides')).to.be.null;
+      });
+      it('group is valid', function () {
+        expect(override.get('group')).to.eql(group);
+      });
+      it('parentSCP is valid', function () {
+        expect(override.get('parentSCP')).to.eql(configProperty);
+      });
     });
 
-    it('overrides some specific values', function() {
-      var overridenTemplate = {
-        value: "v2",
-        recommendedValue: "rv2",
-        savedValue: "sv2",
-        isFinal: true,
-        recommendedIsFinal: false,
-        savedIsFinal: true
-      };
+    var overriddenTemplate = {
+      value: "v2",
+      recommendedValue: "rv2",
+      savedValue: "sv2",
+      isFinal: true,
+      recommendedIsFinal: false,
+      savedIsFinal: true
+    };
 
-      var override = App.config.createOverride(configProperty, overridenTemplate, group);
-      for (var key in overridenTemplate) {
-        expect(override.get(key)).to.eql(overridenTemplate[key]);
-      }
+    Object.keys(overriddenTemplate).forEach(function (key) {
+      it('overrides some specific values `' + key + '`', function () {
+        var override = App.config.createOverride(configProperty, overriddenTemplate, group);
+        expect(override.get(key)).to.equal(overriddenTemplate[key]);
+      });
     });
 
     it('throws error due to undefined configGroup', function() {
@@ -939,25 +723,36 @@ describe('App.config', function () {
       expect(App.config.createOverride.bind(App.config, null, {}, group)).to.throw(Error, 'serviceConfigProperty can\' be null');
     });
 
-    it('updates originalSCP object ', function() {
-      configProperty.set('overrides', null);
-      configProperty.set('overrideValues', []);
-      configProperty.set('overrideIsFinalValues', []);
+    describe('updates originalSCP object ', function() {
 
-      var overridenTemplate2 = {
-        value: "v12",
-        recommendedValue: "rv12",
-        savedValue: "sv12",
-        isFinal: true,
-        recommendedIsFinal: false,
-        savedIsFinal: false
-      };
+      var overridenTemplate2;
+      var override;
 
-      var override = App.config.createOverride(configProperty, overridenTemplate2, group);
+      beforeEach(function () {
+        configProperty.set('overrides', null);
+        configProperty.set('overrideValues', []);
+        configProperty.set('overrideIsFinalValues', []);
+        overridenTemplate2 = {
+          value: "v12",
+          recommendedValue: "rv12",
+          savedValue: "sv12",
+          isFinal: true,
+          recommendedIsFinal: false,
+          savedIsFinal: false
+        };
+        override = App.config.createOverride(configProperty, overridenTemplate2, group);
+      });
 
-      expect(configProperty.get('overrides')[0]).to.be.eql(override);
-      expect(configProperty.get('overrideValues')).to.be.eql([overridenTemplate2.value]);
-      expect(configProperty.get('overrideIsFinalValues')).to.be.eql([overridenTemplate2.isFinal]);
+      it('overrides.0 is valid', function () {
+        expect(configProperty.get('overrides')[0]).to.be.eql(override);
+      });
+      it('overrideValues is valid', function () {
+        expect(configProperty.get('overrideValues')).to.be.eql([overridenTemplate2.value]);
+      });
+      it('overrideIsFinalValues is valid', function () {
+        expect(configProperty.get('overrideIsFinalValues')).to.be.eql([overridenTemplate2.isFinal]);
+      });
+
     });
   });
 
@@ -1026,89 +821,17 @@ describe('App.config', function () {
   });
 
   describe('#getDefaultDisplayType', function() {
-    it('returns content displayType', function() {
-      sinon.stub(App.config, 'isContentProperty', function () {return true});
-      expect(App.config.getDefaultDisplayType('content','f1','anything')).to.equal('content');
-      App.config.isContentProperty.restore();
-    });
     it('returns singleLine displayType', function() {
-      sinon.stub(App.config, 'isContentProperty', function () {return false});
-      expect(App.config.getDefaultDisplayType('n1','f1','v1')).to.equal('advanced');
-      App.config.isContentProperty.restore();
+      expect(App.config.getDefaultDisplayType('v1')).to.equal('string');
     });
     it('returns multiLine displayType', function() {
-      sinon.stub(App.config, 'isContentProperty', function () {return false});
-      expect(App.config.getDefaultDisplayType('n2', 'f2', 'v1\nv2')).to.equal('multiLine');
-      App.config.isContentProperty.restore();
+      expect(App.config.getDefaultDisplayType('v1\nv2')).to.equal('multiLine');
     });
-  });
-
-  describe('#getDefaultDisplayName', function() {
-    beforeEach(function() {
-      sinon.stub(App.config, 'getConfigTagFromFileName', function(fName) {return fName} );
-    });
-    afterEach(function() {
-      App.config.getConfigTagFromFileName.restore();
-    });
-
-    it('returns name', function() {
-      sinon.stub(App.config, 'isContentProperty', function() {return false} );
-      expect(App.config.getDefaultDisplayName('name')).to.equal('name');
-      App.config.isContentProperty.restore();
-    });
-    it('returns name for env content', function() {
-      sinon.stub(App.config, 'isContentProperty', function() {return true} );
-      expect(App.config.getDefaultDisplayName('name', 'fileName')).to.equal('fileName template');
-      App.config.isContentProperty.restore();
-    });
-  });
-
-  describe('#isContentProperty', function() {
-    beforeEach(function() {
-      sinon.stub(App.config, 'getConfigTagFromFileName', function(fName) {return fName} );
-    });
-    afterEach(function() {
-      App.config.getConfigTagFromFileName.restore();
-    });
-    var tests = [
-      {
-        name: 'content',
-        fileName: 'something-env',
-        tagEnds: null,
-        res: true,
-        m: 'returns true as it\'s content property'
-      },
-      {
-        name: 'content',
-        fileName: 'something-any-end',
-        tagEnds: ['-any-end'],
-        res: true,
-        m: 'returns true as it\'s content property with specific fileName ending'
-      },
-      {
-        name: 'notContent',
-        fileName: 'something-env',
-        tagEnds: ['-env'],
-        res: false,
-        m: 'returns false as name is not content'
-      },
-      {
-        name: 'content',
-        fileName: 'something-env1',
-        tagEnds: ['-env'],
-        res: false,
-        m: 'returns false as fileName is not correct'
-      }
-    ].forEach(function(t) {
-        it(t.m, function() {
-          expect(App.config.isContentProperty(t.name, t.fileName, t.tagEnds)).to.equal(t.res);
-        });
-      });
   });
 
   describe('#formatValue', function() {
-    it('formatValue for masterHosts', function () {
-      var serviceConfigProperty = Em.Object.create({'displayType': 'masterHosts', value: "['h1','h2']"});
+    it('formatValue for componentHosts', function () {
+      var serviceConfigProperty = Em.Object.create({'displayType': 'componentHosts', value: "['h1','h2']"});
       expect(App.config.formatPropertyValue(serviceConfigProperty)).to.eql(['h1','h2']);
     });
 
@@ -1203,9 +926,6 @@ describe('App.config', function () {
 
   describe('#createDefaultConfig', function() {
     before(function() {
-      sinon.stub(App.config, 'getDefaultDisplayName', function() {
-        return 'pDisplayName';
-      });
       sinon.stub(App.config, 'getDefaultDisplayType', function() {
         return 'pDisplayType';
       });
@@ -1215,27 +935,23 @@ describe('App.config', function () {
       sinon.stub(App.config, 'getIsSecure', function() {
         return false;
       });
-      sinon.stub(App.config, 'getDefaultIsShowLabel', function() {
-        return true;
-      });
       sinon.stub(App.config, 'shouldSupportFinal', function() {
         return true;
       });
     });
 
     after(function() {
-      App.config.getDefaultDisplayName.restore();
       App.config.getDefaultDisplayType.restore();
       App.config.getDefaultCategory.restore();
       App.config.getIsSecure.restore();
-      App.config.getDefaultIsShowLabel.restore();
       App.config.shouldSupportFinal.restore();
     });
 
     var res = {
       /** core properties **/
+      id: "pName__pFileName",
       name: 'pName',
-      filename: 'pFileName',
+      filename: 'pFileName.xml',
       value: '',
       savedValue: null,
       isFinal: false,
@@ -1244,11 +960,11 @@ describe('App.config', function () {
       recommendedValue: null,
       recommendedIsFinal: null,
       supportsFinal: true,
+      supportsAddingForbidden: false,
       serviceName: 'pServiceName',
-      defaultDirectory: '',
-      displayName: 'pDisplayName',
+      displayName: 'pName',
       displayType: 'pDisplayType',
-      description: null,
+      description: '',
       category: 'pCategory',
       isSecureConfig: false,
       showLabel: true,
@@ -1256,27 +972,30 @@ describe('App.config', function () {
       isUserProperty: false,
       isRequired: true,
       group: null,
-      id: 'site property',
       isRequiredByAgent:  true,
       isReconfigurable: true,
       unit: null,
       hasInitialValue: false,
       isOverridable: true,
-      index: null,
+      index: Infinity,
       dependentConfigPattern: null,
       options: null,
       radioName: null,
-      belongsToService: []
+      widgetType: null
     };
     it('create default config object', function () {
       expect(App.config.createDefaultConfig('pName', 'pServiceName', 'pFileName', true)).to.eql(res);
     });
-    it('runs proper methods', function() {
-      expect(App.config.getDefaultDisplayName.calledWith('pName','pFileName')).to.be.true;
-      expect(App.config.getDefaultDisplayType.calledWith('pName', 'pFileName', '')).to.be.true;
+    it('getDefaultDisplayType is called', function() {
+      expect(App.config.getDefaultDisplayType.called).to.be.true;
+    });
+    it('getDefaultCategory is called with correct arguments', function() {
       expect(App.config.getDefaultCategory.calledWith(true, 'pFileName')).to.be.true;
+    });
+    it('getIsSecure is called with correct arguments', function() {
       expect(App.config.getIsSecure.calledWith('pName')).to.be.true;
-      expect(App.config.getDefaultIsShowLabel.calledWith('pName', 'pFileName')).to.be.true;
+    });
+    it('shouldSupportFinal is called with correct arguments', function() {
       expect(App.config.shouldSupportFinal.calledWith('pServiceName', 'pFileName')).to.be.true;
     });
   });
@@ -1372,6 +1091,140 @@ describe('App.config', function () {
         expect(result).to.be.eql(test.e);
         expect(test.siteConfigs[test.propertyName]).to.be.eql(test.e);
       });
+    });
+  });
+
+  describe('#createHostNameProperty', function() {
+    it('create host property', function() {
+      expect(App.config.createHostNameProperty('service1', 'component1', ['host1'], Em.Object.create({
+        isMultipleAllowed: false,
+        displayName: 'display name'
+      }))).to.eql({
+          "name": 'component1_host',
+          "displayName": 'display name host',
+          "value": ['host1'],
+          "recommendedValue": ['host1'],
+          "description": "The host that has been assigned to run display name",
+          "displayType": "componentHost",
+          "isOverridable": false,
+          "isRequiredByAgent": false,
+          "serviceName": 'service1',
+          "filename": "service1-site.xml",
+          "category": 'component1',
+          "index": 0
+        })
+    });
+
+    it('create hosts property', function() {
+      expect(App.config.createHostNameProperty('service1', 'component1', ['host1'], Em.Object.create({
+        isMultipleAllowed: true,
+        displayName: 'display name'
+      }))).to.eql({
+          "name": 'component1_hosts',
+          "displayName": 'display name host',
+          "value": ['host1'],
+          "recommendedValue": ['host1'],
+          "description": "The hosts that has been assigned to run display name",
+          "displayType": "componentHosts",
+          "isOverridable": false,
+          "isRequiredByAgent": false,
+          "serviceName": 'service1',
+          "filename": "service1-site.xml",
+          "category": 'component1',
+          "index": 0
+        })
+    });
+  });
+
+  describe("#restrictSecureProperties()", function() {
+    var testCases = [
+      {
+        input: {
+          isSecureConfig: true,
+          isKerberosEnabled: true,
+          isReconfigurable: false,
+          isOverridable: false
+        },
+        expected: {
+          isReconfigurable: false,
+          isOverridable: false
+        }
+      },
+      {
+        input: {
+          isSecureConfig: true,
+          isKerberosEnabled: true,
+          isReconfigurable: true,
+          isOverridable: true
+        },
+        expected: {
+          isReconfigurable: false,
+          isOverridable: false
+        }
+      },
+      {
+        input: {
+          isSecureConfig: true,
+          isKerberosEnabled: false,
+          isReconfigurable: true,
+          isOverridable: true
+        },
+        expected: {
+          isReconfigurable: true,
+          isOverridable: true
+        }
+      },
+      {
+        input: {
+          isSecureConfig: false,
+          isReconfigurable: false,
+          isOverridable: false
+        },
+        expected: {
+          isReconfigurable: false,
+          isOverridable: false
+        }
+      },
+      {
+        input: {
+          isSecureConfig: false,
+          isReconfigurable: true,
+          isOverridable: true
+        },
+        expected: {
+          isReconfigurable: true,
+          isOverridable: true
+        }
+      }
+    ];
+
+    testCases.forEach(function(test) {
+      it("isSecureConfig = " + test.input.isSecureConfig + "; isKerberosEnabled = " + test.input.isKerberosEnabled, function() {
+        var config = {
+          isSecureConfig: test.input.isSecureConfig,
+          isReconfigurable: test.input.isReconfigurable,
+          isOverridable: test.input.isOverridable
+        };
+        App.set('isKerberosEnabled', !!test.input.isKerberosEnabled);
+        App.config.restrictSecureProperties(config);
+        expect(config.isReconfigurable).to.equal(test.expected.isReconfigurable);
+        expect(config.isOverridable).to.equal(test.expected.isOverridable);
+      });
+    });
+  });
+
+  describe("#truncateGroupName()", function() {
+
+    it("name is empty", function() {
+      expect(App.config.truncateGroupName('')).to.be.empty;
+    });
+
+    it("name has less than max chars", function() {
+      expect(App.config.truncateGroupName('group1')).to.equal('group1');
+    });
+
+    it("name has more than max chars", function() {
+      expect(App.config.truncateGroupName('group_has_more_than_max_characters')).to.equal('group_has...haracters');
     });
   });
 

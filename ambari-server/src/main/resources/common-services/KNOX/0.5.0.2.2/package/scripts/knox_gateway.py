@@ -43,11 +43,15 @@ if OSCheck.is_windows_family():
   from resource_management.libraries.functions.windows_service_utils import check_windows_service_status
 
 import upgrade
-from knox import knox
+from knox import knox, update_knox_logfolder_permissions
 from knox_ldap import ldap
 from setup_ranger_knox import setup_ranger_knox
 
+
 class KnoxGateway(Script):
+  def get_stack_to_component(self):
+    return {"HDP": "knox-server"}
+
   def install(self, env):
     import params
     env.set_params(params)
@@ -57,7 +61,7 @@ class KnoxGateway(Script):
          action = "delete",
     )
 
-  def configure(self, env):
+  def configure(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     knox()
@@ -72,14 +76,14 @@ class KnoxGateway(Script):
 
 @OsFamilyImpl(os_family=OSConst.WINSRV_FAMILY)
 class KnoxGatewayWindows(KnoxGateway):
-  def start(self, env):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env)
     # setup_ranger_knox(env)
     Service(params.knox_gateway_win_service_name, action="start")
 
-  def stop(self, env):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     Service(params.knox_gateway_win_service_name, action="stop")
@@ -104,10 +108,8 @@ class KnoxGatewayWindows(KnoxGateway):
 
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
 class KnoxGatewayDefault(KnoxGateway):
-  def get_stack_to_component(self):
-    return {"HDP": "knox-server"}
 
-  def pre_rolling_restart(self, env):
+  def pre_upgrade_restart(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
@@ -140,18 +142,20 @@ class KnoxGatewayDefault(KnoxGateway):
                action = "delete",
           )
 
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env)
     daemon_cmd = format('{knox_bin} start')
     no_op_test = format('ls {knox_pid_file} >/dev/null 2>&1 && ps -p `cat {knox_pid_file}` >/dev/null 2>&1')
-    setup_ranger_knox(rolling_upgrade=rolling_restart)
+    setup_ranger_knox(upgrade_type=upgrade_type)
     # Used to setup symlink, needed to update the knox managed symlink, in case of custom locations
     if os.path.islink(params.knox_managed_pid_symlink):
       Link(params.knox_managed_pid_symlink,
            to = params.knox_pid_dir,
       )
+
+    update_knox_logfolder_permissions()
 
     Execute(daemon_cmd,
             user=params.knox_user,
@@ -159,10 +163,13 @@ class KnoxGatewayDefault(KnoxGateway):
             not_if=no_op_test
     )
 
-  def stop(self, env, rolling_restart=False):
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     daemon_cmd = format('{knox_bin} stop')
+
+    update_knox_logfolder_permissions()
+
     Execute(daemon_cmd,
             environment={'JAVA_HOME': params.java_home},
             user=params.knox_user,

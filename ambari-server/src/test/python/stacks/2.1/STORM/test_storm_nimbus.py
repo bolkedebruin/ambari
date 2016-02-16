@@ -24,7 +24,7 @@ from stacks.utils.RMFTestCase import *
 import resource_management.core.source
 from test_storm_base import TestStormBase
 
-
+@patch("resource_management.libraries.functions.get_user_call_output.get_user_call_output", new=MagicMock(return_value=(0, '123', '')))
 class TestStormNimbus(TestStormBase):
 
   def test_configure_default(self):
@@ -58,13 +58,61 @@ class TestStormNimbus(TestStormBase):
     self.assertResourceCalled('Execute', "/usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep storm.daemon.nimbus$ && /usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep storm.daemon.nimbus$ | awk {'print $1'} > /var/run/storm/nimbus.pid",
         logoutput = True,
         path = ['/usr/bin'],
-        tries = 6,
+        tries = 12,
         user = 'storm',
         try_sleep = 10,
     )
     self.assertNoMoreResources()
 
-  def test_stop_default(self):
+  def test_start_with_metrics_collector(self):
+    config_file = self.get_src_folder() + "/test/python/stacks/2.1/configs/default.json"
+    with open(config_file, "r") as f:
+      json_content = json.load(f)
+    json_content["clusterHostInfo"]["metrics_collector_hosts"] = ["host1", "host2"]
+
+    self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nimbus.py",
+                       classname = "Nimbus",
+                       command = "start",
+                       config_dict = json_content,
+                       hdp_stack_version = self.STACK_VERSION,
+                       target = RMFTestCase.TARGET_COMMON_SERVICES
+                       )
+    self.assert_configure_default()
+
+    self.assertResourceCalled('File', '/etc/storm/conf/storm-metrics2.properties',
+                              content = Template('storm-metrics2.properties.j2'),
+                              owner = 'storm',
+                              group = 'hadoop',
+                              )
+    self.assertResourceCalled('Link', '/usr/lib/storm/lib//ambari-metrics-storm-sink.jar',
+                              action = ['delete'],
+                              )
+    self.assertResourceCalled('Link', '/usr/lib/storm/lib/ambari-metrics-storm-sink.jar',
+                              action = ['delete'],
+                              )
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh ln -s /usr/lib/storm/lib/ambari-metrics-storm-sink*.jar /usr/lib/storm/lib//ambari-metrics-storm-sink.jar',
+                              not_if = 'ls /usr/lib/storm/lib//ambari-metrics-storm-sink.jar',
+                              only_if = 'ls /usr/lib/storm/lib/ambari-metrics-storm-sink*.jar',
+                              )
+    self.assertResourceCalled('Execute', 'source /etc/storm/conf/storm-env.sh ; export PATH=$JAVA_HOME/bin:$PATH ; storm nimbus > /var/log/storm/nimbus.out 2>&1',
+                              wait_for_finish = False,
+                              path = ['/usr/bin'],
+                              user = 'storm',
+                              not_if = "ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1'",
+                              )
+    self.assertResourceCalled('Execute', "/usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep storm.daemon.nimbus$ && /usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep storm.daemon.nimbus$ | awk {'print $1'} > /var/run/storm/nimbus.pid",
+                              logoutput = True,
+                              path = ['/usr/bin'],
+                              tries = 12,
+                              user = 'storm',
+                              try_sleep = 10,
+                              )
+    self.assertNoMoreResources()
+
+  @patch("os.path.exists")
+  def test_stop_default(self, path_exists_mock):
+    # Bool for the pid file
+    path_exists_mock.side_effect = [True]
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nimbus.py",
                        classname = "Nimbus",
                        command = "stop",
@@ -72,10 +120,10 @@ class TestStormNimbus(TestStormBase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('Execute', "ambari-sudo.sh kill `ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]cat /var/run/storm/nimbus.pid'`",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh kill 123",
         not_if = "! (ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1')",
     )
-    self.assertResourceCalled('Execute', "ambari-sudo.sh kill -9 `ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]cat /var/run/storm/nimbus.pid'`",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh kill -9 123",
         not_if = "sleep 2; ! (ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1') || sleep 20; ! (ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1')",
         ignore_failures = True,
     )
@@ -115,13 +163,16 @@ class TestStormNimbus(TestStormBase):
     self.assertResourceCalled('Execute', "/usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep storm.daemon.nimbus$ && /usr/jdk64/jdk1.7.0_45/bin/jps -l  | grep storm.daemon.nimbus$ | awk {'print $1'} > /var/run/storm/nimbus.pid",
         logoutput = True,
         path = ['/usr/bin'],
-        tries = 6,
+        tries = 12,
         user = 'storm',
         try_sleep = 10,
     )
     self.assertNoMoreResources()
 
-  def test_stop_secured(self):
+  @patch("os.path.exists")
+  def test_stop_secured(self, path_exists_mock):
+    # Bool for the pid file
+    path_exists_mock.side_effect = [True]
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nimbus.py",
                        classname = "Nimbus",
                        command = "stop",
@@ -129,10 +180,10 @@ class TestStormNimbus(TestStormBase):
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
-    self.assertResourceCalled('Execute', "ambari-sudo.sh kill `ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]cat /var/run/storm/nimbus.pid'`",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh kill 123",
         not_if = "! (ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1')",
     )
-    self.assertResourceCalled('Execute', "ambari-sudo.sh kill -9 `ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]cat /var/run/storm/nimbus.pid'`",
+    self.assertResourceCalled('Execute', "ambari-sudo.sh kill -9 123",
         not_if = "sleep 2; ! (ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1') || sleep 20; ! (ambari-sudo.sh su storm -l -s /bin/bash -c '[RMF_EXPORT_PLACEHOLDER]ls /var/run/storm/nimbus.pid >/dev/null 2>&1 && ps -p `cat /var/run/storm/nimbus.pid` >/dev/null 2>&1')",
         ignore_failures = True,
     )
@@ -141,18 +192,18 @@ class TestStormNimbus(TestStormBase):
     )
     self.assertNoMoreResources()
 
-  def test_pre_rolling_restart(self):
+  def test_pre_upgrade_restart(self):
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nimbus.py",
                        classname = "Nimbus",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_file="default.json",
                        hdp_stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES)
 
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'storm-client', '2.2.1.0-2067'), sudo=True)
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'storm-nimbus', '2.2.1.0-2067'), sudo=True)
+    self.assertResourceCalled("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'storm-client', '2.2.1.0-2067'), sudo=True)
+    self.assertResourceCalled("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'storm-nimbus', '2.2.1.0-2067'), sudo=True)
 
-  def test_pre_rolling_restart_23(self):
+  def test_pre_upgrade_restart_23(self):
     config_file = self.get_src_folder()+"/test/python/stacks/2.1/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -162,24 +213,25 @@ class TestStormNimbus(TestStormBase):
     mocks_dict = {}
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/nimbus.py",
                      classname = "Nimbus",
-                     command = "pre_rolling_restart",
+                     command = "pre_upgrade_restart",
                      config_dict = json_content,
                      hdp_stack_version = self.STACK_VERSION,
                      target = RMFTestCase.TARGET_COMMON_SERVICES,
-                     call_mocks = [(0, None), (0, None)],
+                     call_mocks = [(0, None, ''), (0, None)],
                      mocks_dict = mocks_dict)
 
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'storm-client', '2.3.0.0-1234'), sudo=True)
-    self.assertResourceCalled("Execute", ('hdp-select', 'set', 'storm-nimbus', '2.3.0.0-1234'), sudo=True)
+    self.assertResourceCalledIgnoreEarlier("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'storm-client', '2.3.0.0-1234'), sudo=True)
+    self.assertResourceCalled("Execute", ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'storm-nimbus', '2.3.0.0-1234'), sudo=True)
 
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'storm', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'storm', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'storm', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'storm', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])
+    self.assertNoMoreResources()
     
   @patch("resource_management.libraries.functions.security_commons.build_expectations")
   @patch("resource_management.libraries.functions.security_commons.get_params_from_filesystem")
@@ -282,3 +334,4 @@ class TestStormNimbus(TestStormBase):
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
+    self.assertNoMoreResources()

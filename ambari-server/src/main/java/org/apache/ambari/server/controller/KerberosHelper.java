@@ -20,6 +20,7 @@ package org.apache.ambari.server.controller;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.internal.RequestStageContainer;
+import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
 import org.apache.ambari.server.serveraction.kerberos.KerberosAdminAuthenticationException;
 import org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileWriter;
 import org.apache.ambari.server.serveraction.kerberos.KerberosInvalidConfigurationException;
@@ -44,6 +45,15 @@ public interface KerberosHelper {
    */
   String DIRECTIVE_MANAGE_KERBEROS_IDENTITIES = "manage_kerberos_identities";
   /**
+   * directive used to indicate that the enable Kerberos operation is only to regenerate keytab files
+   */
+  String DIRECTIVE_REGENERATE_KEYTABS = "regenerate_keytabs";
+  /**
+   * directive used to indicate that the enable Kerberos operation should proceed even if the
+   * cluster's security type is not changing
+   */
+  String DIRECTIVE_FORCE_TOGGLE_KERBEROS = "force_toggle_kerberos";
+  /**
    * config type which contains the property used to determine if Kerberos is enabled
    */
   String SECURITY_ENABLED_CONFIG_TYPE = "cluster-env";
@@ -51,6 +61,10 @@ public interface KerberosHelper {
    * name of property which states whether kerberos is enabled
    */
   String SECURITY_ENABLED_PROPERTY_NAME = "security_enabled";
+  /**
+   * The alias to assign to the KDC administrator credential Keystore item
+   */
+  String KDC_ADMINISTRATOR_CREDENTIAL_ALIAS = "kdc.admin.credential";
 
   /**
    * Toggles Kerberos security to enable it or remove it depending on the state of the cluster.
@@ -128,6 +142,9 @@ public interface KerberosHelper {
    *                                       relevant set of services and components - if null, no
    *                                       filter is relevant; if empty, the filter indicates no
    *                                       relevant services or components
+   * @param hostFilter                     a set of hostname indicating the set of hosts to process -
+   *                                       if null, no filter is relevant; if empty, the filter
+   *                                       indicates no relevant hosts
    * @param identityFilter                 a Collection of identity names indicating the relevant
    *                                       identities - if null, no filter is relevant; if empty,
    *                                       the filter indicates no relevant identities
@@ -150,8 +167,9 @@ public interface KerberosHelper {
    *                                               Kerberos-specific configuration details
    */
   RequestStageContainer ensureIdentities(Cluster cluster, Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                         Collection<String> identityFilter, Set<String> hostsToForceKerberosOperations,
-                                         RequestStageContainer requestStageContainer, Boolean manageIdentities)
+                                         Set<String> hostFilter, Collection<String> identityFilter,
+                                         Set<String> hostsToForceKerberosOperations, RequestStageContainer requestStageContainer,
+                                         Boolean manageIdentities)
       throws AmbariException, KerberosOperationException;
 
   /**
@@ -172,6 +190,9 @@ public interface KerberosHelper {
    * @param serviceComponentFilter a Map of service names to component names indicating the relevant
    *                               set of services and components - if null, no filter is relevant;
    *                               if empty, the filter indicates no relevant services or components
+   * @param hostFilter             a set of hostname indicating the set of hosts to process -
+   *                               if null, no filter is relevant; if empty, the filter
+   *                               indicates no relevant hosts
    * @param identityFilter         a Collection of identity names indicating the relevant identities -
    *                               if null, no filter is relevant; if empty, the filter indicates no
    *                               relevant identities
@@ -188,8 +209,8 @@ public interface KerberosHelper {
    *                                               Kerberos-specific configuration details
    */
   RequestStageContainer deleteIdentities(Cluster cluster, Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                         Collection<String> identityFilter, RequestStageContainer requestStageContainer,
-                                         Boolean manageIdentities)
+                                         Set<String> hostFilter, Collection<String> identityFilter,
+                                         RequestStageContainer requestStageContainer, Boolean manageIdentities)
       throws AmbariException, KerberosOperationException;
 
   /**
@@ -204,6 +225,66 @@ public interface KerberosHelper {
    */
   void configureService(Cluster cluster, ServiceComponentHost serviceComponentHost)
       throws AmbariException, KerberosInvalidConfigurationException;
+
+  /**
+   * Returns the updates configurations that are expected when the given set of services are configured
+   * for Kerberos.
+   *
+   * @param cluster                the cluster
+   * @param existingConfigurations the cluster's existing configurations
+   * @param services               the set of services to process
+   * @param kerberosEnabled        true if kerberos is (to be) enabled; otherwise false
+   * @param applyStackAdvisorUpdates true to invoke the stack advisor to validate property updates; false to skip
+   * @return a map of configuration updates
+   * @throws AmbariException
+   * @throws KerberosInvalidConfigurationException if an issue occurs trying to get the
+   *                                               Kerberos-specific configuration details
+   */
+  Map<String, Map<String, String>> getServiceConfigurationUpdates(Cluster cluster,
+                                                                  Map<String, Map<String, String>> existingConfigurations,
+                                                                  Set<String> services,
+                                                                  boolean serviceAlreadyExists,
+                                                                  boolean kerberosEnabled,
+                                                                  boolean applyStackAdvisorUpdates)
+      throws KerberosInvalidConfigurationException, AmbariException;
+
+  /**
+   * Invokes the Stack Advisor to help determine relevant configuration changes when enabling or
+   * disabling Kerberos
+   *
+   * @param cluster                a cluster
+   * @param services               a set of services that are being configured to enabled or disable Kerberos
+   * @param existingConfigurations the cluster's existing configurations
+   * @param kerberosConfigurations the configuration updates to make (must not be mutable)
+   * @param propertiesToIgnore     the configuration properties that should be ignored when applying recommendations
+   * @param kerberosEnabled        true if kerberos is (to be) enabled; otherwise false
+   * @return the configuration updates
+   * @throws AmbariException
+   */
+  Map<String, Map<String, String>> applyStackAdvisorUpdates(Cluster cluster, Set<String> services,
+                                                            Map<String, Map<String, String>> existingConfigurations,
+                                                            Map<String, Map<String, String>> kerberosConfigurations,
+                                                            Map<String, Set<String>> propertiesToIgnore,
+                                                            boolean kerberosEnabled)
+      throws AmbariException;
+
+  /**
+   * Ensures that the relevant headless (or user) Kerberos identities are created and cached.
+   * <p/>
+   * This can be called any number of times and only the missing identities will be created.
+   *
+   * @param cluster                the cluster
+   * @param existingConfigurations the cluster's existing configurations
+   * @param services               the set of services to process
+   * @return
+   * @throws AmbariException
+   * @throws KerberosInvalidConfigurationException if an issue occurs trying to get the
+   *                                               Kerberos-specific configuration details
+   */
+  boolean ensureHeadlessIdentities(Cluster cluster,
+                                   Map<String, Map<String, String>> existingConfigurations,
+                                   Set<String> services)
+      throws KerberosInvalidConfigurationException, AmbariException;
 
   /**
    * Create a unique identity to use for testing the general Kerberos configuration.
@@ -261,10 +342,30 @@ public interface KerberosHelper {
                            Map<String, Map<String, String>> kerberosConfigurations)
       throws AmbariException;
 
+  /**
+   * @param cluster                the cluster
+   * @param kerberosDescriptor     the current Kerberos descriptor
+   * @param serviceComponentFilter a Map of service names to component names indicating the
+   *                               relevant set of services and components - if null, no
+   *                               filter is relevant; if empty, the filter indicates no
+   *                               relevant services or components
+   * @param hostFilter             a set of hostname indicating the set of hosts to process -
+   *                               if null, no filter is relevant; if empty, the filter
+   *                               indicates no relevant hosts
+   * @param identityFilter         a Collection of identity names indicating the relevant
+   *                               identities - if null, no filter is relevant; if empty,
+   *                               the filter indicates no relevant identities
+   * @param shouldProcessCommand   a Command implementation to determine if the relevant component
+   *                               is in a state in which is should be process for the current
+   *                               Kerberos operation.
+   * @return a list of ServiceComponentHost instances and should be processed during the relevant
+   * Kerberos operation.
+   * @throws AmbariException
+   */
   List<ServiceComponentHost> getServiceComponentHostsToProcess(Cluster cluster,
                                                                KerberosDescriptor kerberosDescriptor,
                                                                Map<String, ? extends Collection<String>> serviceComponentFilter,
-                                                               Collection<String> identityFilter,
+                                                               Collection<String> hostFilter, Collection<String> identityFilter,
                                                                Command<Boolean, ServiceComponentHost> shouldProcessCommand)
       throws AmbariException;
 
@@ -380,11 +481,37 @@ public interface KerberosHelper {
    * If manage_kerberos_identities does exists in the map of request properties, a Boolean value
    * is returned indicating whether its value is "false" (Boolean.FALSE) or not (Boolean.TRUE).
    *
-   * @param requestProperties a map of the requst property name/value pairs
+   * @param requestProperties a map of the request property name/value pairs
    * @return Boolean.TRUE or Boolean.FALSE if the manage_kerberos_identities property exists in the map;
    * otherwise false
    */
   Boolean getManageIdentitiesDirective(Map<String, String> requestProperties);
+
+  /**
+   * Retrieves the value of the force_toggle_kerberos directive from the request properties,
+   * if it exists.
+   * <p/>
+   * If force_toggle_kerberos does not exist in the map of request properties, <code>false</code> is
+   * returned.
+   * <p/>
+   * If force_toggle_kerberos does exists in the map of request properties and is equal to "true",
+   * then <code>true</code> is returned; otherwise <code>false</code> is returned.
+   *
+   * @param requestProperties a map of the request property name/value pairs
+   * @return true if force_toggle_kerberos is "true"; otherwise false
+   */
+  boolean getForceToggleKerberosDirective(Map<String, String> requestProperties);
+
+  /**
+   * Given a list of KerberosIdentityDescriptors, returns a Map fo configuration types to property
+   * names and values.
+   * <p/>
+   * The property names and values are not expected to have any variable replacements done.
+   *
+   * @param identityDescriptors a List of KerberosIdentityDescriptor from which to retrieve configurations
+   * @return a Map of configuration types to property name/value pairs (as a Map)
+   */
+  Map<String, Map<String, String>> getIdentityConfigurations(List<KerberosIdentityDescriptor> identityDescriptors);
 
   /**
    * Returns the active identities for the named cluster.  Results are filtered by host, service,
@@ -415,6 +542,15 @@ public interface KerberosHelper {
                                                                           boolean replaceHostNames)
       throws AmbariException;
 
+  /**
+   * Gets the previously stored KDC administrator credentials.
+   *
+   * @param clusterName the name of the relevant cluster
+   * @return a PrincipalKeyCredential or null, if the KDC administrator credentials have not be set or
+   * have been removed
+   * @throws AmbariException if an error occurs while retrieving the credentials
+   */
+  PrincipalKeyCredential getKDCAdministratorCredentials(String clusterName) throws AmbariException;
 
   /**
    * Command to invoke against the Ambari backend.

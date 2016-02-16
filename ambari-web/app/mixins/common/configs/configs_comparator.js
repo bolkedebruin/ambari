@@ -17,6 +17,7 @@
  */
 
 var App = require('app');
+var objectUtils = require('utils/object_utils');
 
 App.ConfigsComparator = Em.Mixin.create({
 
@@ -45,7 +46,6 @@ App.ConfigsComparator = Em.Mixin.create({
       } else {
         compareServiceVersions = [this.get('compareServiceVersion').get('version')];
       }
-
       this.getCompareVersionConfigs(compareServiceVersions).done(function (json) {
         allConfigs.setEach('isEditable', false);
         self.initCompareConfig(allConfigs, json);
@@ -75,7 +75,7 @@ App.ConfigsComparator = Em.Mixin.create({
    */
   initCompareConfig: function(allConfigs, json) {
     var serviceVersionMap = {};
-    var configNamesMap = {};
+    var configNamesMap = allConfigs.toWickMapByProperty('name');
     var serviceName = this.get('content.serviceName');
     var compareVersionNumber = this.get('compareServiceVersion').get('version');
     //indicate whether compared versions are from non-default group
@@ -85,9 +85,6 @@ App.ConfigsComparator = Em.Mixin.create({
     if (compareNonDefaultVersions) {
       serviceVersionMap[this.get('selectedVersion')] = {};
     }
-    allConfigs.mapProperty('name').forEach(function(name) {
-      configNamesMap[name] = true;
-    });
 
     json.items.forEach(function (item) {
       item.configurations.forEach(function (configuration) {
@@ -142,13 +139,17 @@ App.ConfigsComparator = Em.Mixin.create({
 
     if (compareNonDefaultVersions) {
       allConfigs.forEach(function (serviceConfig) {
-        this.setCompareConfigs(serviceConfig, serviceVersionMap, compareVersionNumber, this.get('selectedVersion'));
+        if (Em.get(serviceConfig, 'isRequiredByAgent') !== false) {
+          this.setCompareConfigs(serviceConfig, serviceVersionMap, compareVersionNumber, this.get('selectedVersion'));
+        }
       }, this);
     } else {
       allConfigs.forEach(function (serviceConfig) {
-        var serviceCfgVersionMap = serviceVersionMap[this.get('compareServiceVersion').get('version')];
-        var compareConfig = serviceCfgVersionMap[serviceConfig.name + '-' + App.config.getConfigTagFromFileName(serviceConfig.filename)]
-        this.setCompareDefaultGroupConfig(serviceConfig, compareConfig);
+        if (Em.get(serviceConfig, 'isRequiredByAgent') !== false) {
+          var serviceCfgVersionMap = serviceVersionMap[this.get('compareServiceVersion').get('version')];
+          var compareConfig = serviceCfgVersionMap[serviceConfig.name + '-' + App.config.getConfigTagFromFileName(serviceConfig.filename)];
+          this.setCompareDefaultGroupConfig(serviceConfig, compareConfig);
+        }
       }, this);
     }
   },
@@ -225,7 +226,7 @@ App.ConfigsComparator = Em.Mixin.create({
       compareObject = App.ServiceConfigProperty.create(compareObject);
       compareObject.setProperties({
         isFinal: !!compareConfig.isFinal,
-        value: App.config.formatOverrideValue(serviceConfig, compareConfig.value),
+        value: App.config.formatPropertyValue(serviceConfig, compareConfig.value),
         compareConfigs: null,
         isOriginalSCP: false
       });
@@ -248,7 +249,7 @@ App.ConfigsComparator = Em.Mixin.create({
     Em.set(serviceConfig, 'isComparison', true);
 
     //if config isn't reconfigurable then it can't have changed value to compare
-    if (compareConfig && (Em.get(serviceConfig, 'isReconfigurable') || Em.get(serviceConfig, 'isUserProperty'))) {
+    if (compareConfig) {
       compareObject = this.getComparisonConfig(serviceConfig, compareConfig);
       Em.set(serviceConfig, 'hasCompareDiffs', Em.get(serviceConfig, 'isMock') || this.hasCompareDiffs(serviceConfig, compareObject));
       Em.get(serviceConfig, 'compareConfigs').push(compareObject);
@@ -257,11 +258,14 @@ App.ConfigsComparator = Em.Mixin.create({
       Em.get(serviceConfig, 'compareConfigs').push(this.getMockComparisonConfig(serviceConfig, this.get('compareServiceVersion.version')));
       Em.set(serviceConfig, 'hasCompareDiffs', true);
     }
+
     return serviceConfig;
   },
 
   /**
    * check value and final attribute of original and compare config for differences
+   * if config is password, it won't be shown in the comparison
+   *
    * @param originalConfig
    * @param compareConfig
    * @return {Boolean}
@@ -269,7 +273,29 @@ App.ConfigsComparator = Em.Mixin.create({
    * @method hasCompareDiffs
    */
   hasCompareDiffs: function (originalConfig, compareConfig) {
-    return (Em.get(originalConfig, 'value') !== Em.get(compareConfig, 'value')) || (!!Em.get(originalConfig, 'isFinal') !== !!Em.get(compareConfig, 'isFinal'));
+    var displayType = Em.get(originalConfig, 'displayType');
+    var notShownTypes = ['password'];
+    if (notShownTypes.contains(displayType)) {
+      return false;
+    }
+    var originalValue = App.config.trimProperty({ value: Em.get(originalConfig, 'value'), displayType: 'string' });
+    var compareValue = App.config.trimProperty({ value: Em.get(compareConfig, 'value'), displayType: 'string' });
+
+    if (originalValue.toArray) {
+      originalValue = originalValue.toArray();
+    }
+    if (compareValue.toArray) {
+      compareValue = compareValue.toArray();
+    }
+
+    if (originalValue instanceof Array) {
+      originalValue.sort();
+    }
+    if (compareValue instanceof Array) {
+      compareValue.sort();
+    }
+
+    return (!objectUtils.deepEqual(originalValue, compareValue)) || (!!Em.get(originalConfig, 'isFinal') !== !!Em.get(compareConfig, 'isFinal'));
   },
 
   /**
@@ -282,14 +308,13 @@ App.ConfigsComparator = Em.Mixin.create({
    * @method getMockConfig
    */
   getMockConfig: function (name, serviceName, filename) {
-    var undefinedConfig = {
+    var undefinedConfig = App.configsCollection.getConfigByName(name, filename) || {
       description: name,
       displayName: name,
-      id: "site property",
       isOverridable: false,
       isReconfigurable: false,
       isRequired: false,
-      isRequiredByAgent: false,
+      isRequiredByAgent: true,
       isSecureConfig: false,
       isUserProperty: true,
       isVisible: true,
@@ -297,12 +322,11 @@ App.ConfigsComparator = Em.Mixin.create({
       name: name,
       filename: filename,
       serviceName: serviceName,
+      category: App.config.getDefaultCategory(false, filename),
       value: Em.I18n.t('common.property.undefined'),
       isMock: true,
       displayType: 'label'
     };
-    var category = App.config.identifyCategory(undefinedConfig);
-    undefinedConfig.category = category && category.name;
     return App.ServiceConfigProperty.create(undefinedConfig);
   },
 

@@ -21,7 +21,7 @@ var misc = require('utils/misc');
 require('views/main/service/service');
 require('data/service_graph_config');
 
-App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
+App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, App.TimeRangeMixin, {
   templateName: require('templates/main/service/info/summary'),
   /**
    * @property {Number} chunkSize - number of columns in Metrics section
@@ -84,13 +84,9 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
    */
   collapsedSections: null,
 
-  servicesHaveClients: function() {
-    return App.get('services.hasClient');
-  }.property('App.services.hasClient'),
+  servicesHaveClients: Em.computed.alias('App.services.hasClient'),
 
-  hasManyServers: function () {
-    return this.get('servers').length > 1;
-  }.property('servers'),
+  hasManyServers: Em.computed.gt('servers.length', 1),
 
   clientsHostText: function () {
     if (this.get('controller.content.installedClients').length == 0) {
@@ -102,9 +98,7 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     }
   }.property("hasManyClients"),
 
-  hasManyClients: function () {
-    return this.get('controller.content.installedClients').length > 1;
-  }.property('service.installedClients'),
+  hasManyClients: Em.computed.gt('controller.content.installedClients.length', 1),
 
   servers: function () {
     var result = [];
@@ -169,19 +163,22 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
 
   setComponentsContent: function() {
     Em.run.next(function() {
+      if (Em.isNone(this.get('service'))) {
+        return;
+      }
       var masters = this.get('service.hostComponents').filterProperty('isMaster');
       var slaves = this.get('service.slaveComponents').toArray();
       var clients = this.get('service.clientComponents').toArray();
 
-      if (this.get('mastersLength') != masters.length) {
+      if (this.get('mastersLength') !== masters.length) {
         this.updateComponentList(this.get('mastersObj'), masters);
         this.set('mastersLength', masters.length);
       }
-      if (this.get('slavesLength') != slaves.length) {
+      if (this.get('slavesLength') !== slaves.length) {
         this.updateComponentList(this.get('slavesObj'), slaves);
         this.set('slavesLength', slaves.length);
       }
-      if (this.get('clientsLength') != clients.length) {
+      if (this.get('clientsLength') !== clients.length) {
         this.updateComponentList(this.get('clientObj'), clients);
         this.set('clientsLength', clients.length);
       }
@@ -274,9 +271,7 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     href:'javascript:void(null)'
   }),
 
-  serviceName:function () {
-    return this.get('service.serviceName');
-  }.property('service'),
+  serviceName: Em.computed.alias('service.serviceName'),
 
   oldServiceName:'',
 
@@ -286,13 +281,9 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   componentsCount: null,
   hostsCount: null,
 
-  alertsCount: function () {
-    return this.get('controller.content.alertsCount');
-  }.property('controller.content.alertsCount'),
+  alertsCount: Em.computed.alias('controller.content.alertsCount'),
 
-  hasCriticalAlerts: function () {
-    return this.get('controller.content.hasCriticalAlerts');
-  }.property('controller.content.alertsCount'),
+  hasCriticalAlerts: Em.computed.alias('controller.content.hasCriticalAlerts'),
 
   /**
    * Define if service has alert definitions defined
@@ -334,10 +325,29 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
       confirmButton: Em.I18n.t('services.service.restartAll.confirmButton'),
       additionalWarningMsg: this.get('service.passiveState') === 'OFF' ? Em.I18n.t('services.service.restartAll.warningMsg.turnOnMM').format(serviceDisplayName) : null
     });
-    return App.showConfirmationFeedBackPopup(function (query) {
-      var selectedService = self.get('service.id');
-      batchUtils.restartAllServiceHostComponents(selectedService, true, query);
-    }, bodyMessage);
+
+    var isNNAffected = false;
+    var restartRequiredHostsAndComponents = this.get('controller.content.restartRequiredHostsAndComponents');
+    for (var hostName in restartRequiredHostsAndComponents) {
+      restartRequiredHostsAndComponents[hostName].forEach(function (hostComponent) {
+        if (hostComponent == 'NameNode')
+          isNNAffected = true;
+      })
+    }
+    if (serviceDisplayName == 'HDFS' && isNNAffected &&
+      this.get('controller.content.hostComponents').filterProperty('componentName', 'NAMENODE').someProperty('workStatus', App.HostComponentStatus.started)) {
+      App.router.get('mainServiceItemController').checkNnLastCheckpointTime(function () {
+        return App.showConfirmationFeedBackPopup(function (query) {
+          var selectedService = self.get('service.id');
+          batchUtils.restartAllServiceHostComponents(serviceDisplayName, selectedService, true, query);
+        }, bodyMessage);
+      });
+    } else {
+      return App.showConfirmationFeedBackPopup(function (query) {
+        var selectedService = self.get('service.id');
+        batchUtils.restartAllServiceHostComponents(serviceDisplayName, selectedService, true, query);
+      }, bodyMessage);
+    }
   },
   rollingRestartStaleConfigSlaveComponents: function (componentName) {
     batchUtils.launchHostComponentRollingRestart(componentName.context, this.get('service.displayName'), this.get('service.passiveState') === "ON", true);
@@ -390,20 +400,16 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
    * Key-name to store time range in Persist
    * @type {string}
    */
-  persistKey: function () {
-    return 'time-range-service-' + this.get('service.serviceName');
-  }.property(),
+  persistKey: Em.computed.format('time-range-service-{0}', 'service.serviceName'),
 
   getUserPrefSuccessCallback: function (response, request, data) {
     if (response) {
-      console.log('Got persist value from server with key ' + data.key + '. Value is: ' + response);
       this.set('currentTimeRangeIndex', response);
     }
   },
 
   getUserPrefErrorCallback: function (request) {
     if (request.status == 404) {
-      console.log('Persist did NOT find the key');
       this.postUserPref(this.get('persistKey'), 0);
       this.set('currentTimeRangeIndex', 0);
     }
@@ -459,7 +465,7 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
    */
   widgetActions: function() {
     var options = [];
-    if (App.isAccessible('MANAGER')) {
+    if (App.isAuthorized('SERVICE.MODIFY_CONFIGS')) {
       if (App.supports.customizedWidgetLayout) {
         options.pushObjects(this.get('staticWidgetLayoutActions'));
       }
@@ -480,35 +486,22 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
   },
 
   /**
-   * time range options for service metrics, a dropdown will list all options
-   * value set in hours
-   */
-  timeRangeOptions: [
-    {index: 0, name: Em.I18n.t('graphs.timeRange.hour'), value: '1'},
-    {index: 1, name: Em.I18n.t('graphs.timeRange.twoHours'), value: '2'},
-    {index: 2, name: Em.I18n.t('graphs.timeRange.fourHours'), value: '4'},
-    {index: 3, name: Em.I18n.t('graphs.timeRange.twelveHours'), value: '12'},
-    {index: 4, name: Em.I18n.t('graphs.timeRange.day'), value: '24'},
-    {index: 5, name: Em.I18n.t('graphs.timeRange.week'), value: '168'},
-    {index: 6, name: Em.I18n.t('graphs.timeRange.month'), value: '720'},
-    {index: 7, name: Em.I18n.t('graphs.timeRange.year'), value: '8760'}
-  ],
-
-  currentTimeRangeIndex: 0,
-  currentTimeRange: function() {
-    return this.get('timeRangeOptions').objectAt(this.get('currentTimeRangeIndex'));
-  }.property('currentTimeRangeIndex'),
-
-  /**
    * onclick handler for a time range option
    * @param {object} event
    */
   setTimeRange: function (event) {
-    this.set('currentTimeRangeIndex', event.context.index);
+    var graphs = this.get('controller.widgets').filterProperty('widgetType', 'GRAPH'),
+      callback = function () {
+        graphs.forEach(function (widget) {
+          widget.set('properties.time_range', event.context.value);
+        });
+      };
+    this._super(event, callback);
 
-    this.get('controller.widgets').filterProperty('widgetType', 'GRAPH').forEach(function (widget) {
-      widget.set('properties.time_range', event.context.value);
-    }, this);
+    // Preset time range is specified by user
+    if (event.context.value !== '0') {
+      callback();
+    }
   },
 
   loadServiceSummary: function () {
@@ -546,26 +539,8 @@ App.MainServiceInfoSummaryView = Em.View.extend(App.UserPref, {
     return !App.get('services.serviceMetrics').length;
   }.property('App.services.serviceMetrics'),
 
-  gangliaUrl:function () {
-    var gangliaUrl = App.router.get('clusterController.gangliaUrl');
-    if (!gangliaUrl) return null;
-    var svcName = this.get('service.serviceName');
-    if (svcName) {
-      switch (svcName.toLowerCase()) {
-        case 'hdfs':
-          gangliaUrl += "/?r=hour&cs=&ce=&m=&s=by+name&c=HDPSlaves&tab=m&vn=";
-          break;
-        case 'hbase':
-          gangliaUrl += "?r=hour&cs=&ce=&m=&s=by+name&c=HDPHBaseMaster&tab=m&vn=";
-          break;
-        default:
-          break;
-      }
-    }
-    return gangliaUrl;
-  }.property('App.router.clusterController.gangliaUrl', 'service.serviceName'),
-
   didInsertElement: function () {
+    this._super();
     var svcName = this.get('controller.content.serviceName');
     this.set('service', this.getServiceModel(svcName));
     var isMetricsSupported = svcName != 'STORM' || App.get('isStormMetricsSupported');

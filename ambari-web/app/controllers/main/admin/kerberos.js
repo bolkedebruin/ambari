@@ -55,18 +55,20 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
 
   notifySecurityOffPopup: function () {
     var self = this;
-    App.ModalPopup.show({
-      header: Em.I18n.t('popup.confirmation.commonHeader'),
-      primary: Em.I18n.t('ok'),
-      onPrimary: function () {
-        App.db.setSecurityDeployCommands(undefined);
-        self.setDisableSecurityStatus("RUNNING");
-        App.router.transitionTo('disableSecurity');
-        this.hide();
-      },
-      bodyClass: Ember.View.extend({
-        templateName: require('templates/main/admin/kerberos/notify_security_off_popup')
-      })
+    this.checkServiceWarnings().then(function() {
+      App.ModalPopup.show({
+        header: Em.I18n.t('popup.confirmation.commonHeader'),
+        primary: Em.I18n.t('ok'),
+        onPrimary: function () {
+          App.db.setSecurityDeployCommands(undefined);
+          self.setDisableSecurityStatus("RUNNING");
+          App.router.transitionTo('disableSecurity');
+          this.hide();
+        },
+        bodyClass: Ember.View.extend({
+          templateName: require('templates/main/admin/kerberos/notify_security_off_popup')
+        })
+      });
     });
   },
 
@@ -170,7 +172,7 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
    */
   regenerateKeytabsSuccess: function (data, opt, params, request) {
     var self = this;
-    App.router.get('applicationController').dataLoading().done(function (initValue) {
+    App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
       if (initValue) {
         App.router.get('backgroundOperationsController').showPopup();
       }
@@ -220,19 +222,30 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
   runSecurityCheckSuccess: function (data, opt, params) {
     //TODO correct check
     if (data.items.someProperty('UpgradeChecks.status', "FAIL")) {
-      var header = Em.I18n.t('popup.clusterCheck.Security.header').format(params.label);
-      var title = Em.I18n.t('popup.clusterCheck.Security.title');
-      var alert = Em.I18n.t('popup.clusterCheck.Security.alert');
-      App.showClusterCheckPopup(data, header, title, alert);
+      var
+        hasFails = data.items.someProperty('UpgradeChecks.status', 'FAIL'),
+        header = Em.I18n.t('popup.clusterCheck.Security.header').format(params.label),
+        title = Em.I18n.t('popup.clusterCheck.Security.title'),
+        alert = Em.I18n.t('popup.clusterCheck.Security.alert');
+
+      App.showClusterCheckPopup(data, {
+        header: header,
+        failTitle: title,
+        failAlert: alert,
+        noCallbackCondition: hasFails
+      });
     } else {
       this.startKerberosWizard();
     }
   },
 
   startKerberosWizard: function () {
-    this.setAddSecurityWizardStatus('RUNNING');
-    App.router.get('kerberosWizardController').setDBProperty('onClosePath', 'main.admin.adminKerberos.index');
-    App.router.transitionTo('adminKerberos.adminAddKerberos');
+    var self = this;
+    this.checkServiceWarnings().then(function() {
+      self.setAddSecurityWizardStatus('RUNNING');
+      App.router.get('kerberosWizardController').setDBProperty('onClosePath', 'main.admin.adminKerberos.index');
+      App.router.transitionTo('adminKerberos.adminAddKerberos');
+    });
   },
 
   /**
@@ -268,25 +281,10 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
         success: 'getSecurityStatusSuccessCallback',
         error: 'errorCallback'
       })
-        .always(this.getSecurityType.bind(this))
-        .always(function () {
-          // check for kerberos descriptor artifact
-          if (self.get('securityEnabled')) {
-            self.loadClusterDescriptorConfigs().then(function () {
-              dfd.resolve();
-            }, function () {
-              // if kerberos descriptor doesn't exist in cluster artifacts get the default descriptor
-              self.loadStackDescriptorConfigs().then(function () {
-                self.set('defaultKerberosLoaded', true);
-                dfd.resolve();
-              }, function () {
-                self.set('securityEnabled', false);
-                dfd.resolve();
-              });
-            });
-          } else {
+        .always(function() {
+          self.getSecurityType(function() {
             dfd.resolve();
-          }
+          });
         });
     }
     return dfd.promise();
@@ -347,7 +345,7 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
   prepareConfigProperties: function (configs) {
     var self = this;
     var configProperties = configs.slice(0);
-    var siteProperties = App.config.get('preDefinedSiteProperties');
+    var siteProperties = App.configsCollection.getAll();
     var installedServiceNames = ['Cluster'].concat(App.Service.find().mapProperty('serviceName'));
     configProperties = configProperties.filter(function (item) {
       return installedServiceNames.contains(item.get('serviceName'));
@@ -387,32 +385,52 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
   },
 
   getKDCSessionState: function (callback, kdcCancelHandler) {
+    var self = this;
     if (this.get('securityEnabled') || App.get('isKerberosEnabled')) {
-      App.ajax.send({
-        name: 'kerberos.session.state',
-        sender: this,
-        data: {
-          callback: callback
-        },
-        success: 'checkState',
-        kdcCancelHandler: kdcCancelHandler
-      })
+      this.getSecurityType(function () {
+        if (!self.get('isManualKerberos')) {
+          App.ajax.send({
+            name: 'kerberos.session.state',
+            sender: self,
+            data: {
+              callback: callback
+            },
+            success: 'checkState',
+            kdcCancelHandler: kdcCancelHandler
+          })
+        } else {
+          callback();
+        }
+      });
     } else {
       callback();
     }
   },
 
+  /**
+   * Determines security type.
+   *
+   * @param {function} [callback] callback function to execute
+   * @returns {$.Deferred|null}
+   */
   getSecurityType: function (callback) {
     if (this.get('securityEnabled') || App.get('isKerberosEnabled')) {
-      return App.ajax.send({
-        name: 'admin.security.cluster_configs.kerberos',
-        sender: this,
-        data: {
-          clusterName: App.get('clusterName'),
-          additionalCallback: callback
-        },
-        success: 'getSecurityTypeSuccess'
-      });
+      if (!this.get('kdc_type')) {
+        return App.ajax.send({
+          name: 'admin.security.cluster_configs.kerberos',
+          sender: this,
+          data: {
+            clusterName: App.get('clusterName'),
+            additionalCallback: callback
+          },
+          success: 'getSecurityTypeSuccess'
+        });
+      } else {
+        if (Em.typeOf(callback) === 'function') {
+          callback();
+        }
+        return $.Deferred().resolve().promise;
+      }
     } else if (Em.typeOf(callback) === 'function') {
       callback();
     } else {
@@ -422,16 +440,14 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
 
   getSecurityTypeSuccess: function (data, opt, params) {
     var kdcType = data.items && data.items[0] &&
-      Em.getWithDefault(Em.getWithDefault(data.items[0], 'configurations', {}).findProperty('type', 'kerberos-env') || {}, 'properties.kdc_type', 'none') || 'none';
+        Em.getWithDefault(Em.getWithDefault(data.items[0], 'configurations', []).findProperty('type', 'kerberos-env') || {}, 'properties.kdc_type', 'none') || 'none';
     this.set('kdc_type', kdcType);
     if (Em.typeOf(params.additionalCallback) === 'function') {
       params.additionalCallback();
     }
   },
 
-  isManualKerberos: function () {
-    return this.get('kdc_type') === 'none';
-  }.property('kdc_type'),
+  isManualKerberos: Em.computed.equal('kdc_type', 'none'),
 
   checkState: function (data, opt, params) {
     var res = Em.get(data, 'Services.attributes.kdc_validation_result');
@@ -447,27 +463,21 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
    * Determines if some config value is changed
    * @type {boolean}
    */
-  isPropertiesChanged: function () {
-    return this.get('stepConfigs').someProperty('isPropertiesChanged', true);
-  }.property('stepConfigs.@each.isPropertiesChanged'),
+  isPropertiesChanged: Em.computed.someBy('stepConfigs', 'isPropertiesChanged', true),
 
   /**
    * Determines if the save button is disabled
    */
-  isSaveButtonDisabled: function () {
-    return this.get('isSubmitDisabled') || !this.get('isPropertiesChanged');
-  }.property('isSubmitDisabled', 'isPropertiesChanged'),
+  isSaveButtonDisabled: Em.computed.or('isSubmitDisabled', '!isPropertiesChanged'),
 
   /**
    * Determines if the `Disbale Kerberos` and `Regenerate Keytabs` button are disabled
    */
-  isKerberosButtonsDisabled: function () {
-    return !this.get('isSaveButtonDisabled');
-  }.property('isSaveButtonDisabled'),
+  isKerberosButtonsDisabled: Em.computed.not('isSaveButtonDisabled'),
 
 
   makeConfigsEditable: function () {
-    if (!this.get('stepConfigs') || !this.get('stepConfigs.length')) {
+    if (this.get('stepConfigs') && this.get('stepConfigs.length')) {
       this.set('isEditMode', true);
       this.get('stepConfigs').forEach(function (_stepConfig) {
         _stepConfig.get('configs').setEach('isEditable', true);
@@ -522,7 +532,66 @@ App.MainAdminKerberosController = App.KerberosWizardStep4Controller.extend({
       });
     };
     this.updateKerberosDescriptor(kerberosDescriptor, configs);
-    this.restartServicesAfterRegenerate(false, callback);
+    if (this.get('isManualKerberos')) {
+      callback().done(function () {
+        self.regenerateKeytabsRequest(false,false);
+      });
+    } else {
+      this.restartServicesAfterRegenerate(false, callback);
+    }
+  },
+
+  /**
+   * List of the warnings regarding specific services before enabling/disabling Kerberos.
+   *
+   * @type {String[]}
+   */
+  serviceAlerts: function() {
+    var messages = [];
+    var serviceAlertMap = {
+      YARN: Em.I18n.t('admin.kerberos.service.alert.yarn')
+    };
+    var installedServices = App.Service.find().mapProperty('serviceName');
+    Em.keys(serviceAlertMap).forEach(function(serviceName) {
+      if (installedServices.contains(serviceName)) {
+        messages.push(serviceAlertMap[serviceName]);
+      }
+    });
+    return messages;
+  }.property(),
+
+  /**
+   * Check for additional info to display before enabling/disabling kerberos and show appropriate
+   * messages in popup if needed.
+   * @returns {$.Deferred} - promise
+   */
+  checkServiceWarnings: function() {
+    var dfd = $.Deferred();
+    this.displayServiceWarnings(this.get('serviceAlerts'), dfd);
+    return dfd.promise();
+  },
+
+  /**
+   * Show appropriate message regarding changes affected after enabling/disabling Kerberos
+   *
+   * @param {String[]} messages - list of the messages to display
+   * @param {$.Deferred} dfd - used to break recursive calls and reject/resolve promise returned by <code>checkServiceWarnings</code>
+   */
+  displayServiceWarnings: function(messages, dfd) {
+    var self = this;
+    if (!messages.get('length')) {
+      dfd.resolve();
+    } else {
+      App.showConfirmationPopup(function() {
+        self.displayServiceWarnings(messages.slice(1), dfd);
+      }, messages[0], function() {
+        dfd.reject();
+      }, Em.I18n.t('common.warning'), Em.I18n.t('common.proceedAnyway'));
+    }
+  },
+
+  showManageKDCCredentialsPopup: function() {
+    return App.showManageCredentialsPopup();
   }
 
 });

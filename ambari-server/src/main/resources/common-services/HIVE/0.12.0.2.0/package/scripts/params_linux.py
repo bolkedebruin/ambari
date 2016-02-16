@@ -28,6 +28,7 @@ from ambari_commons.os_check import OSCheck
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.format import format
+from resource_management.libraries.functions.is_empty import is_empty
 from resource_management.libraries.functions.version import format_hdp_stack_version
 from resource_management.libraries.functions.copy_tarball import STACK_VERSION_PATTERN
 from resource_management.libraries.functions import get_kinit_path
@@ -48,7 +49,7 @@ hostname = config["hostname"]
 # This is expected to be of the form #.#.#.#
 stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
 hdp_stack_version_major = format_hdp_stack_version(stack_version_unformatted)
-stack_is_hdp21 = Script.is_hdp_stack_greater_or_equal("2.0") and Script.is_hdp_stack_less_than("2.2")
+stack_is_hdp21 = Script.is_hdp_stack_less_than("2.2")
 
 # this is not available on INSTALL action because hdp-select is not available
 hdp_stack_version = functions.get_hdp_version('hive-server2')
@@ -82,10 +83,6 @@ sqoop_tar_file = '/usr/share/HDP-webhcat/sqoop*.tar.gz'
 hive_specific_configs_supported = False
 hive_etc_dir_prefix = "/etc/hive"
 limits_conf_dir = "/etc/security/limits.d"
-hcat_conf_dir = '/etc/hcatalog/conf'
-config_dir = '/etc/hcatalog/conf'
-hcat_lib = '/usr/lib/hcatalog/share/hcatalog'
-webhcat_bin_dir = '/usr/lib/hcatalog/sbin'
 
 hive_user_nofile_limit = default("/configurations/hive-env/hive_user_nofile_limit", "32000")
 hive_user_nproc_limit = default("/configurations/hive-env/hive_user_nproc_limit", "16000")
@@ -100,11 +97,10 @@ hive_config_dir = status_params.hive_config_dir
 hive_client_conf_dir = status_params.hive_client_conf_dir
 hive_server_conf_dir = status_params.hive_server_conf_dir
 
-if Script.is_hdp_stack_greater_or_equal("2.1"):
-  hcat_conf_dir = '/etc/hive-hcatalog/conf'
-  config_dir = '/etc/hive-webhcat/conf'
-  hcat_lib = '/usr/lib/hive-hcatalog/share/hcatalog'
-  webhcat_bin_dir = '/usr/lib/hive-hcatalog/sbin'
+hcat_conf_dir = '/etc/hive-hcatalog/conf'
+config_dir = '/etc/hive-webhcat/conf'
+hcat_lib = '/usr/lib/hive-hcatalog/share/hcatalog'
+webhcat_bin_dir = '/usr/lib/hive-hcatalog/sbin'
 
 # Starting from HDP2.3 drop should be executed with purge suffix
 purge_tables = "false"
@@ -165,6 +161,7 @@ hive_metastore_user_name = config['configurations']['hive-site']['javax.jdo.opti
 hive_jdbc_connection_url = config['configurations']['hive-site']['javax.jdo.option.ConnectionURL']
 
 hive_metastore_user_passwd = config['configurations']['hive-site']['javax.jdo.option.ConnectionPassword']
+hive_metastore_user_passwd = unicode(hive_metastore_user_passwd) if not is_empty(hive_metastore_user_passwd) else hive_metastore_user_passwd
 hive_metastore_db_type = config['configurations']['hive-env']['hive_database_type']
 #HACK Temporarily use dbType=azuredb while invoking schematool
 if hive_metastore_db_type == "mssql":
@@ -203,11 +200,13 @@ prepackaged_ojdbc_symlink = format("{hive_lib}/ojdbc6.jar")
 templeton_port = config['configurations']['webhcat-site']['templeton.port']
 
 #constants for type2 jdbc
+jdbc_libs_dir = format("{hive_lib}/native/lib64")
+lib_dir_available = os.path.exists(jdbc_libs_dir)
+
 if sqla_db_used:
   jars_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/java/*")
   libs_path_in_archive = format("{tmp_dir}/sqla-client-jdbc/native/lib64/*")
   downloaded_custom_connector = format("{tmp_dir}/sqla-client-jdbc.tar.gz")
-  jdbc_libs_dir = format("{hive_lib}/native/lib64")
   libs_in_hive_lib = format("{jdbc_libs_dir}/*")
 
 #common
@@ -225,14 +224,14 @@ else:
   hive_server_port = default('/configurations/hive-site/hive.server2.thrift.port',"10000")
 
 hive_url = format("jdbc:hive2://{hive_server_host}:{hive_server_port}")
-hive_http_endpoint = default('/confiurations/hive-site/hive.server2.thrift.http.path', "cliservice")
+hive_http_endpoint = default('/configurations/hive-site/hive.server2.thrift.http.path', "cliservice")
 hive_server_principal = config['configurations']['hive-site']['hive.server2.authentication.kerberos.principal']
 hive_server2_authentication = config['configurations']['hive-site']['hive.server2.authentication']
 
 # ssl options
-hive_ssl = default('/confiurations/hive-site/hive.server2.use.SSL', False)
-hive_ssl_keystore_path = default('/confiurations/hive-site/hive.server2.keystore.path', None)
-hive_ssl_keystore_password = default('/confiurations/hive-site/hive.server2.keystore.password', None)
+hive_ssl = default('/configurations/hive-site/hive.server2.use.SSL', False)
+hive_ssl_keystore_path = default('/configurations/hive-site/hive.server2.keystore.path', None)
+hive_ssl_keystore_password = default('/configurations/hive-site/hive.server2.keystore.password', None)
 
 smokeuser = config['configurations']['cluster-env']['smokeuser']
 smoke_test_sql = format("{tmp_dir}/hiveserver2.sql")
@@ -282,6 +281,15 @@ yarn_log_dir_prefix = config['configurations']['yarn-env']['yarn_log_dir_prefix'
 target = format("{hive_lib}/{jdbc_jar_name}")
 jars_in_hive_lib = format("{hive_lib}/*.jar")
 
+
+if Script.is_hdp_stack_less_than("2.2"):
+  source_jdbc_file = target
+else:
+  # normally, the JDBC driver would be referenced by /usr/hdp/current/.../foo.jar
+  # but in RU if hdp-select is called and the restart fails, then this means that current pointer
+  # is now pointing to the upgraded version location; that's bad for the cp command
+  source_jdbc_file = format("/usr/hdp/{current_version}/hive/lib/{jdbc_jar_name}")
+
 jdk_location = config['hostLevelParams']['jdk_location']
 driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
 
@@ -310,11 +318,9 @@ mysql_host = config['clusterHostInfo']['hive_mysql_host']
 mysql_adduser_path = format("{tmp_dir}/addMysqlUser.sh")
 mysql_deluser_path = format("{tmp_dir}/removeMysqlUser.sh")
 
-######## Metastore Schema
-init_metastore_schema = False
-if Script.is_hdp_stack_greater_or_equal("2.1"):
-  init_metastore_schema = True
-
+#### Metastore
+# initialize the schema only if not in an upgrade/downgrade
+init_metastore_schema = upgrade_direction is None
 
 ########## HCAT
 hcat_dbroot = hcat_lib
@@ -349,7 +355,7 @@ process_name = status_params.process_name
 hive_env_sh_template = config['configurations']['hive-env']['content']
 
 hive_hdfs_user_dir = format("/user/{hive_user}")
-hive_hdfs_user_mode = 0700
+hive_hdfs_user_mode = 0755
 hive_apps_whs_dir = config['configurations']['hive-site']["hive.metastore.warehouse.dir"]
 hive_exec_scratchdir = config['configurations']['hive-site']["hive.exec.scratchdir"]
 #for create_hdfs_directory
@@ -378,19 +384,6 @@ hive_authorization_enabled = config['configurations']['hive-site']['hive.securit
 
 mysql_jdbc_driver_jar = "/usr/share/java/mysql-connector-java.jar"
 hive_use_existing_db = hive_database.startswith('Existing')
-hive_exclude_packages = []
-
-# There are other packages that contain /usr/share/java/mysql-connector-java.jar (like libmysql-java),
-# trying to install mysql-connector-java upon them can cause packages to conflict.
-if hive_use_existing_db:
-  hive_exclude_packages = ['mysql-connector-java', 'mysql', 'mysql-server',
-                           'mysql-community-release', 'mysql-community-server']
-else:
-  if 'role' in config and config['role'] != "MYSQL_SERVER":
-    hive_exclude_packages = ['mysql', 'mysql-server', 'mysql-community-release',
-                             'mysql-community-server']
-  if os.path.exists(mysql_jdbc_driver_jar):
-    hive_exclude_packages.append('mysql-connector-java')
 
 
 hive_site_config = dict(config['configurations']['hive-site'])
@@ -404,28 +397,9 @@ classpath_addition = ""
 atlas_plugin_package = "atlas-metadata*-hive-plugin"
 atlas_ubuntu_plugin_package = "atlas-metadata.*-hive-plugin"
 
-if not has_atlas:
-  hive_exclude_packages.append(atlas_plugin_package)
-  hive_exclude_packages.append(atlas_ubuntu_plugin_package)
-else:
-  # hive-site
-  hive_site_config['atlas.cluster.name'] = config['clusterName']
-  atlas_config = config['configurations']['application-properties']
-  metadata_port = config['configurations']['atlas-env']['metadata_port']
-  metadata_host = atlas_hosts[0]
-  tls_enabled = config['configurations']['application-properties']['atlas.enableTLS']
-  if tls_enabled:
-    scheme = "https"
-  else:
-    scheme = "http"
-  hive_site_config['atlas.rest.address'] = format('{scheme}://{metadata_host}:{metadata_port}')
-
-  if not 'hive.exec.post.hooks' in hive_site_config:
-    hive_site_config['hive.exec.post.hooks'] = 'org.apache.atlas.hive.hook.HiveHook'
-  else:
-    current_hook = hive_site_config['hive.exec.post.hooks']
-    hive_site_config['hive.exec.post.hooks'] =  format('{current_hook}, org.apache.atlas.hive.hook.HiveHook')
-
+if has_atlas:
+  atlas_home_dir = os.environ['METADATA_HOME_DIR'] if 'METADATA_HOME_DIR' in os.environ else '/usr/hdp/current/atlas-server'
+  atlas_conf_dir = os.environ['METADATA_CONF'] if 'METADATA_CONF' in os.environ else '/etc/atlas/conf'
   # client.properties
   atlas_client_props = {}
   auth_enabled = config['configurations']['application-properties'].get(
@@ -461,6 +435,8 @@ security_param = "true" if security_enabled else "false"
 hdfs_site = config['configurations']['hdfs-site']
 default_fs = config['configurations']['core-site']['fs.defaultFS']
 
+dfs_type = default("/commandParams/dfs_type", "")
+
 import functools
 #create partial functions with common arguments for every HdfsResource call
 #to create hdfs directory we need to call params.HdfsResource in code
@@ -474,7 +450,8 @@ HdfsResource = functools.partial(
   hadoop_conf_dir = hadoop_conf_dir,
   principal_name = hdfs_principal_name,
   hdfs_site = hdfs_site,
-  default_fs = default_fs
+  default_fs = default_fs,
+  dfs_type = dfs_type
  )
 
 
@@ -517,7 +494,11 @@ if has_ranger_admin:
   elif xa_audit_db_flavor and xa_audit_db_flavor == 'oracle':
     ranger_jdbc_jar_name = "ojdbc6.jar"
     ranger_jdbc_symlink_name = "oracle-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
+    colon_count = xa_db_host.count(':')
+    if colon_count == 2 or colon_count == 0:
+      audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
+    else:
+      audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
     jdbc_driver = "oracle.jdbc.OracleDriver"
   elif xa_audit_db_flavor and xa_audit_db_flavor == 'postgres':
     ranger_jdbc_jar_name = "postgresql.jar"
@@ -560,6 +541,7 @@ if has_ranger_admin:
   xa_audit_db_password = unicode(config['configurations']['admin-properties']['audit_db_password'])
   ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
   xa_audit_db_is_enabled = config['configurations']['ranger-hive-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+  xa_audit_hdfs_is_enabled = config['configurations']['ranger-hive-audit']['xasecure.audit.destination.hdfs'] if xml_configurations_supported else None
   ssl_keystore_password = unicode(config['configurations']['ranger-hive-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
   ssl_truststore_password = unicode(config['configurations']['ranger-hive-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None

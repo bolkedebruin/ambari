@@ -20,7 +20,7 @@
  */
 -->
 
-<configuration>
+<configuration supports_adding_forbidden="true">
   <property>
     <name>storm_user</name>
     <deleted>true</deleted>
@@ -39,5 +39,8 @@
   <property>
     <name>content</name>
     <value/>
+    <value-attributes>
+      <type>content</type>
+    </value-attributes>
   </property>
 </configuration>

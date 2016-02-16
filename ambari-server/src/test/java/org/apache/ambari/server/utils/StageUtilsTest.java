@@ -17,14 +17,53 @@
  */
 package org.apache.ambari.server.utils;
 
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.expectLastCall;
-import static org.easymock.EasyMock.getCurrentArguments;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import com.google.common.base.Predicate;
+import com.google.common.collect.ContiguousSet;
+import com.google.common.collect.DiscreteDomain;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Range;
+import com.google.gson.Gson;
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.actionmanager.ExecutionCommandWrapper;
+import org.apache.ambari.server.actionmanager.HostRoleCommandFactory;
+import org.apache.ambari.server.actionmanager.HostRoleCommandFactoryImpl;
+import org.apache.ambari.server.actionmanager.Stage;
+import org.apache.ambari.server.actionmanager.StageFactory;
+import org.apache.ambari.server.actionmanager.StageFactoryImpl;
+import org.apache.ambari.server.agent.ExecutionCommand;
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.orm.DBAccessor;
+import org.apache.ambari.server.orm.dao.HostDAO;
+import org.apache.ambari.server.security.SecurityHelper;
+import org.apache.ambari.server.security.encryption.CredentialStoreService;
+import org.apache.ambari.server.stack.StackManagerFactory;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.state.Host;
+import org.apache.ambari.server.state.HostComponentAdminState;
+import org.apache.ambari.server.state.Service;
+import org.apache.ambari.server.state.ServiceComponent;
+import org.apache.ambari.server.state.ServiceComponentHost;
+import org.apache.ambari.server.state.ServiceComponentHostFactory;
+import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.cluster.ClusterFactory;
+import org.apache.ambari.server.state.cluster.ClustersImpl;
+import org.apache.ambari.server.state.host.HostFactory;
+import org.apache.ambari.server.state.stack.OsFamily;
+import org.apache.ambari.server.topology.PersistedState;
+import org.apache.ambari.server.topology.TopologyManager;
+import org.codehaus.jackson.JsonGenerationException;
+import org.codehaus.jackson.map.JsonMappingException;
+import org.easymock.EasyMockSupport;
+import org.easymock.IAnswer;
+import org.junit.Before;
+import org.junit.Test;
 
+import javax.persistence.EntityManager;
+import javax.xml.bind.JAXBException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,51 +83,12 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-import javax.persistence.EntityManager;
-import javax.xml.bind.JAXBException;
-
-import com.google.inject.AbstractModule;
-import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.actionmanager.ExecutionCommandWrapper;
-import org.apache.ambari.server.actionmanager.HostRoleCommandFactory;
-import org.apache.ambari.server.actionmanager.HostRoleCommandFactoryImpl;
-import org.apache.ambari.server.actionmanager.Stage;
-import org.apache.ambari.server.actionmanager.StageFactory;
-import org.apache.ambari.server.actionmanager.StageFactoryImpl;
-import org.apache.ambari.server.agent.ExecutionCommand;
-import org.apache.ambari.server.api.services.AmbariMetaInfo;
-import org.apache.ambari.server.orm.DBAccessor;
-import org.apache.ambari.server.orm.dao.HostDAO;
-import org.apache.ambari.server.security.SecurityHelper;
-import org.apache.ambari.server.stack.StackManagerFactory;
-import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.Clusters;
-import org.apache.ambari.server.state.Host;
-import org.apache.ambari.server.state.HostComponentAdminState;
-import org.apache.ambari.server.state.Service;
-import org.apache.ambari.server.state.ServiceComponent;
-import org.apache.ambari.server.state.ServiceComponentHost;
-import org.apache.ambari.server.state.ServiceComponentHostFactory;
-import org.apache.ambari.server.state.StackId;
-import org.apache.ambari.server.state.cluster.ClusterFactory;
-import org.apache.ambari.server.state.cluster.ClustersImpl;
-import org.apache.ambari.server.state.host.HostFactory;
-import org.apache.ambari.server.state.stack.OsFamily;
-import org.apache.ambari.server.topology.TopologyManager;
-import org.codehaus.jackson.JsonGenerationException;
-import org.codehaus.jackson.map.JsonMappingException;
-import org.easymock.EasyMockSupport;
-import org.easymock.IAnswer;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
-
-import com.google.common.collect.ContiguousSet;
-import com.google.common.collect.DiscreteDomain;
-import com.google.common.collect.Range;
-import com.google.gson.Gson;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.getCurrentArguments;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class StageUtilsTest extends EasyMockSupport {
   private static final String STACK_ID = "HDP-1.3.1";
@@ -108,6 +108,7 @@ public class StageUtilsTest extends EasyMockSupport {
         bind(HostFactory.class).toInstance(createNiceMock(HostFactory.class));
         bind(SecurityHelper.class).toInstance(createNiceMock(SecurityHelper.class));
         bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+        bind(CredentialStoreService.class).toInstance(createNiceMock(CredentialStoreService.class));
         bind(TopologyManager.class).toInstance(createNiceMock(TopologyManager.class));
         bind(AmbariMetaInfo.class).toInstance(createMock(AmbariMetaInfo.class));
         bind(Clusters.class).toInstance(createNiceMock(ClustersImpl.class));
@@ -116,6 +117,7 @@ public class StageUtilsTest extends EasyMockSupport {
         bind(StageFactory.class).to(StageFactoryImpl.class);
         bind(HostRoleCommandFactory.class).to(HostRoleCommandFactoryImpl.class);
         bind(HostDAO.class).toInstance(createNiceMock(HostDAO.class));
+        bind(PersistedState.class).toInstance(createNiceMock(PersistedState.class));
       }
     });
 
@@ -446,6 +448,12 @@ public class StageUtilsTest extends EasyMockSupport {
             return hbrsServiceComponentHosts.get((String) args[0]);
           }
         }).anyTimes();
+    Map<String, ServiceComponentHost> hbrsHosts = Maps.filterKeys(hbrsServiceComponentHosts, new Predicate<String>() {
+      @Override
+      public boolean apply(String s) {
+        return s.equals("h1");
+      }
+    });
     expect(hbrsComponent.getServiceComponentHosts()).andReturn(hbrsServiceComponentHosts).anyTimes();
     expect(hbrsComponent.isClientComponent()).andReturn(false).anyTimes();
 
@@ -528,7 +536,7 @@ public class StageUtilsTest extends EasyMockSupport {
 
 
     final TopologyManager topologyManager = injector.getInstance(TopologyManager.class);
-    topologyManager.getProjectedTopology();
+    topologyManager.getPendingHostComponents();
     expectLastCall().andReturn(projectedTopology).once();
 
     replayAll();
@@ -585,6 +593,9 @@ public class StageUtilsTest extends EasyMockSupport {
     Set<String> serverHost = info.get(StageUtils.AMBARI_SERVER_HOST);
     assertEquals(1, serverHost.size());
     assertEquals(StageUtils.getHostName(), serverHost.iterator().next());
+
+    // check host role replacing by the projected topology
+    assertTrue(getDecompressedSet(info.get("hbase_rs_hosts")).contains(9));
 
     // Validate substitutions...
     info = StageUtils.substituteHostIndexes(info);
