@@ -105,4 +105,37 @@ public class IPAKerberosOperationHandlerTest extends KerberosOperationHandlerTes
         }
     }
 
+    @Test
+    public void testCreateServicePrincipal_Exceptions() throws Exception {
+        IPAKerberosOperationHandler handler = new IPAKerberosOperationHandler();
+        handler.open(new KerberosCredential(DEFAULT_ADMIN_PRINCIPAL, DEFAULT_ADMIN_PASSWORD, null), DEFAULT_REALM, KERBEROS_ENV_MAP);
+
+        try {
+            handler.createPrincipal(DEFAULT_ADMIN_PRINCIPAL, null, false);
+            Assert.fail("KerberosOperationException not thrown for null password");
+        } catch (Throwable t) {
+            Assert.fail("KerberosOperationException thrown on null password with IPA");
+        }
+
+        try {
+            handler.createPrincipal(DEFAULT_ADMIN_PRINCIPAL, "", false);
+        } catch (Throwable t) {
+            Assert.fail("KerberosOperationException thrown for empty password");
+        }
+
+        try {
+            handler.createPrincipal(null, DEFAULT_ADMIN_PASSWORD, false);
+            Assert.fail("KerberosOperationException not thrown for null principal");
+        } catch (Throwable t) {
+            Assert.assertEquals(KerberosOperationException.class, t.getClass());
+        }
+
+        try {
+            handler.createPrincipal("", DEFAULT_ADMIN_PASSWORD, false);
+            Assert.fail("KerberosOperationException not thrown for empty principal");
+        } catch (Throwable t) {
+            Assert.assertEquals(KerberosOperationException.class, t.getClass());
+        }
+    }
+
 }
