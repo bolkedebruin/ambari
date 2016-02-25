@@ -24,6 +24,7 @@ import com.google.inject.Injector;
 import junit.framework.Assert;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.easymock.EasyMock;
@@ -49,7 +50,6 @@ public class IPAKerberosOperationHandlerTest extends KerberosOperationHandlerTes
             put(IPAKerberosOperationHandler.KERBEROS_ENV_ENCRYPTION_TYPES, null);
             put(IPAKerberosOperationHandler.KERBEROS_ENV_KDC_HOST, "localhost");
             put(IPAKerberosOperationHandler.KERBEROS_ENV_ADMIN_SERVER_HOST, "localhost");
-            put(IPAKerberosOperationHandler.KERBEROS_ENV_ADMIN_KEYTAB, "/etc/security/keytabs/admin.keytab");
             put(IPAKerberosOperationHandler.KERBEROS_ENV_USER_PRINCIPAL_GROUP, "");
         }
     };
@@ -73,7 +73,7 @@ public class IPAKerberosOperationHandlerTest extends KerberosOperationHandlerTes
     @Test
     public void testSetPrincipalPasswordExceptions() throws Exception {
         IPAKerberosOperationHandler handler = injector.getInstance(IPAKerberosOperationHandler.class);
-        handler.open(new KerberosCredential(DEFAULT_ADMIN_PRINCIPAL, DEFAULT_ADMIN_PASSWORD, null), DEFAULT_REALM, KERBEROS_ENV_MAP);
+        handler.open(new PrincipalKeyCredential(DEFAULT_ADMIN_PRINCIPAL, DEFAULT_ADMIN_PASSWORD), DEFAULT_REALM, KERBEROS_ENV_MAP);
         try {
             handler.setPrincipalPassword(DEFAULT_ADMIN_PRINCIPAL, null);
             Assert.fail("KerberosOperationException not thrown for null password");
@@ -108,7 +108,7 @@ public class IPAKerberosOperationHandlerTest extends KerberosOperationHandlerTes
     @Test
     public void testCreateServicePrincipal_Exceptions() throws Exception {
         IPAKerberosOperationHandler handler = new IPAKerberosOperationHandler();
-        handler.open(new KerberosCredential(DEFAULT_ADMIN_PRINCIPAL, DEFAULT_ADMIN_PASSWORD, null), DEFAULT_REALM, KERBEROS_ENV_MAP);
+        handler.open(new PrincipalKeyCredential(DEFAULT_ADMIN_PRINCIPAL, DEFAULT_ADMIN_PASSWORD), DEFAULT_REALM, KERBEROS_ENV_MAP);
 
         try {
             handler.createPrincipal(DEFAULT_ADMIN_PRINCIPAL, null, false);

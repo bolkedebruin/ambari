@@ -18,6 +18,7 @@
 
 package org.apache.ambari.server.serveraction.kerberos;
 
+import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
 import org.apache.ambari.server.utils.ShellCommandUtil;
 import org.apache.directory.server.kerberos.shared.keytab.Keytab;
 import org.apache.directory.shared.kerberos.codec.types.EncryptionType;
@@ -26,8 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.security.auth.kerberos.KeyTab;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.*;
@@ -42,12 +42,10 @@ import java.util.regex.Pattern;
  * available
  */
 public class IPAKerberosOperationHandler extends KerberosOperationHandler {
-
+    private static final Object WindowsProcessLaunchLock = new Object();
     private final static Logger LOG = LoggerFactory.getLogger(IPAKerberosOperationHandler.class);
 
     private String adminServerHost = null;
-
-    private String adminKeyTab = null;
 
     /**
      * This is where user principals are members of. Important as the password should not expire
@@ -103,20 +101,17 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
      * @throws KerberosOperationException           if an unexpected error occurred
      */
     @Override
-    public void open(KerberosCredential administratorCredentials, String realm,
+    public void open(PrincipalKeyCredential administratorCredentials, String realm,
                      Map<String, String> kerberosConfiguration)
             throws KerberosOperationException {
 
-        setAdministratorCredentials(administratorCredentials);
+        setAdministratorCredential(administratorCredentials);
         setDefaultRealm(realm);
 
         if (kerberosConfiguration != null) {
             // todo: ignore if ipa managed krb5.conf?
             setKeyEncryptionTypes(translateEncryptionTypes(kerberosConfiguration.get(KERBEROS_ENV_ENCRYPTION_TYPES), "\\s+"));
-
-            setAdminServerHost(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_SERVER_HOST));
             setExecutableSearchPaths(kerberosConfiguration.get(KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS));
-            setAdminKeyTab(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_KEYTAB));
             setUserPrincipalGroup(kerberosConfiguration.get(KERBEROS_ENV_USER_PRINCIPAL_GROUP));
         } else {
             setKeyEncryptionTypes(null);
@@ -380,37 +375,89 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     /**
      * Sets the KDC administrator server host address
      *
-     * @param adminServerHost the ip address or FQDN of the KDC administrator server
+     * @param adminServerHost the ip address or FQDN of the IPA administrator server
      */
     public void setAdminServerHost(String adminServerHost) {
         this.adminServerHost = adminServerHost;
     }
 
     /**
-     * Gets the IP address or FQDN of the KDC administrator server
+     * Gets the IP address or FQDN of the IPA administrator server
      *
-     * @return the IP address or FQDN of the KDC administrator server
+     * @return the IP address or FQDN of the IPA administrator server
      */
     public String getAdminServerHost() {
         return this.adminServerHost;
     }
 
-    /**
-     * Sets the administrator key tab file location
-     *
-     * @param adminKeyTab the location of the key tab file
-     */
-    public void setAdminKeyTab(String adminKeyTab) {
-        this.adminKeyTab = adminKeyTab;
-    }
+    private void dokInit(PrincipalKeyCredential credentials) throws KerberosOperationException {
+        Process process;
+        BufferedReader bfr = null;
+        OutputStreamWriter osw = null;
 
-    /**
-     * Gets the location of the administrator key tab file
-     *
-     * @return the location of the administrator key tab file
-     */
-    public String getAdminKeyTab() {
-        return this.adminKeyTab;
+        try {
+            List<String> kinit = new ArrayList<>();
+
+            kinit.add(executableKinit);
+            kinit.add(credentials.getPrincipal());
+
+            ProcessBuilder builder = new ProcessBuilder(kinit.toArray(new String[kinit.size()]));
+
+            if (ShellCommandUtil.WINDOWS) {
+                synchronized (WindowsProcessLaunchLock) {
+                    process = builder.start();
+                }
+            } else {
+                process = builder.start();
+            }
+
+            InputStreamReader isr = new InputStreamReader(process.getInputStream());
+            bfr = new BufferedReader(isr);
+            osw = new OutputStreamWriter(process.getOutputStream());
+
+            String line = bfr.readLine();
+            if (line == null) {
+                throw new KerberosOperationException("No response from kinit while trying to get ticket for "
+                        + credentials.getPrincipal());
+            }
+
+            if (!line.matches("/Password/")) {
+                throw new KerberosOperationException("Unexpected response from kinit while trying to get ticket for "
+                        + credentials.getPrincipal() + " got: " + line);
+            }
+
+            osw.write(credentials.getKey());
+            osw.write('\n');
+
+            process.waitFor();
+        } catch (IOException e) {
+            String message = String.format("Failed to execute the command: %s", e.getLocalizedMessage());
+            LOG.error(message, e);
+            throw new KerberosOperationException(message, e);
+        } catch (InterruptedException e) {
+            String message = String.format("Failed to wait for the command to complete: %s", e.getLocalizedMessage());
+            LOG.error(message, e);
+            throw new KerberosOperationException(message, e);
+        } finally {
+            if (osw != null) {
+                try {
+                    osw.close();
+                } catch (IOException e) {
+                }
+            }
+
+            if (bfr != null) {
+                try {
+                    bfr.close();
+                } catch (IOException e) {
+                }
+            }
+        }
+
+        if (process.exitValue() != 0) {
+            throw new KerberosOperationException("kinit failed for " + credentials.getPrincipal() + ". Wrong password?");
+        }
+
     }
 
     /**
@@ -430,7 +477,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         if ((query == null) || query.isEmpty()) {
             throw new KerberosOperationException("Missing ipa query");
         }
-        KerberosCredential administratorCredentials = getAdministratorCredentials();
+        PrincipalKeyCredential administratorCredentials = getAdministratorCredential();
         String defaultRealm = getDefaultRealm();
 
         List<String> command = new ArrayList<String>();
@@ -444,36 +491,19 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                     : administratorCredentials.getPrincipal();
 
             if ((adminPrincipal == null) || adminPrincipal.isEmpty()) {
-                    throw new KerberosOperationException("No admin principal for ipa available - this KerberosOperationHandler may not have been opened.");
-            } else {
-                if((executableIpa == null) || executableIpa.isEmpty()) {
-                    throw new KerberosOperationException("No path for ipa is available - this KerberosOperationHandler may not have been opened.");
-                }
-
-                String adminKeyTab = administratorCredentials.getKeytab();
-
-                /*if ((adminKeyTab == null || adminKeyTab.isEmpty())) {
-                    throw new KerberosOperationException("No admin keytab for ipa available - this KerberosOperationHandler may not have been opened.");
-                }*/
-
-                //TODO: check logic for admin credentials and keytab
-                //tempKeytabFile = createKeytabFile(adminKeyTab);
-                kinit.add(executableKinit);
-                kinit.add("-k");
-                kinit.add("-t");
-                kinit.add(getAdminKeyTab());
-                kinit.add(administratorCredentials.getPrincipal());
-                result = executeCommand(kinit.toArray(new String[kinit.size()]));
-
-                if (!result.isSuccessful()) {
-                    throw new KerberosOperationException(("Cannot kinit from keytab"));
-                }
-
-                // Set the ipa interface to be ipa
-                command.add(executableIpa);
-
+                    throw new KerberosOperationException("No admin principal for ipa available - " +
+                            "this KerberosOperationHandler may not have been opened.");
             }
 
+            if((executableIpa == null) || executableIpa.isEmpty()) {
+                throw new KerberosOperationException("No path for ipa is available - " +
+                        "this KerberosOperationHandler may not have been opened.");
+            }
+
+            dokInit(administratorCredentials);
+
+            // Set the ipa interface to be ipa
+            command.add(executableIpa);
             command.add(query);
 
             if(LOG.isDebugEnabled()) {
@@ -703,7 +733,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         command.add("-k");
         command.add(fileName);
 
-        // TODO: use expect to set password?
+        // TODO: is it really required to set the password?
         ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
         if (!result.isSuccessful()) {
             String message = String.format("Failed to get key number for %s:\n\tExitCode: %s\n\tSTDOUT: %s\n\tSTDERR: %s",
