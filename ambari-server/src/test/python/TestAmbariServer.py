@@ -34,6 +34,7 @@ import stat
 import StringIO
 import tempfile
 from unittest import TestCase
+os.environ["ROOT"] = ""
 
 from only_for_platform import get_platform, not_for_platform, only_for_platform, os_distro_value, PLATFORM_LINUX, PLATFORM_WINDOWS
 
@@ -6622,7 +6623,6 @@ class TestAmbariServer(TestCase):
     dbms = OracleConfig(args, properties, "local")
 
     self.assertTrue(decrypt_password_for_alias_method.called)
-    self.assertFalse(path_isabs_method.called)
     self.assertEquals("fakeuser", dbms.database_username)
     self.assertEquals("falepasswd", dbms.database_password)
 
@@ -6901,8 +6901,7 @@ class TestAmbariServer(TestCase):
     self.assertTrue(ensureCanStartUnderCurrentUserMock.called)
     self.assertTrue(generateEnvMock.called)
 
-    self.assertEquals(runOSCommandMock.call_args[0][0], '/path/to/java -cp test:path12 org.apache.ambari.server.checks.CheckDatabaseHelper'
-                                                        ' > /var/log/ambari-server/ambari-server.log 2>&1')
+    self.assertEquals(runOSCommandMock.call_args[0][0], '/path/to/java -cp test:path12 org.apache.ambari.server.checks.CheckDatabaseHelper')
 
     pass
 

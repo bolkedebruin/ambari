@@ -1071,7 +1071,6 @@ describe('App.InstallerStep7Controller', function () {
           stackConfigsLoaded: true
         })
       });
-      sinon.stub(App.config, 'fileConfigsIntoTextarea', Em.K);
       sinon.stub(installerStep7Controller, 'clearStep', Em.K);
       sinon.stub(installerStep7Controller, 'getConfigTags', Em.K);
       sinon.stub(installerStep7Controller, 'setInstalledServiceConfigs', Em.K);
@@ -1081,7 +1080,6 @@ describe('App.InstallerStep7Controller', function () {
       sinon.stub(App.router, 'send', Em.K);
     });
     afterEach(function () {
-      App.config.fileConfigsIntoTextarea.restore();
       installerStep7Controller.clearStep.restore();
       installerStep7Controller.getConfigTags.restore();
       installerStep7Controller.setInstalledServiceConfigs.restore();
@@ -1111,9 +1109,6 @@ describe('App.InstallerStep7Controller', function () {
       installerStep7Controller.reopen({
         allSelectedServiceNames: []
       });
-      sinon.stub(App.config, 'fileConfigsIntoTextarea', function(configs) {
-        return configs;
-      });
       sinon.stub(installerStep7Controller, 'loadConfigRecommendations', function(c, callback) {
         return callback();
       });
@@ -1137,7 +1132,6 @@ describe('App.InstallerStep7Controller', function () {
     });
 
     afterEach(function () {
-      App.config.fileConfigsIntoTextarea.restore();
       installerStep7Controller.loadConfigRecommendations.restore();
       installerStep7Controller.checkHostOverrideInstaller.restore();
       installerStep7Controller.selectProperService.restore();
@@ -1156,26 +1150,6 @@ describe('App.InstallerStep7Controller', function () {
     });
     it('selectProperServiceis called once' , function () {
      expect(installerStep7Controller.selectProperService.calledOnce).to.equal(true);
-    });
-
-    Em.A([
-      {
-        allSelectedServiceNames: ['YARN'],
-        fileConfigsIntoTextarea: true,
-        m: 'should run fileConfigsIntoTextarea'
-      }
-    ]).forEach(function(t) {
-      it(t.m, function () {
-        installerStep7Controller.reopen({
-          allSelectedServiceNames: t.allSelectedServiceNames
-        });
-        installerStep7Controller.applyServicesConfigs([{name: 'configs'}]);
-        if (t.fileConfigsIntoTextarea) {
-          expect(App.config.fileConfigsIntoTextarea.calledWith([{name: 'configs'}], 'capacity-scheduler.xml')).to.equal(true);
-        } else {
-          expect(App.config.fileConfigsIntoTextarea.calledOnce).to.equal(false);
-        }
-      });
     });
 
   });
@@ -1759,7 +1733,7 @@ describe('App.InstallerStep7Controller', function () {
     it('should copy properties from hdfs-site to hdfs-client for HAWQ', function() {
       installerStep7Controller.addHawqConfigsOnNnHa(configs);
       // ensure 6 new configs were added
-      expect(configs.length - oldConfigs.length).to.be.equal(6);
+      expect(configs.length).to.be.equal(oldConfigs.length + 6);
     });
 
     describe('find the same property in hdfs-client for HAWQ and see if attribute value matches with the corresponding property\'s attribute value in hdfs-site', function () {
@@ -2349,14 +2323,15 @@ describe('App.InstallerStep7Controller', function () {
       beforeEach(function () {
         installerStep7Controller.set('wizardController', {name: 'addServiceController'});
         this.stub = sinon.stub(App.configsCollection, 'getConfigByName');
-        sinon.stub(App.config, 'getServiceByConfigType', function (type) {
-          return Em.Object.create({serviceName: type === 't1' ? 's1' : 's2'});
+        sinon.stub(App.config, 'get').withArgs('serviceByConfigTypeMap').returns({
+          't1': Em.Object.create({serviceName: 's1'}),
+          't2': Em.Object.create({serviceName: 's2'})
         })
       });
 
       afterEach(function () {
         App.configsCollection.getConfigByName.restore();
-        App.config.getServiceByConfigType.restore();
+        App.config.get.restore();
       });
 
       it('stackProperty does not exist', function () {

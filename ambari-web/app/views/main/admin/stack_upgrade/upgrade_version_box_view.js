@@ -41,8 +41,12 @@ App.UpgradeVersionBoxView = Em.View.extend({
    * @type {number}
    */
   installProgress: function() {
-    var requestId = App.get('testMode') ? 1 : App.db.get('repoVersionInstall', 'id')[0];
-    var installRequest = App.router.get('backgroundOperationsController.services').findProperty('id', requestId);
+    if (App.get('testMode')) return 100;
+
+    var installRequest, requestIds = App.db.get('repoVersionInstall', 'id');
+    if (requestIds) {
+      installRequest = App.router.get('backgroundOperationsController.services').findProperty('id', requestIds[0]);
+    }
     return (installRequest) ? installRequest.get('progress') : 0;
   }.property('App.router.backgroundOperationsController.serviceTimestamp'),
 
@@ -171,18 +175,18 @@ App.UpgradeVersionBoxView = Em.View.extend({
         var isDisabled = !App.isAuthorized('CLUSTER.UPGRADE_DOWNGRADE_STACK') || this.get('controller.requestInProgress') || isInstalling;
         element.set('isButtonGroup', true);
         if (status === 'OUT_OF_SYNC') {
-          element.set('text', Em.I18n.t('admin.stackVersions.version.reinstall'));
+          element.set('text', this.get('isVersionColumnView') ? Em.I18n.t('common.reinstall') : Em.I18n.t('admin.stackVersions.version.reinstall'));
           element.set('action', 'installRepoVersionConfirmation');
           element.get('buttons').pushObject({
-            text: Em.I18n.t('admin.stackVersions.version.performUpgrade'),
+            text: this.get('isVersionColumnView') ? Em.I18n.t('common.upgrade') : Em.I18n.t('admin.stackVersions.version.performUpgrade'),
             action: 'confirmUpgrade',
             isDisabled: isDisabled
           });
         } else {
-          element.set('text', Em.I18n.t('admin.stackVersions.version.performUpgrade'));
+          element.set('text', this.get('isVersionColumnView') ? Em.I18n.t('common.upgrade') : Em.I18n.t('admin.stackVersions.version.performUpgrade'));
           element.set('action', 'confirmUpgrade');
           element.get('buttons').pushObject({
-            text: Em.I18n.t('admin.stackVersions.version.reinstall'),
+            text: this.get('isVersionColumnView') ? Em.I18n.t('common.reinstall') : Em.I18n.t('admin.stackVersions.version.reinstall'),
             action: 'installRepoVersionConfirmation',
             isDisabled: isDisabled
           });
@@ -217,7 +221,8 @@ App.UpgradeVersionBoxView = Em.View.extend({
     }
     else if (isAborted) {
       element.setProperties(statePropertiesMap['SUSPENDED']);
-      element.set('text', this.get('controller.isDowngrade') ? Em.I18n.t('admin.stackUpgrade.dialog.resume.downgrade') : Em.I18n.t('admin.stackUpgrade.dialog.resume'));
+      var text = this.get('controller.isDowngrade') ? Em.I18n.t('admin.stackUpgrade.dialog.resume.downgrade') : Em.I18n.t('admin.stackUpgrade.dialog.resume');
+      element.set('text', this.get('isVersionColumnView') ? Em.I18n.t('common.resume'): text);
       element.set('isDisabled', this.get('controller.requestInProgress'));
     }
     return element;
@@ -242,6 +247,10 @@ App.UpgradeVersionBoxView = Em.View.extend({
       }
     }, 1000);
   },
+
+  isPatch: function() {
+    return this.get('content.type') == "PATCH";
+  }.property('content.type'),
 
   /**
    * run custom action of controller
@@ -274,7 +283,7 @@ App.UpgradeVersionBoxView = Em.View.extend({
 
     return stackVersion; 
   },
-  
+
   /**
    * show popup with repositories to edit
    * @return {App.ModalPopup}
@@ -388,6 +397,9 @@ App.UpgradeVersionBoxView = Em.View.extend({
         secondary: Em.I18n.t('common.close'),
         onPrimary: function () {
           this.hide();
+          if ($('.version-box-popup .modal')) {
+            $('.version-box-popup .modal .modal-footer .btn-success').click();
+          }
           self.filterHostsByStack(displayName, status.id);
         }
       });

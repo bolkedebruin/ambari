@@ -31,12 +31,12 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
-import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.configuration.Configuration.DatabaseType;
 import org.apache.ambari.server.orm.helpers.ScriptRunner;
 import org.apache.ambari.server.orm.helpers.dbms.DbmsHelper;
 import org.apache.ambari.server.orm.helpers.dbms.DerbyHelper;
@@ -45,6 +45,7 @@ import org.apache.ambari.server.orm.helpers.dbms.MySqlHelper;
 import org.apache.ambari.server.orm.helpers.dbms.OracleHelper;
 import org.apache.ambari.server.orm.helpers.dbms.PostgresHelper;
 import org.apache.ambari.server.utils.CustomStringUtils;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.persistence.internal.helper.DBPlatformHelper;
 import org.eclipse.persistence.internal.sessions.DatabaseSessionImpl;
@@ -146,12 +147,19 @@ public class DBAccessorImpl implements DBAccessor {
 
   @Override
   public void createTable(String tableName, List<DBColumnInfo> columnInfo,
-          String... primaryKeyColumns) throws SQLException {
-    if (!tableExists(tableName)) {
-      String query = dbmsHelper.getCreateTableStatement(tableName, columnInfo, Arrays.asList(primaryKeyColumns));
-
-      executeQuery(query);
+      String... primaryKeyColumns) throws SQLException {
+    // do nothing if the table already exists
+    if (tableExists(tableName)) {
+      return;
     }
+
+    // guard against null PKs
+    primaryKeyColumns = ArrayUtils.nullToEmpty(primaryKeyColumns);
+
+    String query = dbmsHelper.getCreateTableStatement(tableName, columnInfo,
+        Arrays.asList(primaryKeyColumns));
+
+    executeQuery(query);
   }
 
   protected DatabaseMetaData getDatabaseMetaData() throws SQLException {
@@ -648,6 +656,51 @@ public class DBAccessorImpl implements DBAccessor {
   }
 
   @Override
+  public boolean insertRowIfMissing(String tableName, String[] columnNames, String[] values, boolean ignoreFailure) throws SQLException {
+    if (columnNames.length == 0) {
+      return false;
+    }
+
+    if (columnNames.length != values.length) {
+      throw new IllegalArgumentException("number of columns should be equal to number of values");
+    }
+
+    StringBuilder builder = new StringBuilder();
+    builder.append("SELECT COUNT(*) FROM ").append(tableName);
+
+    builder.append(" WHERE ").append(columnNames[0]).append("=").append(values[0]);
+    for (int i = 1; i < columnNames.length; i++) {
+      builder.append(" AND ").append(columnNames[i]).append("=").append(values[i]);
+    }
+
+    Statement statement = getConnection().createStatement();
+    ResultSet resultSet = null;
+    int count = -1;
+    String query = builder.toString();
+    try {
+      resultSet = statement.executeQuery(query);
+
+      if ((resultSet != null) && (resultSet.next())) {
+        count = resultSet.getInt(1);
+      }
+    } catch (SQLException e) {
+      LOG.warn("Unable to execute query: " + query, e);
+      if (!ignoreFailure) {
+        throw e;
+      }
+    } finally {
+      if (resultSet != null) {
+        resultSet.close();
+      }
+      if (statement != null) {
+        statement.close();
+      }
+    }
+
+    return (count == 0) && insertRow(tableName, columnNames, values, ignoreFailure);
+  }
+
+  @Override
   public int updateTable(String tableName, String columnName, Object value,
           String whereClause) throws SQLException {
 
@@ -772,6 +825,14 @@ public class DBAccessorImpl implements DBAccessor {
     if (checkedConstraintName != null) {
       String query = dbmsHelper.getDropFKConstraintStatement(tableName, checkedConstraintName);
       executeQuery(query, ignoreFailure);
+
+      // MySQL also adds indexes in addition to the FK which should be dropped
+      Configuration.DatabaseType databaseType = configuration.getDatabaseType();
+      if (databaseType == DatabaseType.MYSQL) {
+        query = dbmsHelper.getDropIndexStatement(constraintName, tableName);
+        executeQuery(query, true);
+      }
+
     } else {
       LOG.warn("Constraint {} from {} table not found, nothing to drop", constraintName, tableName);
     }
@@ -1022,9 +1083,9 @@ public class DBAccessorImpl implements DBAccessor {
 
     switch (databaseType) {
       case ORACLE: {
-        String lookupPrimaryKeyNameSql = MessageFormat.format(
-            "SELECT constraint_name FROM all_constraints WHERE table_name = ''{0}'' AND constraint_type = ''P''",
-            tableName.toUpperCase());
+        String lookupPrimaryKeyNameSql = String.format(
+            "SELECT constraint_name FROM all_constraints WHERE UPPER(table_name) = UPPER('%s') AND constraint_type = 'P'",
+            tableName);
 
         try {
           statement = getConnection().createStatement();
@@ -1040,8 +1101,8 @@ public class DBAccessorImpl implements DBAccessor {
         break;
       }
       case SQL_SERVER: {
-        String lookupPrimaryKeyNameSql = MessageFormat.format(
-            "SELECT constraint_name FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE OBJECTPROPERTY(OBJECT_ID(constraint_name), 'IsPrimaryKey') = 1 AND table_name = {0}",
+        String lookupPrimaryKeyNameSql = String.format(
+            "SELECT constraint_name FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE OBJECTPROPERTY(OBJECT_ID(constraint_name), 'IsPrimaryKey') = 1 AND table_name = '%s'",
             tableName);
 
         try {
@@ -1055,6 +1116,25 @@ public class DBAccessorImpl implements DBAccessor {
           JdbcUtils.closeStatement(statement);
         }
 
+        break;
+      }
+      case POSTGRES: {
+        String lookupPrimaryKeyNameSql = String.format(
+            "SELECT constraint_name FROM information_schema.table_constraints AS tc WHERE tc.constraint_type = 'PRIMARY KEY' AND table_name = '%s'",
+            tableName);
+
+        try {
+          statement = getConnection().createStatement();
+          resultSet = statement.executeQuery(lookupPrimaryKeyNameSql);
+          if (resultSet.next()) {
+            primaryKeyConstraintName = resultSet.getString("constraint_name");
+          }
+        } finally {
+          JdbcUtils.closeResultSet(resultSet);
+          JdbcUtils.closeStatement(statement);
+        }
+
+        break;
       }
       default:
         break;
@@ -1063,4 +1143,33 @@ public class DBAccessorImpl implements DBAccessor {
     return primaryKeyConstraintName;
   }
 
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public void dropPKConstraint(String tableName, String defaultConstraintName) throws SQLException {
+    Configuration.DatabaseType databaseType = configuration.getDatabaseType();
+
+    // drop the PK directly if MySQL since it supports it
+    if (databaseType == DatabaseType.MYSQL) {
+      String mysqlDropQuery = String.format("ALTER TABLE %s DROP PRIMARY KEY", tableName);
+      executeQuery(mysqlDropQuery, true);
+      return;
+    }
+
+    // discover the PK name, using the default if none found
+    String primaryKeyConstraintName = getPrimaryKeyConstraintName(tableName);
+    if (null == primaryKeyConstraintName) {
+      primaryKeyConstraintName = defaultConstraintName;
+      LOG.warn("Unable to dynamically determine the PK constraint name for {}, defaulting to {}",
+          tableName, defaultConstraintName);
+    }
+
+    // warn if we can't find it
+    if (null == primaryKeyConstraintName) {
+      LOG.warn("Unable to determine the primary key constraint name for {}", tableName);
+    } else {
+      dropPKConstraint(tableName, primaryKeyConstraintName, true);
+    }
+  }
 }

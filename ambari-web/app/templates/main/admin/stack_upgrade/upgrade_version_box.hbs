@@ -27,6 +27,14 @@
   </a>
 </p>
 <p class="repository-name">({{view.content.repositoryVersion}})</p>
+
+<p class="patch-icon">
+  {{#if view.isPatch}}
+    <i class="icon-umbrella"></i>&nbsp;{{t common.patch}}
+  {{/if}}
+</p>
+
+
 <div {{bindAttr class="view.stateElement.isInstalling:installing :align-center :state"}}>
   {{#if view.stateElement.isButton}}
     <button class="btn btn-primary"

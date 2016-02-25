@@ -1820,7 +1820,7 @@ class TestHDP206StackAdvisor(TestCase):
     )
     recommendedDefaults = {"property1": "file:///grid/0/var/dir"}
     warn = self.stackAdvisor.validatorNotRootFs(properties, recommendedDefaults, 'property1', hostInfo)
-    self.assertFalse(warn == None)
+    self.assertTrue(warn != None)
     self.assertEquals({'message': 'It is not recommended to use root partition for property1', 'level': 'WARN'}, warn)
 
     # Set by user /var mountpoint, which is non-root , but not preferable - no warning

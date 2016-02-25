@@ -61,12 +61,14 @@ import org.apache.ambari.server.state.OperatingSystemInfo;
 import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
+import org.apache.ambari.server.state.repository.VersionDefinitionXml;
 import org.apache.ambari.server.state.stack.UpgradePack;
 import org.apache.ambari.server.state.stack.upgrade.RepositoryVersionHelper;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -78,7 +80,7 @@ import com.google.inject.persist.Transactional;
 public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourceProvider {
 
   // ----- Property ID constants ---------------------------------------------
-
+  public static final String REPOSITORY_VERSION                                = "RepositoryVersions";
   public static final String REPOSITORY_VERSION_ID_PROPERTY_ID                 = PropertyHelper.getPropertyId("RepositoryVersions", "id");
   public static final String REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID         = PropertyHelper.getPropertyId("RepositoryVersions", "stack_name");
   public static final String REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID      = PropertyHelper.getPropertyId("RepositoryVersions", "stack_version");
@@ -86,6 +88,16 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
   public static final String REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID       = PropertyHelper.getPropertyId("RepositoryVersions", "display_name");
   public static final String SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID         = new OperatingSystemResourceDefinition().getPluralName();
   public static final String SUBRESOURCE_REPOSITORIES_PROPERTY_ID              = new RepositoryResourceDefinition().getPluralName();
+
+  public static final String REPOSITORY_VERSION_TYPE_PROPERTY_ID               = "RepositoryVersions/type";
+  public static final String REPOSITORY_VERSION_RELEASE_VERSION                = "RepositoryVersions/release/version";
+  public static final String REPOSITORY_VERSION_RELEASE_BUILD                  = "RepositoryVersions/release/build";
+  public static final String REPOSITORY_VERSION_RELEASE_NOTES                  = "RepositoryVersions/release/notes";
+  public static final String REPOSITORY_VERSION_RELEASE_COMPATIBLE_WITH        = "RepositoryVersions/release/compatible_with";
+  public static final String REPOSITORY_VERSION_AVAILABLE_SERVICES             = "RepositoryVersions/services";
+
+  public static final String REPOSITORY_VERSION_PARENT_ID                      = "RepositoryVersions/parent_id";
+  public static final String REPOSITORY_VERSION_HAS_CHILDREN                   = "RepositoryVersions/has_children";
 
   @SuppressWarnings("serial")
   private static Set<String> pkPropertyIds = new HashSet<String>() {
@@ -95,16 +107,21 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
   };
 
   @SuppressWarnings("serial")
-  public static Set<String> propertyIds = new HashSet<String>() {
-    {
-      add(REPOSITORY_VERSION_ID_PROPERTY_ID);
-      add(REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID);
-      add(REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID);
-      add(REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID);
-      add(REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID);
-      add(SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID);
-    }
-  };
+  public static Set<String> propertyIds = Sets.newHashSet(
+      REPOSITORY_VERSION_ID_PROPERTY_ID,
+      REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID,
+      REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID,
+      REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID,
+      REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID,
+      SUBRESOURCE_OPERATING_SYSTEMS_PROPERTY_ID,
+      REPOSITORY_VERSION_TYPE_PROPERTY_ID,
+      REPOSITORY_VERSION_RELEASE_BUILD,
+      REPOSITORY_VERSION_RELEASE_COMPATIBLE_WITH,
+      REPOSITORY_VERSION_RELEASE_NOTES,
+      REPOSITORY_VERSION_RELEASE_VERSION,
+      REPOSITORY_VERSION_PARENT_ID,
+      REPOSITORY_VERSION_HAS_CHILDREN,
+      REPOSITORY_VERSION_AVAILABLE_SERVICES);
 
   @SuppressWarnings("serial")
   public static Map<Type, String> keyPropertyIds = new HashMap<Type, String>() {
@@ -145,6 +162,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
    */
   public RepositoryVersionResourceProvider() {
     super(propertyIds, keyPropertyIds);
+
     setRequiredCreateAuthorizations(EnumSet.of(RoleAuthorization.AMBARI_MANAGE_STACK_VERSIONS));
     setRequiredDeleteAuthorizations(EnumSet.of(RoleAuthorization.AMBARI_MANAGE_STACK_VERSIONS));
     setRequiredUpdateAuthorizations(EnumSet.of(RoleAuthorization.AMBARI_MANAGE_STACK_VERSIONS, RoleAuthorization.AMBARI_EDIT_STACK_REPOS));
@@ -175,12 +193,14 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
             REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID,
             REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID
           };
+
           for (String propertyName : requiredProperties) {
             if (properties.get(propertyName) == null) {
               throw new AmbariException("Property " + propertyName + " should be provided");
             }
           }
-          final RepositoryVersionEntity entity = toRepositoryVersionEntity(properties);
+
+          RepositoryVersionEntity entity = toRepositoryVersionEntity(properties);
 
           if (repositoryVersionDAO.findByDisplayName(entity.getDisplayName()) != null) {
             throw new AmbariException("Repository version with name " + entity.getDisplayName() + " already exists");
@@ -188,7 +208,13 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
           if (repositoryVersionDAO.findByStackAndVersion(entity.getStack(), entity.getVersion()) != null) {
             throw new AmbariException("Repository version for stack " + entity.getStack() + " and version " + entity.getVersion() + " already exists");
           }
-          validateRepositoryVersion(entity);
+
+          if (!upgradePackExists(entity.getVersion())) {
+            throw new AmbariException("Stack " + entity.getStackId() + " doesn't have upgrade packages");
+          }
+
+          validateRepositoryVersion(repositoryVersionDAO, ambariMetaInfo, entity);
+
           repositoryVersionDAO.create(entity);
           notifyCreate(Resource.Type.RepositoryVersion, request);
           return null;
@@ -206,6 +232,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
     final Set<String> requestedIds = getRequestPropertyIds(request, predicate);
     final Set<Map<String, Object>> propertyMaps = getPropertyMaps(predicate);
 
+
     List<RepositoryVersionEntity> requestedEntities = new ArrayList<RepositoryVersionEntity>();
     for (Map<String, Object> propertyMap: propertyMaps) {
       final StackId stackId = getStackInformationFromUrl(propertyMap);
@@ -220,6 +247,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
           throw new SystemException("Repository version should have numerical id");
         }
         final RepositoryVersionEntity entity = repositoryVersionDAO.findByPK(id);
+
         if (entity == null) {
           throw new NoSuchResourceException("There is no repository version with id " + id);
         } else {
@@ -236,6 +264,38 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
       setResourceProperty(resource, REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID, entity.getStackVersion(), requestedIds);
       setResourceProperty(resource, REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID, entity.getDisplayName(), requestedIds);
       setResourceProperty(resource, REPOSITORY_VERSION_REPOSITORY_VERSION_PROPERTY_ID, entity.getVersion(), requestedIds);
+      setResourceProperty(resource, REPOSITORY_VERSION_TYPE_PROPERTY_ID, entity.getType(), requestedIds);
+
+      setResourceProperty(resource, REPOSITORY_VERSION_PARENT_ID, entity.getParentId(), requestedIds);
+
+      List<RepositoryVersionEntity> children = entity.getChildren();
+      setResourceProperty(resource, REPOSITORY_VERSION_HAS_CHILDREN,
+          null != children && !children.isEmpty(), requestedIds);
+
+      final VersionDefinitionXml xml;
+
+      try {
+        xml = entity.getRepositoryXml();
+      } catch (Exception e) {
+        throw new SystemException(String.format("Could not load xml for Repository %s", entity.getId()), e);
+      }
+
+      if (null != xml) {
+        final StackInfo stack;
+
+        try {
+          stack = ambariMetaInfo.getStack(entity.getStackName(), entity.getStackVersion());
+        } catch (AmbariException e) {
+          throw new SystemException(String.format("Could not load stack %s for Repository %s",
+              entity.getStackId().toString(), entity.getId()));
+        }
+
+        setResourceProperty(resource, REPOSITORY_VERSION_RELEASE_VERSION, xml.release.version, requestedIds);
+        setResourceProperty(resource, REPOSITORY_VERSION_RELEASE_BUILD, xml.release.build, requestedIds);
+        setResourceProperty(resource, REPOSITORY_VERSION_RELEASE_COMPATIBLE_WITH, xml.release.compatibleWith, requestedIds);
+        setResourceProperty(resource, REPOSITORY_VERSION_RELEASE_NOTES, xml.release.releaseNotes, requestedIds);
+        setResourceProperty(resource, REPOSITORY_VERSION_AVAILABLE_SERVICES, xml.getAvailableServices(stack), requestedIds);
+      }
 
       resources.add(resource);
     }
@@ -285,7 +345,12 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
             entity.setDisplayName(propertyMap.get(REPOSITORY_VERSION_DISPLAY_NAME_PROPERTY_ID).toString());
           }
 
-          validateRepositoryVersion(entity);
+          if (!upgradePackExists(entity.getVersion())) {
+            throw new AmbariException("Stack " + entity.getStackId() + " doesn't have upgrade packages");
+          }
+
+          validateRepositoryVersion(repositoryVersionDAO, ambariMetaInfo, entity);
+
           repositoryVersionDAO.merge(entity);
 
           //
@@ -338,9 +403,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
       final List<RepositoryVersionState> forbiddenToDeleteStates = Lists.newArrayList(
           RepositoryVersionState.CURRENT,
           RepositoryVersionState.INSTALLED,
-          RepositoryVersionState.INSTALLING,
-          RepositoryVersionState.UPGRADED,
-          RepositoryVersionState.UPGRADING);
+          RepositoryVersionState.INSTALLING);
       for (ClusterVersionEntity clusterVersionEntity : clusterVersionEntities) {
         if (clusterVersionEntity.getRepositoryVersion().getId().equals(id) && forbiddenToDeleteStates.contains(clusterVersionEntity.getState())) {
           throw new SystemException("Repository version can't be deleted as it is " +
@@ -369,20 +432,17 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
    * @param repositoryVersion repository version
    * @throws AmbariException exception with error message
    */
-  protected void validateRepositoryVersion(RepositoryVersionEntity repositoryVersion) throws AmbariException {
+  protected static void validateRepositoryVersion(RepositoryVersionDAO dao,
+      AmbariMetaInfo metaInfo, RepositoryVersionEntity repositoryVersion) throws AmbariException {
     final StackId requiredStack = new StackId(repositoryVersion.getStack());
 
     final String requiredStackName = requiredStack.getStackName();
     final String requiredStackVersion = requiredStack.getStackVersion();
     final String requiredStackId = requiredStack.getStackId();
 
-    if (!upgradePackExists(repositoryVersion.getVersion())) {
-      throw new AmbariException("Stack " + requiredStackId + " doesn't have upgrade packages");
-    }
-
     // List of all repo urls that are already added at stack
     Set<String> existingRepoUrls = new HashSet<String>();
-    List<RepositoryVersionEntity> existingRepoVersions = repositoryVersionDAO.findByStack(requiredStack);
+    List<RepositoryVersionEntity> existingRepoVersions = dao.findByStack(requiredStack);
     for (RepositoryVersionEntity existingRepoVersion : existingRepoVersions) {
       for (OperatingSystemEntity operatingSystemEntity : existingRepoVersion.getOperatingSystems()) {
         for (RepositoryEntity repositoryEntity : operatingSystemEntity.getRepositories()) {
@@ -396,9 +456,10 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
 
     // check that repositories contain only supported operating systems
     final Set<String> osSupported = new HashSet<String>();
-    for (OperatingSystemInfo osInfo: ambariMetaInfo.getOperatingSystems(requiredStackName, requiredStackVersion)) {
+    for (OperatingSystemInfo osInfo: metaInfo.getOperatingSystems(requiredStackName, requiredStackVersion)) {
       osSupported.add(osInfo.getOsType());
     }
+
     final Set<String> osRepositoryVersion = new HashSet<String>();
     for (OperatingSystemEntity os: repositoryVersion.getOperatingSystems()) {
       osRepositoryVersion.add(os.getOsType());
@@ -435,7 +496,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
     Collection<StackInfo> stacks = new ArrayList<StackInfo>();
 
     // Search results only in the installed stacks
-    for (Cluster cluster:clusters.get().getClusters().values()){
+    for (Cluster cluster : clusters.get().getClusters().values()){
       stacks.add(ambariMetaInfo.getStack(cluster.getCurrentStackVersion().getStackName(),
                                           cluster.getCurrentStackVersion().getStackVersion()));
     }
@@ -464,6 +525,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
    */
   protected RepositoryVersionEntity toRepositoryVersionEntity(Map<String, Object> properties) throws AmbariException {
     final RepositoryVersionEntity entity = new RepositoryVersionEntity();
+
     final String stackName = properties.get(REPOSITORY_VERSION_STACK_NAME_PROPERTY_ID).toString();
     final String stackVersion = properties.get(REPOSITORY_VERSION_STACK_VERSION_PROPERTY_ID).toString();
 
@@ -481,6 +543,7 @@ public class RepositoryVersionResourceProvider extends AbstractAuthorizedResourc
       throw new AmbariException("Json structure for operating systems is incorrect", ex);
     }
     entity.setOperatingSystems(operatingSystemsJson);
+
     return entity;
   }
 

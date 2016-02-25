@@ -18,6 +18,8 @@
 
 package org.apache.ambari.server.upgrade;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import org.apache.ambari.server.AmbariException;
@@ -28,11 +30,15 @@ import org.apache.ambari.server.orm.entities.AlertDefinitionEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.ServiceComponentHost;
+import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.utils.VersionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -49,6 +55,16 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
    */
   private static final Logger LOG = LoggerFactory.getLogger(UpgradeCatalog222.class);
   private static final String AMS_SITE = "ams-site";
+  private static final String HIVE_SITE_CONFIG = "hive-site";
+  private static final String ATLAS_APPLICATION_PROPERTIES_CONFIG = "application-properties";
+  private static final String ATLAS_HOOK_HIVE_MINTHREADS_PROPERTY = "atlas.hook.hive.minThreads";
+  private static final String ATLAS_HOOK_HIVE_MAXTHREADS_PROPERTY = "atlas.hook.hive.maxThreads";
+  private static final String ATLAS_CLUSTER_NAME_PROPERTY = "atlas.cluster.name";
+  private static final String ATLAS_ENABLETLS_PROPERTY = "atlas.enableTLS";
+  private static final String ATLAS_SERVER_HTTP_PORT_PROPERTY = "atlas.server.http.port";
+  private static final String ATLAS_SERVER_HTTPS_PORT_PROPERTY = "atlas.server.https.port";
+  private static final String ATLAS_REST_ADDRESS_PROPERTY = "atlas.rest.address";
+
   private static final String HOST_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER =
     "timeline.metrics.host.aggregator.daily.checkpointCutOffMultiplier";
   private static final String CLUSTER_AGGREGATOR_DAILY_CHECKPOINTCUTOFFMULTIPIER =
@@ -115,6 +131,8 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
     updateAlerts();
     updateStormConfigs();
     updateAMSConfigs();
+    updateHiveConfig();
+    updateHostRoleCommands();
   }
 
   protected void updateStormConfigs() throws  AmbariException {
@@ -144,13 +162,34 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
       final AlertDefinitionEntity regionserverHealthSummaryDefinitionEntity = alertDefinitionDAO.findByName(
               clusterID, "regionservers_health_summary");
 
+      final AlertDefinitionEntity atsWebAlert = alertDefinitionDAO.findByName(
+              clusterID, "yarn_app_timeline_server_webui");
+
       if (regionserverHealthSummaryDefinitionEntity != null) {
         alertDefinitionDAO.remove(regionserverHealthSummaryDefinitionEntity);
+      }
+
+      if (atsWebAlert != null) {
+        String source = atsWebAlert.getSource();
+        JsonObject sourceJson = new JsonParser().parse(source).getAsJsonObject();
+
+        JsonObject uriJson = sourceJson.get("uri").getAsJsonObject();
+        uriJson.remove("http");
+        uriJson.remove("https");
+        uriJson.addProperty("http", "{{yarn-site/yarn.timeline-service.webapp.address}}/ws/v1/timeline");
+        uriJson.addProperty("https", "{{yarn-site/yarn.timeline-service.webapp.https.address}}/ws/v1/timeline");
+
+        atsWebAlert.setSource(sourceJson.toString());
+        alertDefinitionDAO.merge(atsWebAlert);
       }
 
     }
 
 
+  }
+
+  protected void updateHostRoleCommands() throws SQLException{
+    dbAccessor.createIndex("idx_hrc_status", "host_role_command", "status", "role");
   }
 
   protected void updateAMSConfigs() throws AmbariException {
@@ -279,6 +318,41 @@ public class UpgradeCatalog222 extends AbstractUpgradeCatalog {
       }
     }
   }
+
+  protected void updateHiveConfig() throws AmbariException {
+    AmbariManagementController ambariManagementController = injector.getInstance(AmbariManagementController.class);
+    for (final Cluster cluster : getCheckedClusterMap(ambariManagementController.getClusters()).values()) {
+      Config hiveSiteConfig = cluster.getDesiredConfigByType(HIVE_SITE_CONFIG);
+      Config atlasConfig = cluster.getDesiredConfigByType(ATLAS_APPLICATION_PROPERTIES_CONFIG);
+
+      StackId stackId = cluster.getCurrentStackVersion();
+      boolean isStackNotLess23 = (stackId != null && stackId.getStackName().equals("HDP") &&
+        VersionUtils.compareVersions(stackId.getStackVersion(), "2.3") >= 0);
+
+      List<ServiceComponentHost> atlasHost = cluster.getServiceComponentHosts("ATLAS", "ATLAS_SERVER");
+      Map<String, String> updates = new HashMap<String, String>();
+
+      if (isStackNotLess23 && atlasHost.size() != 0 && hiveSiteConfig != null) {
+
+        updates.put(ATLAS_HOOK_HIVE_MINTHREADS_PROPERTY, "1");
+        updates.put(ATLAS_HOOK_HIVE_MAXTHREADS_PROPERTY, "1");
+        updates.put(ATLAS_CLUSTER_NAME_PROPERTY, "primary");
+
+        if (atlasConfig != null && atlasConfig.getProperties().containsKey(ATLAS_ENABLETLS_PROPERTY)) {
+          String atlasEnableTLSProperty = atlasConfig.getProperties().get(ATLAS_ENABLETLS_PROPERTY);
+          String atlasScheme = "http";
+          String atlasServerHttpPortProperty = atlasConfig.getProperties().get(ATLAS_SERVER_HTTP_PORT_PROPERTY);
+          if (atlasEnableTLSProperty.toLowerCase().equals("true")) {
+            atlasServerHttpPortProperty = atlasConfig.getProperties().get(ATLAS_SERVER_HTTPS_PORT_PROPERTY);
+            atlasScheme = "https";
+          }
+          updates.put(ATLAS_REST_ADDRESS_PROPERTY, String.format("%s://%s:%s", atlasScheme, atlasHost.get(0).getHostName(), atlasServerHttpPortProperty));
+        }
+        updateConfigurationPropertiesForCluster(cluster, HIVE_SITE_CONFIG, updates, false, false);
+      }
+    }
+  }
+
 
   private String convertToDaysIfInSeconds(String secondsString) {
 

@@ -58,6 +58,13 @@ class TestHDP23StackAdvisor(TestCase):
       data = json.load(f)
     return data
 
+  def prepareHosts(self, hostsNames):
+    hosts = { "items": [] }
+    for hostName in hostsNames:
+      nextHost = {"Hosts":{"host_name" : hostName}}
+      hosts["items"].append(nextHost)
+    return hosts
+
   @patch('__builtin__.open')
   @patch('os.path.exists')
   def get_system_min_uid_magic(self, exists_mock, open_mock):
@@ -168,15 +175,105 @@ class TestHDP23StackAdvisor(TestCase):
   def test_hawqsegmentDatanode(self):
     """ Test that HAWQSegment gets recommended on same host group which has DATANODE"""
 
-    services = self.load_json("services-hawq-pxf-hdfs.json")
-    hosts = self.load_json("hosts-3-hosts.json")
-    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    # Case 1: HDFS is already installed, HAWQ is being added during Add Service Wizard
+    services =  {
+                  "services" : [
+                    {
+                      "StackServices" : {
+                        "service_name" : "HDFS"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "DATANODE",
+                            "hostnames" : [ "c6401.ambari.apache.org" ]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "StackServices" : {
+                        "service_name" : "HAWQ"
+                      },
+                      "components" : [
+                        {
+                          "StackServiceComponents" : {
+                            "cardinality" : "1+",
+                            "component_category" : "SLAVE",
+                            "component_name" : "HAWQSEGMENT",
+                            "hostnames" : [ ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
 
+    # Cluster has 2 hosts
+    hosts = self.prepareHosts(["c6401.ambari.apache.org", "c6402.ambari.apache.org"])
+
+    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    """
+    Recommendations is as below:
+                                  {
+                                    'blueprint':{
+                                      'host_groups':[
+                                        {
+                                          'name':'host-group-1',
+                                          'components':[ ]
+                                        },
+                                        {
+                                          'name':'host-group-2',
+                                          'components':[
+                                            {
+                                              'name':'DATANODE'
+                                            },
+                                            {
+                                              'name':'HAWQSEGMENT'
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                      'blueprint_cluster_binding':{
+                                        'host_groups':[
+                                          {
+                                            'hosts':[
+                                              {
+                                                'fqdn':'c6402.ambari.apache.org'
+                                              }
+                                            ],
+                                            'name':'host-group-1'
+                                          },
+                                          {
+                                            'hosts':[
+                                              {
+                                                'fqdn':'c6401.ambari.apache.org'
+                                              }
+                                            ],
+                                            'name':'host-group-2'
+                                          }
+                                        ]
+                                      }
+                                    }
+    """
     for hostgroup in recommendations["blueprint"]["host_groups"]:
       component_names = [component["name"] for component in hostgroup["components"]]
       if 'DATANODE' in component_names:
         self.assertTrue('HAWQSEGMENT' in component_names)
+      if 'DATANODE' not in component_names:
+        self.assertTrue('HAWQSEGMENT' not in component_names)
 
+    # Case 2: HDFS and HAWQ are being installed on a fresh cluster, HAWQSEGMENT and DATANODE must be recommended on all the host groups
+    # Update HDFS hostnames to empty list
+    services["services"][0]["components"][0]["StackServiceComponents"]["hostnames"] = []
+    recommendations = self.stackAdvisor.createComponentLayoutRecommendations(services, hosts)
+    for hostgroup in recommendations["blueprint"]["host_groups"]:
+      component_names = [component["name"] for component in hostgroup["components"]]
+      self.assertTrue('HAWQSEGMENT' in component_names)
+      self.assertTrue('DATANODE' in component_names)
 
   def fqdn_mock_result(value=None):
       return 'c6401.ambari.apache.org' if value is None else value
@@ -1630,6 +1727,7 @@ class TestHDP23StackAdvisor(TestCase):
   def test_validateHAWQConfigurations(self):
     services = self.load_json("services-hawq-3-hosts.json")
     # setup default configuration values
+    # Test hawq_rm_yarn_address and hawq_rm_scheduler_address are set correctly
     configurations = services["configurations"]
     configurations["hawq-site"] = {"properties": {"hawq_rm_yarn_address": "localhost:8032",
                                                   "hawq_rm_yarn_scheduler_address": "localhost:8030"}}
@@ -1664,3 +1762,48 @@ class TestHDP23StackAdvisor(TestCase):
     self.assertEqual(len(problems), 2)
     self.assertEqual(problems_dict, expected_warnings)
 
+    # Test hawq_global_rm_type validation
+    services = {
+                 "services" : [
+                   {
+                     "StackServices" : {
+                     "service_name" : "HAWQ"
+                     },
+                     "components": []
+                   } ],
+                 "configurations":
+                   {
+                     "hawq-site": {
+                       "properties": {
+                         "hawq_global_rm_type": "yarn"
+                       }
+                     }
+                   }
+                }
+    properties = services["configurations"]["hawq-site"]["properties"]
+
+    # case 1: hawq_global_rm_type is set as yarn, but YARN service is not installed. Validation error expected.
+    """
+    Validation error expected is as below:
+                    [ {
+                          "config-type": "hawq-site",
+                          "message": "hawq_global_rm_type must be set to none if YARN service is not installed",
+                          "type": "configuration",
+                          "config-name": "hawq_global_rm_type",
+                          "level": "ERROR"
+                    } ]
+    """
+    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, services["configurations"], services, hosts)
+    self.assertEqual(len(problems), 1)
+    self.assertEqual(problems[0]["config-type"], "hawq-site")
+    self.assertEqual(problems[0]["message"], "hawq_global_rm_type must be set to none if YARN service is not installed")
+    self.assertEqual(problems[0]["type"], "configuration")
+    self.assertEqual(problems[0]["config-name"], "hawq_global_rm_type")
+    self.assertEqual(problems[0]["level"], "ERROR")
+
+
+    # case 2: hawq_global_rm_type is set as yarn, and YARN service is installed. No validation errors expected.
+    services["services"].append({"StackServices" : {"service_name" : "YARN"}, "components":[]})
+
+    problems = self.stackAdvisor.validateHAWQConfigurations(properties, defaults, services["configurations"], services, hosts)
+    self.assertEqual(len(problems), 0)

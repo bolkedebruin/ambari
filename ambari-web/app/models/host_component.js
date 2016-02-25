@@ -22,6 +22,7 @@ App.HostComponent = DS.Model.extend({
   workStatus: DS.attr('string'),
   passiveState: DS.attr('string'),
   componentName: DS.attr('string'),
+  displayName: DS.attr('string'),
   haStatus: DS.attr('string'),
   displayNameAdvanced: DS.attr('string'),
   staleConfigs: DS.attr('boolean'),
@@ -58,12 +59,6 @@ App.HostComponent = DS.Model.extend({
    * @type {boolean}
    */
   isNotInstalled: Em.computed.existsIn('workStatus', ['INIT', 'INSTALL_FAILED']),
-
-  /**
-   * Formatted <code>componentName</code>
-   * @returns {String}
-   */
-  displayName: Em.computed.formatRole('componentName'),
 
   /**
    * Determine if component is master
@@ -127,6 +122,18 @@ App.HostComponent = DS.Model.extend({
   isHDPComponent: function () {
     return !App.get('components.nonHDP').contains(this.get('componentName'));
   }.property('componentName', 'App.components.nonHDP'),
+
+  /**
+   * Does component have Critical Alerts
+   * @type {boolean}
+   */
+  hasCriticalAlerts: false,
+
+  /**
+   * Number of the Critical and Warning alerts for current component
+   * @type {number}
+   */
+  alertsCount: 0,
 
   statusClass: function () {
     return this.get('isActive') ? this.get('workStatus') : 'icon-medkit';
@@ -271,6 +278,7 @@ App.HostComponentActionMap = {
     var RA = ctx.get('controller.content.hostComponents').findProperty('componentName', 'RANGER_ADMIN');
     var HM = ctx.get('controller.content.hostComponents').findProperty('componentName', 'HAWQMASTER');
     var HS = ctx.get('controller.content.hostComponents').findProperty('componentName', 'HAWQSTANDBY');
+    var HMComponent = App.MasterComponent.find('HAWQMASTER');
     return {
       RESTART_ALL: {
         action: 'restartAllHostComponents',
@@ -337,6 +345,7 @@ App.HostComponentActionMap = {
       MOVE_COMPONENT: {
         action: 'reassignMaster',
         context: '',
+        isHidden: !App.isAuthorized('SERVICE.MOVE'),
         label: Em.I18n.t('services.service.actions.reassign.master'),
         cssClass: 'icon-share-alt'
       },
@@ -373,31 +382,34 @@ App.HostComponentActionMap = {
         hasSubmenu: ctx.get('controller.isSeveralClients'),
         submenuOptions: ctx.get('controller.clientComponents')
       },
-      IMMEDIATE_STOP_CLUSTER: {
-        action: 'immediateStopHawqCluster',
-        customCommand: 'IMMEDIATE_STOP_CLUSTER',
-        context: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
-        label: Em.I18n.t('services.service.actions.run.immediateStopHawqCluster.context'),
-        cssClass: 'icon-stop',
-        disabled: !HM || HM.get('workStatus') != App.HostComponentStatus.started
-      },
-      IMMEDIATE_STOP: {
-        customCommand: 'IMMEDIATE_STOP',
-        context: Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.context'),
-        label: Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.label'),
-        cssClass: 'icon-stop'
-      },
-      MASTER_CUSTOM_COMMAND: {
-        action: 'executeCustomCommand',
-        cssClass: 'icon-play-circle',
-        isHidden: false,
-        disabled: false
-      },
       DELETE_SERVICE: {
         action: 'deleteService',
         context: ctx.get('serviceName'),
         label: Em.I18n.t('common.delete'),
         cssClass: 'icon-remove'
+      },
+      IMMEDIATE_STOP_HAWQ_SERVICE: {
+        action: 'executeHawqCustomCommand',
+        customCommand: 'IMMEDIATE_STOP_HAWQ_SERVICE',
+        context: Em.I18n.t('services.service.actions.run.immediateStopHawqService.context'),
+        label: Em.I18n.t('services.service.actions.run.immediateStopHawqService.label'),
+        cssClass: 'icon-stop',
+        disabled: !HM || HM.get('workStatus') != App.HostComponentStatus.started
+      },
+      IMMEDIATE_STOP_HAWQ_SEGMENT: {
+        customCommand: 'IMMEDIATE_STOP_HAWQ_SEGMENT',
+        context: Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.context'),
+        label: Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.label'),
+        cssClass: 'icon-stop'
+      },
+      RESYNC_HAWQ_STANDBY: {
+        action: 'executeHawqCustomCommand',
+        customCommand: 'RESYNC_HAWQ_STANDBY',
+        context: Em.I18n.t('services.service.actions.run.resyncHawqStandby.context'),
+        label: Em.I18n.t('services.service.actions.run.resyncHawqStandby.label'),
+        cssClass: 'icon-refresh',
+        isHidden : App.get('isSingleNode') || !HS ,
+        disabled: !((!!HMComponent && HMComponent.get('startedCount') === 1) && (!!HS && HS.get('workStatus') === App.HostComponentStatus.started))
       },
       TOGGLE_ADD_HAWQ_STANDBY: {
         action: 'addHawqStandby',
@@ -406,13 +418,38 @@ App.HostComponentActionMap = {
         isHidden: App.get('isSingleNode') || HS,
         disabled: false
       },
-      TOGGLE_ACTIVATE_HAWQ_STANDBY: {
+      ACTIVATE_HAWQ_STANDBY: {
         action: 'activateHawqStandby',
         label: Em.I18n.t('admin.activateHawqStandby.button.enable'),
+        context: Em.I18n.t('admin.activateHawqStandby.button.enable'),
         cssClass: 'icon-arrow-up',
         isHidden: App.get('isSingleNode') || !HS,
         disabled: false
-       }
+      },
+      HAWQ_CLEAR_CACHE: {
+        action: 'executeHawqCustomCommand',
+        customCommand: 'HAWQ_CLEAR_CACHE',
+        context: Em.I18n.t('services.service.actions.run.clearHawqCache.label'),
+        label: Em.I18n.t('services.service.actions.run.clearHawqCache.label'),
+        cssClass: 'icon-refresh',
+        isHidden : false,
+        disabled: !HM || HM.get('workStatus') != App.HostComponentStatus.started
+      },
+      RUN_HAWQ_CHECK: {
+        action: 'executeHawqCustomCommand',
+        customCommand: 'RUN_HAWQ_CHECK',
+        context: Em.I18n.t('services.service.actions.run.runHawqCheck.label'),
+        label: Em.I18n.t('services.service.actions.run.runHawqCheck.label'),
+        cssClass: 'icon-thumbs-up-alt',
+        isHidden : false,
+        disabled: false
+      },
+      MASTER_CUSTOM_COMMAND: {
+        action: 'executeCustomCommand',
+        cssClass: 'icon-play-circle',
+        isHidden: false,
+        disabled: false
+      }
     };
   }
 };

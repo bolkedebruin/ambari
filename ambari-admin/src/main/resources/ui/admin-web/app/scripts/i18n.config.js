@@ -75,6 +75,8 @@ angular.module('ambariAdminConsole')
       'warning': 'Warning',
       'filterInfo': '{{showed}} of {{total}} {{term}} showing',
       'usersGroups': 'Users/Groups',
+      'enabled': 'Enabled',
+      'disabled': 'Disabled',
 
       'clusterNameChangeConfirmation': {
         'title': 'Confirm Cluster Name Change',
@@ -85,15 +87,20 @@ angular.module('ambariAdminConsole')
         'loginActivities':'Login Activities',
         'loginMessage': 'Login Message',
         'loginMessage.placeholder': 'Please enter login message',
-        'buttonText.placeholder': 'Please enter text for the "ok" button',
+        'buttonText.placeholder': 'Please enter button text',
         'homeDirectory': 'Home Directory',
-        'onlySimpleChars': 'Must contain only simple characters.',
+        'notEmpty': 'These field cannot be empty',
         'saveError': 'Save error',
         'message': 'Message',
         'buttonText': 'Button',
         'status': 'Status',
-        'status.enabled': 'Enabled',
-        'status.disabled': 'Disabled'
+        'status.disabled': 'Disabled',
+        'homeDirectory.alert': 'Many Ambari Views store user preferences in the logged in user\'s / user directory in HDFS. Optionally, Ambari can auto-create these directories for users on login.',
+        'homeDirectory.autoCreate': 'Auto-Create HDFS user directories',
+        'homeDirectory.header': 'User Directory Creation Options',
+        'homeDirectory.template': 'User Directory creation template',
+        'homeDirectory.group': 'Default Group',
+        'homeDirectory.permissions': 'Permissions'
       },
 
       'controls': {
@@ -295,6 +302,10 @@ angular.module('ambariAdminConsole')
       'current': 'Current',
       'inUse': 'In Use',
       'installed': 'Installed',
+      'uploadFile': 'Upload Version Definition File',
+      'enterURL': 'Version Definition File URL',
+      'readInfo': 'Read Version Info',
+      'browse': 'Browse',
       'installOn': 'Install on...',
       'register': 'Register Version',
       'deregister': 'Deregister Version',
@@ -304,16 +315,26 @@ angular.module('ambariAdminConsole')
       'os': 'OS',
       'baseURL': 'Base URL',
       'skipValidation': 'Skip Repository Base URL validation (Advanced)',
+      'noVersions': 'Select version to display details.',
+      'contents': {
+        'title': 'Contents',
+        'empty': 'No contents to display'
+      },
+      'details': {
+        'stackName': 'Stack Name',
+        'displayName': 'Display Name',
+        'version': 'Version',
+        'actualVersion': 'Actual Version',
+        'releaseNotes': 'Release Notes'
+      },
       'useRedhatSatellite': 'Use RedHat Satellite/Spacewalk',
-
-
       'changeBaseURLConfirmation': {
         'title': 'Confirm Base URL Change',
         'message': 'You are about to change repository Base URLs that are already in use. Please confirm that you intend to make this change and that the new Base URLs point to the same exact Stack version and build'
       },
 
       'alerts': {
-        'baseURLs': 'Provide Base URLs for the Operating Systems you are configuring. Uncheck all other Operating Systems.',
+        'baseURLs': 'Provide Base URLs for the Operating Systems you are configuring.',
         'validationFailed': 'Some of the repositories failed validation. Make changes to the base url or skip validation if you are sure that urls are correct',
         'skipValidationWarning': '<b>Warning:</b> This is for advanced users only. Use this option if you want to skip validation for Repository Base URLs.',
         'useRedhatSatelliteWarning': 'Disable distributed repositories and use RedHat Satellite/Spacewalk channels instead',
@@ -321,6 +342,7 @@ angular.module('ambariAdminConsole')
         'versionCreated': 'Created version <a href="#/stackVersions/{{stackName}}/{{versionName}}/edit">{{stackName}}-{{versionName}}</a>',
         'versionCreationError': 'Version creation error',
         'osListError': 'getSupportedOSList error',
+        'readVersionInfoError': 'Version Definition read error',
         'versionEdited': 'Edited version <a href="#/stackVersions/{{stackName}}/{{versionName}}/edit">{{displayName}}</a>',
         'versionUpdateError': 'Version update error',
         'versionDeleteError': 'Version delete error'

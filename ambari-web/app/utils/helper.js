@@ -659,6 +659,26 @@ App.format = {
     if (result === ' Refreshqueues ResourceManager') {
       result = Em.I18n.t('services.service.actions.run.yarnRefreshQueues.title');
     }
+ // HAWQ custom commands on back Ops page.
+    if (result === ' Resync Hawq Standby HAWQ Standby Master') {
+      result = Em.I18n.t('services.service.actions.run.resyncHawqStandby.label');
+    }
+    if (result === ' Immediate Stop Hawq Service HAWQ Master') {
+      result = Em.I18n.t('services.service.actions.run.immediateStopHawqService.label');
+    }
+    if (result === ' Immediate Stop Hawq Segment HAWQ Segment') {
+      result = Em.I18n.t('services.service.actions.run.immediateStopHawqSegment.label');
+    }
+    if(result === ' Activate Hawq Standby HAWQ Standby Master') {
+      result = Em.I18n.t('admin.activateHawqStandby.button.enable');
+    }
+    if(result === ' Hawq Clear Cache HAWQ Master') {
+      result = Em.I18n.t('services.service.actions.run.clearHawqCache.label');
+    }
+    if(result === ' Run Hawq Check HAWQ Master') {
+      result = Em.I18n.t('services.service.actions.run.runHawqCheck.label');
+    }
+    //<---End HAWQ custom commands--->
     return result;
   },
 

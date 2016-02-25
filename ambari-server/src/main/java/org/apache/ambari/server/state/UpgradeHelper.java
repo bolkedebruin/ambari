@@ -270,6 +270,11 @@ public class UpgradeHelper {
 
     for (Grouping group : upgradePack.getGroups(context.getDirection())) {
 
+      // !!! grouping is not scoped to context
+      if (!context.isScoped(group.scope)) {
+        continue;
+      }
+
       UpgradeGroupHolder groupHolder = new UpgradeGroupHolder();
       groupHolder.name = group.name;
       groupHolder.title = group.title;
@@ -316,6 +321,10 @@ public class UpgradeHelper {
 
       // !!! cluster and service checks are empty here
       for (UpgradePack.OrderService service : services) {
+
+        if (!context.isServiceSupported(service.serviceName)) {
+          continue;
+        }
 
         if (upgradePack.getType() == UpgradeType.ROLLING && !allTasks.containsKey(service.serviceName)) {
           continue;
@@ -711,6 +720,28 @@ public class UpgradeHelper {
 
     } catch (AmbariException e) {
       LOG.debug("Could not get service detail", e);
+    }
+  }
+
+  /**
+   * Transitions all affected components to upgrading state. Transition is performed
+   * only for components that advertise their version. Service component desired
+   * version is set to one passed as an argument
+   * @param version desired version (like 2.2.1.0-1234) for upgrade
+   * @param targetServices targets for upgrade
+   */
+  public void putComponentsToUpgradingState(String version,
+                                            Map<Service, Set<ServiceComponent>> targetServices) throws AmbariException {
+    // TODO: generalize method?
+    for (Map.Entry<Service, Set<ServiceComponent>> entry: targetServices.entrySet()) {
+      for (ServiceComponent serviceComponent: entry.getValue()) {
+        if (serviceComponent.isVersionAdvertised()) {
+          for (ServiceComponentHost serviceComponentHost: serviceComponent.getServiceComponentHosts().values()) {
+            serviceComponentHost.setUpgradeState(UpgradeState.IN_PROGRESS);
+          }
+          serviceComponent.setDesiredVersion(version);
+        }
+      }
     }
   }
 }

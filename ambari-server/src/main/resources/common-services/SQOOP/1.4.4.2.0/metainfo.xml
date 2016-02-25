@@ -29,7 +29,7 @@
       <components>
         <component>
           <name>SQOOP</name>
-          <displayName>Sqoop</displayName>
+          <displayName>Sqoop Client</displayName>
           <category>CLIENT</category>
           <cardinality>1+</cardinality>
           <versionAdvertised>true</versionAdvertised>
@@ -54,6 +54,11 @@
             <scriptType>PYTHON</scriptType>
           </commandScript>
           <configFiles>
+            <configFile>
+              <type>xml</type>
+              <fileName>squoop-site.xml</fileName>
+              <dictionaryName>squoop-site</dictionaryName>
+            </configFile>
             <configFile>
               <type>env</type>
               <fileName>sqoop-env.sh</fileName>
@@ -89,6 +94,7 @@
       
       <configuration-dependencies>
         <config-type>sqoop-env</config-type>
+        <config-type>sqoop-site</config-type>
       </configuration-dependencies>
     </service>
   </services>

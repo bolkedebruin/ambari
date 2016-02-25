@@ -25,6 +25,8 @@ App.MainHostComboSearchBoxView = Em.View.extend({
   },
 
   initVS: function() {
+    var self = this;
+    var controller = App.router.get('mainHostComboSearchBoxController');
     window.visualSearch = VS.init({
       container: $('#combo_search_box'),
       query: '',
@@ -33,7 +35,57 @@ App.MainHostComboSearchBoxView = Em.View.extend({
       unquotable: [
         'text'
       ],
-      callbacks: this.get('controller').VSCallbacks
+      callbacks: {
+        search: function (query, searchCollection) {
+          console.error('query: ' + query);
+          var tableView = self.get('parentView').get('parentView');
+          tableView.updateComboFilter(searchCollection);
+        },
+
+        facetMatches: function (callback) {
+          callback([
+            {label: 'hostName', category: 'Host'},
+            {label: 'ip', category: 'Host'},
+            // {label: 'version', category: 'Host'},
+            {label: 'healthClass', category: 'Host'},
+            {label: 'rack', category: 'Host'},
+            {label: 'services', category: 'Service'},
+            {label: 'hostComponents', category: 'Service'},
+            // {label: 'state', category: 'Service'}
+          ]);
+        },
+
+        valueMatches: function (facet, searchTerm, callback) {
+          var category_mocks = require('data/host/categories');
+          switch (facet) {
+            case 'hostName':
+            case 'ip':
+              facet = (facet == 'hostName')? 'host_name' : facet;
+              controller.getPropertySuggestions(facet, searchTerm).done(function() {
+                callback(controller.get('currentSuggestion'), {preserveMatches: true});
+              });
+              break;
+            case 'rack':
+              callback(App.Host.find().toArray().mapProperty('rack').uniq());
+              break;
+            case 'version':
+              callback(App.StackVersion.find().toArray().mapProperty('name'));
+              break;
+            case 'healthClass':
+              callback(category_mocks.slice(1).mapProperty('healthStatus'), {preserveOrder: true});
+              break;
+            case 'services':
+              callback(App.Service.find().toArray().mapProperty('serviceName'), {preserveOrder: true});
+              break;
+            case 'hostComponents':
+              callback(App.HostComponent.find().toArray().mapProperty('componentName').uniq(), {preserveOrder: true});
+              break;
+            case 'state':
+              callback(App.HostComponentStatus.getStatusesList(), {preserveOrder: true});
+              break;
+          }
+        }
+      }
     });
   }
 });

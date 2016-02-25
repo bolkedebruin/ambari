@@ -97,7 +97,17 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     {
       name: 'hostComponents',
       key: 'host_components/HostRoles/component_name',
-      type: 'MULTIPLE'
+      type: 'EQUAL'
+    },
+    {
+      name: 'services',
+      key: 'host_components/HostRoles/service_name',
+      type: 'MATCH'
+    },
+    {
+      name: 'state',
+      key: 'host_components/HostRoles/state',
+      type: 'MATCH'
     },
     {
       name: 'healthClass',
@@ -223,7 +233,13 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
           isFilter: true
         };
         if (filter.type === 'string' && sortProperties.someProperty('name', colPropAssoc[filter.iColumn])) {
-          result.value = this.getRegExp(filter.value);
+          if (Em.isArray(filter.value)) {
+            for(var i = 0; i < filter.value.length; i++) {
+              filter.value[i] = this.getRegExp(filter.value[i]);
+            }
+          } else {
+            result.value = this.getRegExp(filter.value);
+          }
         }
         if (filter.type === 'number' || filter.type === 'ambari-bandwidth') {
           result.type = this.getComparisonType(filter.value);
@@ -314,8 +330,6 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
       'UNHEALTHY': data.Clusters.health_report['Host/host_status/UNHEALTHY'],
       'ALERT': data.Clusters.health_report['Host/host_status/ALERT'],
       'UNKNOWN': data.Clusters.health_report['Host/host_status/UNKNOWN'],
-      'health-status-WITH-ALERTS': (data.alerts_summary_hosts) ? data.alerts_summary_hosts.CRITICAL + data.alerts_summary_hosts.WARNING : 0,
-      'health-status-CRITICAL': (data.alerts_summary_hosts) ? data.alerts_summary_hosts.CRITICAL : 0,
       'health-status-RESTART': data.Clusters.health_report['Host/stale_config'],
       'health-status-PASSIVE_STATE': data.Clusters.health_report['Host/maintenance_state'],
       'TOTAL': data.Clusters.total_hosts
@@ -544,6 +558,8 @@ App.MainHostController = Em.ArrayController.extend(App.TableServerMixin, {
     associations[10] = 'selected';
     associations[11] = 'hostStackVersion';
     associations[12] = 'rack';
+    associations[13] = 'services';
+    associations[14] = 'state';
     return associations;
   }.property()
 

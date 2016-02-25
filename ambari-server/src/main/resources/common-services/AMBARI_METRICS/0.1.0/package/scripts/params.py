@@ -50,6 +50,17 @@ ams_pid_dir = status_params.ams_collector_pid_dir
 ams_collector_script = "/usr/sbin/ambari-metrics-collector"
 ams_collector_pid_dir = status_params.ams_collector_pid_dir
 ams_collector_hosts = default("/clusterHostInfo/metrics_collector_hosts", [])
+if default("/configurations/ams-site/timeline.metrics.service.http.policy", "HTTP_ONLY") == "HTTPS_ONLY":
+  metric_collector_https_enabled = True
+  metric_collector_protocol = 'https'
+else:
+  metric_collector_https_enabled = False
+  metric_collector_protocol = 'http'
+metric_truststore_path= default("/configurations/ams-ssl-client/ssl.client.truststore.location", "")
+metric_truststore_type= default("/configurations/ams-ssl-client/ssl.client.truststore.type", "")
+metric_truststore_password= default("/configurations/ams-ssl-client/ssl.client.truststore.password", "")
+metric_truststore_ca_certs='ca.pem'
+
 if 'cluster-env' in config['configurations'] and \
     'metrics_collector_vip_host' in config['configurations']['cluster-env']:
   metric_collector_host = config['configurations']['cluster-env']['metrics_collector_vip_host']
@@ -66,9 +77,11 @@ else:
     metric_collector_port = '6188'
 
 ams_collector_log_dir = config['configurations']['ams-env']['metrics_collector_log_dir']
+ams_collector_conf_dir = "/etc/ambari-metrics-collector/conf"
 ams_monitor_log_dir = config['configurations']['ams-env']['metrics_monitor_log_dir']
 
 ams_monitor_dir = "/usr/lib/python2.6/site-packages/resource_monitoring"
+ams_monitor_conf_dir = "/etc/ambari-metrics-monitor/conf"
 ams_monitor_pid_dir = status_params.ams_monitor_pid_dir
 ams_monitor_script = "/usr/sbin/ambari-metrics-monitor"
 
@@ -167,7 +180,6 @@ else:
     zookeeper_clientPort = '2181'
 
 ams_checkpoint_dir = config['configurations']['ams-site']['timeline.metrics.aggregator.checkpoint.dir']
-hbase_pid_dir = status_params.hbase_pid_dir
 _hbase_tmp_dir = config['configurations']['ams-hbase-site']['hbase.tmp.dir']
 hbase_tmp_dir = substitute_vars(_hbase_tmp_dir, config['configurations']['ams-hbase-site'])
 _zookeeper_data_dir = config['configurations']['ams-hbase-site']['hbase.zookeeper.property.dataDir']
@@ -255,6 +267,7 @@ import functools
 HdfsResource = functools.partial(
   HdfsResource,
   user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
   security_enabled = security_enabled,
   keytab = hdfs_user_keytab,
   kinit_path_local = kinit_path_local,

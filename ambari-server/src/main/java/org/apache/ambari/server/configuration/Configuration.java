@@ -17,11 +17,20 @@
  */
 package org.apache.ambari.server.configuration;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.cert.CertificateException;
+import java.security.interfaces.RSAPublicKey;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
 
 import org.apache.ambari.annotations.Experimental;
 import org.apache.ambari.annotations.ExperimentalFeature;
@@ -34,32 +43,24 @@ import org.apache.ambari.server.orm.entities.StageEntity;
 import org.apache.ambari.server.security.ClientSecurityType;
 import org.apache.ambari.server.security.authorization.LdapServerProperties;
 import org.apache.ambari.server.security.authorization.jwt.JwtAuthenticationProperties;
+import org.apache.ambari.server.security.encryption.CertificateUtils;
 import org.apache.ambari.server.security.encryption.CredentialProvider;
 import org.apache.ambari.server.state.stack.OsFamily;
-import org.apache.ambari.server.security.encryption.CertificateUtils;
+import org.apache.ambari.server.utils.AmbariPath;
 import org.apache.ambari.server.utils.Parallel;
 import org.apache.ambari.server.utils.ShellCommandUtil;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.RandomStringUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Properties;
-
-import java.security.cert.CertificateException;
-import java.security.interfaces.RSAPublicKey;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
 
 
 /**
@@ -81,23 +82,23 @@ public class Configuration {
    */
   public static final String PREFIX_DIR = "/var/lib/ambari-agent/data";
 
-  public static final String BOOTSTRAP_DIR_DEFAULT = "/var/run/ambari-server/bootstrap";
+  public static final String BOOTSTRAP_DIR_DEFAULT = AmbariPath.getPath("/var/run/ambari-server/bootstrap");
   public static final String VIEWS_DIR = "views.dir";
-  public static final String VIEWS_DIR_DEFAULT = "/var/lib/ambari-server/resources/views";
+  public static final String VIEWS_DIR_DEFAULT = AmbariPath.getPath("/var/lib/ambari-server/resources/views");
   public static final String VIEWS_VALIDATE = "views.validate";
   public static final String VIEWS_VALIDATE_DEFAULT = "false";
   public static final String VIEWS_REMOVE_UNDEPLOYED = "views.remove.undeployed";
   public static final String VIEWS_REMOVE_UNDEPLOYED_DEFAULT = "false";
   public static final String WEBAPP_DIR = "webapp.dir";
   public static final String BOOTSTRAP_SCRIPT = "bootstrap.script";
-  public static final String BOOTSTRAP_SCRIPT_DEFAULT = "/usr/bin/ambari_bootstrap";
+  public static final String BOOTSTRAP_SCRIPT_DEFAULT = AmbariPath.getPath("/usr/bin/ambari_bootstrap");
   public static final String BOOTSTRAP_SETUP_AGENT_SCRIPT = "bootstrap.setup_agent.script";
   public static final String BOOTSTRAP_SETUP_AGENT_PASSWORD = "bootstrap.setup_agent.password";
   public static final String BOOTSTRAP_MASTER_HOSTNAME = "bootstrap.master_host_name";
   public static final String RECOMMENDATIONS_DIR = "recommendations.dir";
-  public static final String RECOMMENDATIONS_DIR_DEFAULT = "/var/run/ambari-server/stack-recommendations";
+  public static final String RECOMMENDATIONS_DIR_DEFAULT = AmbariPath.getPath("/var/run/ambari-server/stack-recommendations");
   public static final String STACK_ADVISOR_SCRIPT = "stackadvisor.script";
-  public static final String STACK_ADVISOR_SCRIPT_DEFAULT = "/var/lib/ambari-server/resources/scripts/stack_advisor.py";
+  public static final String STACK_ADVISOR_SCRIPT_DEFAULT = AmbariPath.getPath("/var/lib/ambari-server/resources/scripts/stack_advisor.py");
   public static final String AMBARI_PYTHON_WRAP_KEY = "ambari.python.wrap";
   public static final String AMBARI_PYTHON_WRAP_DEFAULT = "ambari-python-wrap";
   public static final String API_AUTHENTICATED_USER = "api.authenticated.user";
@@ -184,6 +185,9 @@ public class Configuration {
   public static final String LDAP_REFERRAL_KEY = "authentication.ldap.referral";
   public static final String LDAP_PAGINATION_ENABLED_KEY = "authentication.ldap.pagination.enabled";
   public static final String SERVER_EC_CACHE_SIZE = "server.ecCacheSize";
+  public static final String SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED = "server.hrcStatusSummary.cache.enabled";
+  public static final String SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE = "server.hrcStatusSummary.cache.size";
+  public static final String SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION = "server.hrcStatusSummary.cache.expiryDuration";
   public static final String SERVER_STALE_CONFIG_CACHE_ENABLED_KEY = "server.cache.isStale.enabled";
   public static final String SERVER_PERSISTENCE_TYPE_KEY = "server.persistence.type";
   public static final String SERVER_JDBC_USER_NAME_KEY = "server.jdbc.user.name";
@@ -191,8 +195,13 @@ public class Configuration {
   public static final String SERVER_JDBC_DRIVER_KEY = "server.jdbc.driver";
   public static final String SERVER_JDBC_URL_KEY = "server.jdbc.url";
   public static final String SERVER_JDBC_PROPERTIES_PREFIX = "server.jdbc.properties.";
+
+  // Properties for stack upgrade (Rolling, Express)
   public static final String ROLLING_UPGRADE_SKIP_PACKAGES_PREFIXES_KEY = "rolling.upgrade.skip.packages.prefixes";
   public static final String ROLLING_UPGRADE_SKIP_PACKAGES_PREFIXES_DEFAULT = "";
+  public static final String STACK_UPGRADE_BYPASS_PRECHECKS_KEY = "stack.upgrade.bypass.prechecks";
+  public static final String STACK_UPGRADE_BYPASS_PRECHECKS_DEFAULT = "false";
+
   public static final String JWT_AUTH_ENBABLED = "authentication.jwt.enabled";
   public static final String JWT_AUTH_PROVIDER_URL = "authentication.jwt.providerUrl";
   public static final String JWT_PUBLIC_KEY = "authentication.jwt.publicKey";
@@ -242,7 +251,6 @@ public class Configuration {
   public static final String JAVAX_SSL_TRUSTSTORE = "javax.net.ssl.trustStore";
   public static final String JAVAX_SSL_TRUSTSTORE_PASSWORD = "javax.net.ssl.trustStorePassword";
   public static final String JAVAX_SSL_TRUSTSTORE_TYPE = "javax.net.ssl.trustStoreType";
-  public static final String GANGLIA_HTTPS_KEY = "ganglia.https";
   public static final String SRVR_TWO_WAY_SSL_PORT_DEFAULT = "8441";
   public static final String SRVR_ONE_WAY_SSL_PORT_DEFAULT = "8440";
   public static final String SRVR_CRT_NAME_DEFAULT = "ca.crt";
@@ -279,6 +287,9 @@ public class Configuration {
   public static final String TEMPORARY_KEYSTORE_ACTIVELY_PURGE = "security.temporary.keystore.actibely.purge";
   public static final boolean TEMPORARY_KEYSTORE_ACTIVELY_PURGE_DEFAULT = true;
 
+  // Alerts notifications properties
+  public static final String AMBARI_DISPLAY_URL = "ambari.display.url";
+
   /**
    * Key for repo validation suffixes.
    */
@@ -297,7 +308,7 @@ public class Configuration {
   public static final String DEFAULT_SCHEDULER_START_DELAY_SECONDS = "120";
   public static final String DEFAULT_EXECUTION_SCHEDULER_WAIT_SECONDS = "1";
   public static final String SERVER_TMP_DIR_KEY = "server.tmp.dir";
-  public static final String SERVER_TMP_DIR_DEFAULT = "/var/lib/ambari-server/tmp";
+  public static final String SERVER_TMP_DIR_DEFAULT = AmbariPath.getPath("/var/lib/ambari-server/tmp");
   public static final String EXTERNAL_SCRIPT_TIMEOUT_KEY = "server.script.timeout";
   public static final String EXTERNAL_SCRIPT_TIMEOUT_DEFAULT = "5000";
   public static final String DEF_ARCHIVE_EXTENSION;
@@ -311,7 +322,7 @@ public class Configuration {
   public static final String KDC_CONNECTION_CHECK_TIMEOUT_KEY = "kdcserver.connection.check.timeout";
   public static final String KDC_CONNECTION_CHECK_TIMEOUT_DEFAULT = "10000";
   public static final String KERBEROS_KEYTAB_CACHE_DIR_KEY = "kerberos.keytab.cache.dir";
-  public static final String KERBEROS_KEYTAB_CACHE_DIR_DEFAULT = "/var/lib/ambari-server/data/cache";
+  public static final String KERBEROS_KEYTAB_CACHE_DIR_DEFAULT = AmbariPath.getPath("/var/lib/ambari-server/data/cache");
   public static final String KERBEROS_CHECK_JAAS_CONFIGURATION_KEY = "kerberos.check.jaas.configuration";
   public static final String KERBEROS_CHECK_JAAS_CONFIGURATION_DEFAULT = "false";
 
@@ -365,7 +376,12 @@ public class Configuration {
 
   public static final String CUSTOM_ACTION_DEFINITION_KEY = "custom.action.definitions";
   public static final String SHARED_RESOURCES_DIR_KEY = "shared.resources.dir";
-  private static final String CUSTOM_ACTION_DEFINITION_DEF_VALUE = "/var/lib/ambari-server/resources/custom_action_definitions";
+
+  protected static final boolean SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED_DEFAULT = true;
+  protected static final long SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE_DEFAULT = 10000L;
+  protected static final long SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION_DEFAULT = 30; //minutes
+
+  private static final String CUSTOM_ACTION_DEFINITION_DEF_VALUE = AmbariPath.getPath("/var/lib/ambari-server/resources/custom_action_definitions");
 
   private static final long SERVER_EC_CACHE_SIZE_DEFAULT = 10000L;
   private static final String SERVER_STALE_CONFIG_CACHE_ENABLED_DEFAULT = "true";
@@ -383,8 +399,8 @@ public class Configuration {
   private static final String SRVR_DISABLED_CIPHERS_DEFAULT = "";
   private static final String SRVR_DISABLED_PROTOCOLS_DEFAULT = "";
   private static final String PASSPHRASE_ENV_DEFAULT = "AMBARI_PASSPHRASE";
-  private static final String RESOURCES_DIR_DEFAULT = "/var/lib/ambari-server/resources/";
-  private static final String SHARED_RESOURCES_DIR_DEFAULT = "/usr/lib/ambari-server/lib/ambari_commons/resources";
+  private static final String RESOURCES_DIR_DEFAULT = AmbariPath.getPath("/var/lib/ambari-server/resources/");
+  private static final String SHARED_RESOURCES_DIR_DEFAULT = AmbariPath.getPath("/usr/lib/ambari-server/lib/ambari_commons/resources");
   private static final String ANONYMOUS_AUDIT_NAME_KEY = "anonymous.audit.name";
 
   private static final int CLIENT_API_PORT_DEFAULT = 8080;
@@ -483,6 +499,9 @@ public class Configuration {
   private static final String DEFAULT_TIMELINE_METRICS_CACHE_HEAP_PERCENT = "15%";
   private static final String TIMELINE_METRICS_CACHE_USE_CUSTOM_SIZING_ENGINE = "server.timeline.metrics.cache.use.custom.sizing.engine";
 
+  // Timeline Metrics SSL settings
+  public static final String AMRABI_METRICS_HTTPS_ENABLED_KEY = "server.timeline.metrics.https.enabled";
+
   /**
    * Governs the use of {@link Parallel} to process {@link StageEntity}
    * instances into {@link Stage}.
@@ -550,6 +569,26 @@ public class Configuration {
   public static final String VIEWS_HTTP_X_FRAME_OPTIONS_HEADER_VALUE_DEFAULT = "SAMEORIGIN";
   public static final String VIEWS_HTTP_X_XSS_PROTECTION_HEADER_VALUE_KEY = "views.http.x-xss-protection";
   public static final String VIEWS_HTTP_X_XSS_PROTECTION_HEADER_VALUE_DEFAULT = "1; mode=block";
+
+  /*
+   * Version Definition URL
+   */
+  /**
+   * The connection timeout for reading version definitions.
+   */
+  private static final String VERSION_DEFINITION_CONNECT_TIMEOUT = "server.version_definition.connect.timeout.millis";
+  /**
+   * Default connect timeout for reading version definitions.
+   */
+  private static final int VERSION_DEFINITION_CONNECT_TIMEOUT_DEFAULT = 5000;
+  /**
+   * The read timeout for reading version definitions.
+   */
+  private static final String VERSION_DEFINITION_READ_TIMEOUT = "server.version_definition.read.timeout.millis";
+  /**
+   * Default read timeout for reading version definitions.
+   */
+  private static final int VERSION_DEFINITION_READ_TIMEOUT_DEFAULT = 5000;
 
   private static final Logger LOG = LoggerFactory.getLogger(
       Configuration.class);
@@ -921,8 +960,6 @@ public class Configuration {
       jsonObject = jsonElement.getAsJsonObject();
     } catch (FileNotFoundException e) {
       throw new IllegalArgumentException("No file " + file, e);
-    } catch (IOException ioe){
-      throw new IllegalArgumentException("Can't read file " + file, ioe);
     }
 
     return jsonObject;
@@ -985,7 +1022,7 @@ public class Configuration {
 
   public String getBootSetupAgentScript() {
     return properties.getProperty(BOOTSTRAP_SETUP_AGENT_SCRIPT,
-        "/usr/lib/python2.6/site-packages/ambari_server/setupAgent.py");
+        AmbariPath.getPath("/usr/lib/python2.6/site-packages/ambari_server/setupAgent.py"));
   }
 
   public String getBootSetupAgentPassword() {
@@ -1026,6 +1063,15 @@ public class Configuration {
       }
     }
     return res;
+  }
+
+  /**
+   * Determine whether or not a Rolling/Express upgrade can bypass the PreChecks. Default value should be false.
+   *
+   * @return true if RU/EU can bypass PreChecks, otherwise, false.
+   */
+  public boolean isUpgradePrecheckBypass() {
+    return Boolean.parseBoolean(properties.getProperty(STACK_UPGRADE_BYPASS_PRECHECKS_KEY, STACK_UPGRADE_BYPASS_PRECHECKS_DEFAULT));
   }
 
   /**
@@ -1754,6 +1800,75 @@ public class Configuration {
   }
 
   /**
+   * Caching of host role command status summary can be enabled/disabled
+   * through the {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED} config property.
+   * This method returns the value of {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED}
+   * config property. If this config property is not defined than returns the default defined by {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED_DEFAULT}.
+   * @return true if caching is to be enabled otherwise false.
+   */
+  public boolean getHostRoleCommandStatusSummaryCacheEnabled() {
+    String stringValue = properties.getProperty(SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED);
+    boolean value = SERVER_HRC_STATUS_SUMMARY_CACHE_ENABLED_DEFAULT;
+    if (stringValue != null) {
+      try {
+        value = Boolean.valueOf(stringValue);
+      }
+      catch (NumberFormatException ignored) {
+      }
+
+    }
+
+    return value;
+  }
+
+  /**
+   * In order to avoid the cache storing host role command status summary objects exhaust
+   * memory we set a max record number allowed for the cache. This limit can be configured
+   * through {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE} config property. The method returns
+   * the value of this config property. If this config property is not defined than
+   * the default value specified by {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE_DEFAULT} is returned.
+   * @return the upper limit for the number of cached host role command summaries.
+   */
+  public long getHostRoleCommandStatusSummaryCacheSize() {
+    String stringValue = properties.getProperty(SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE);
+    long value = SERVER_HRC_STATUS_SUMMARY_CACHE_SIZE_DEFAULT;
+    if (stringValue != null) {
+      try {
+        value = Long.valueOf(stringValue);
+      }
+      catch (NumberFormatException ignored) {
+      }
+
+    }
+
+    return value;
+  }
+
+  /**
+   * As a safety measure the cache storing host role command status summaries should auto expire after a while.
+   * The expiry duration is specified through the {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION} config property
+   * expressed in minutes. The method returns the value of this config property. If this config property is not defined than
+   * the default value specified by {@link #SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION_DEFAULT}
+   * @return the cache expiry duration in minutes
+   */
+  public long getHostRoleCommandStatusSummaryCacheExpiryDuration() {
+    String stringValue = properties.getProperty(SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION);
+    long value = SERVER_HRC_STATUS_SUMMARY_CACHE_EXPIRY_DURATION_DEFAULT;
+    if (stringValue != null) {
+      try {
+        value = Long.valueOf(stringValue);
+      }
+      catch (NumberFormatException ignored) {
+      }
+
+    }
+
+    return value;
+  }
+
+
+
+  /**
    * @return whether staleConfig's flag is cached.
    */
   public boolean isStaleConfigCacheEnabled() {
@@ -1949,7 +2064,7 @@ public class Configuration {
 
   /**
    * Get property-providers' thread pool core size.
-   * 
+   *
    * @return the property-providers' thread pool core size
    */
   public int getPropertyProvidersThreadPoolCoreSize() {
@@ -1959,7 +2074,7 @@ public class Configuration {
 
   /**
    * Get property-providers' thread pool max size.
-   * 
+   *
    * @return the property-providers' thread pool max size
    */
   public int getPropertyProvidersThreadPoolMaxSize() {
@@ -2481,6 +2596,15 @@ public class Configuration {
   }
 
   /**
+   * Get the ambari display URL
+   * @return
+   */
+  public String getAmbariDisplayUrl() {
+    return properties.getProperty(AMBARI_DISPLAY_URL, null);
+  }
+
+
+  /**
    * @return number of retry attempts for api and blueprint operations
    */
   public int getOperationsRetryAttempts() {
@@ -2499,5 +2623,22 @@ public class Configuration {
       LOG.info("Operations retry enabled. Number of retry attempts: {}", attempts);
     }
     return attempts;
+  }
+
+  /**
+   * @return the connect timeout used when loading a version definition URL.
+   */
+  public int getVersionDefinitionConnectTimeout() {
+    return NumberUtils.toInt(
+        properties.getProperty(VERSION_DEFINITION_CONNECT_TIMEOUT),
+            VERSION_DEFINITION_CONNECT_TIMEOUT_DEFAULT);
+  }
+  /**
+   * @return the read timeout used when loading a version definition URL
+   */
+  public int getVersionDefinitionReadTimeout() {
+    return NumberUtils.toInt(
+        properties.getProperty(VERSION_DEFINITION_READ_TIMEOUT),
+            VERSION_DEFINITION_READ_TIMEOUT_DEFAULT);
   }
 }

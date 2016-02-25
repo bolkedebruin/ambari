@@ -1028,7 +1028,7 @@ class TestHDP22StackAdvisor(TestCase):
       'hive-site': {
         'properties': {
           'hive.server2.enable.doAs': 'true',
-          'hive.server2.tez.default.queues': "default",
+          'hive.server2.tez.default.queues': "queue1,queue2",
           'hive.server2.tez.initialize.default.sessions': 'false',
           'hive.server2.tez.sessions.per.default.queue': '1',
           'hive.auto.convert.join.noconditionaltask.size': '268435456',
@@ -1073,7 +1073,16 @@ class TestHDP22StackAdvisor(TestCase):
          'hive.server2.authentication.kerberos.keytab': {'delete': 'true'},
          'hive.server2.authentication.ldap.url': {'delete': 'true'},
          'hive.server2.tez.default.queues': {
-           'entries': [{'value': 'default', 'label': 'default queue'}]
+           "entries": [
+             {
+               "value": "queue1",
+               "label": "queue1 queue"
+             },
+             {
+               "value": "queue2",
+               "label": "queue2 queue"
+             }
+           ]
           }
         }
       },
@@ -1393,9 +1402,9 @@ class TestHDP22StackAdvisor(TestCase):
                                    "yarn.scheduler.capacity.root.default.user-limit-factor=1\n"
                                    "yarn.scheduler.capacity.root.queues=default"}
 
-    expected['hive-site']['properties']['hive.server2.tez.default.queues'] = 'default.a.a1,default.a.a2,default.b'
+    expected['hive-site']['properties']['hive.server2.tez.default.queues'] = 'a1,a2,b'
     expected['hive-site']['property_attributes']['hive.server2.tez.default.queues'] = {
-           'entries': [{'value': 'default.a.a1', 'label': 'default.a.a1 queue'}, {'value': 'default.a.a2', 'label': 'default.a.a2 queue'}, {'value': 'default.b', 'label': 'default.b queue'}]
+           'entries': [{'value': 'a1', 'label': 'a1 queue'}, {'value': 'a2', 'label': 'a2 queue'}, {'value': 'b', 'label': 'b queue'}]
           }
     self.stackAdvisor.recommendHIVEConfigurations(configurations, clusterData, services, hosts)
     self.assertEquals(configurations['hive-site']['property_attributes']['hive.server2.tez.default.queues'], expected['hive-site']['property_attributes']['hive.server2.tez.default.queues'])
@@ -2052,6 +2061,7 @@ class TestHDP22StackAdvisor(TestCase):
           "timeline.metrics.cluster.aggregate.splitpoints": " ",
           "timeline.metrics.host.aggregate.splitpoints": " ",
           "timeline.metrics.host.aggregator.ttl": "1",
+          "timeline.metrics.service.handler.thread.count": "20",
           'timeline.metrics.service.watcher.disabled': 'false'
         }
       }

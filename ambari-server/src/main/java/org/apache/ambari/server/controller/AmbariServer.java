@@ -29,6 +29,7 @@ import com.google.inject.Singleton;
 import com.google.inject.name.Named;
 import com.google.inject.persist.Transactional;
 import com.sun.jersey.spi.container.servlet.ServletContainer;
+
 import org.apache.ambari.eventdb.webservice.WorkflowJsonService;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StateRecoveryManager;
@@ -103,8 +104,10 @@ import org.apache.ambari.server.topology.BlueprintFactory;
 import org.apache.ambari.server.topology.SecurityConfigurationFactory;
 import org.apache.ambari.server.topology.TopologyManager;
 import org.apache.ambari.server.topology.TopologyRequestFactoryImpl;
+import org.apache.ambari.server.utils.AmbariPath;
 import org.apache.ambari.server.utils.RetryHelper;
 import org.apache.ambari.server.utils.StageUtils;
+import org.apache.ambari.server.utils.VersionUtils;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.apache.velocity.app.Velocity;
 import org.eclipse.jetty.http.HttpVersion;
@@ -136,6 +139,7 @@ import org.springframework.web.filter.DelegatingFilterProxy;
 
 import javax.crypto.BadPaddingException;
 import javax.servlet.DispatcherType;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.Authenticator;
@@ -165,8 +169,7 @@ public class AmbariServer {
 
   private static final String CLASSPATH_CHECK_CLASS = "org/apache/ambari/server/controller/AmbariServer.class";
   private static final String CLASSPATH_SANITY_CHECK_FAILURE_MESSAGE = "%s class is found in multiple jar files. Possible reasons include multiple ambari server jar files in the ambari classpath.\n" +
-      "Check for additional ambari server jar files and check that /usr/lib/ambari-server/ambari-server*.jar matches only one file.";
-
+      String.format("Check for additional ambari server jar files and check that %s matches only one file.", AmbariPath.getPath("/usr/lib/ambari-server/ambari-server*.jar"));
   static {
     Enumeration<URL> ambariServerClassUrls;
     try {
@@ -787,7 +790,7 @@ public class AmbariServer {
 
       MetainfoEntity schemaVersion = new MetainfoEntity();
       schemaVersion.setMetainfoName(Configuration.SERVER_VERSION_KEY);
-      schemaVersion.setMetainfoValue(ambariMetaInfo.getServerVersion());
+      schemaVersion.setMetainfoValue(VersionUtils.getVersionSubstring(ambariMetaInfo.getServerVersion()));
 
       metainfoDAO.create(schemaVersion);
     }

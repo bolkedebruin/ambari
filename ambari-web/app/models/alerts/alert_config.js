@@ -431,19 +431,6 @@ App.AlertConfigProperties = {
     }.property('value')
   }),
 
-  ConnectionTimeout: App.AlertConfigProperty.extend({
-    name: 'connection_timeout',
-    label: 'Connection Timeout',
-    displayType: 'textField',
-    classNames: 'alert-connection-timeout',
-    apiProperty: 'source.uri.connection_timeout',
-    unit: 'Seconds',
-    isValid: function () {
-      var value = this.get('value');
-      return numericUtils.isPositiveNumber(value);
-    }.property('value')
-  }),
-
   DefaultPort: App.AlertConfigProperty.extend({
     name: 'default_port',
     label: 'Default Port',
@@ -532,7 +519,7 @@ App.AlertConfigProperties.Parameters = {
       value = String(value).trim();
       value = parseFloat(value);
 
-      return !isNaN(value) && value > 0 && value <= 100;
+      return !isNaN(value) && value > 0;
     }.property('value')
   })
 
@@ -622,7 +609,7 @@ App.AlertConfigProperties.Thresholds = {
         return false;
       }
 
-      return this.get('showInputForValue') ? !isNaN(value) && value > 0 && value <= 100 : true;
+      return this.get('showInputForValue') ? !isNaN(value) && value > 0 : true;
     }.property('displayValue', 'showInputForValue'),
 
     /**

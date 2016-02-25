@@ -181,24 +181,6 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   ],
 
   /**
-   * get array of config properties that are shown in settings tab
-   * @type {String[]}
-   */
-  settingsTabProperties: function () {
-    var properties = [];
-    App.Tab.find().forEach(function (t) {
-      if (!t.get('isAdvanced') && t.get('serviceName') === this.get('content.serviceName')) {
-        t.get('sections').forEach(function (s) {
-          s.get('subSections').forEach(function (ss) {
-            properties = properties.concat(ss.get('configProperties'));
-          });
-        });
-      }
-    }, this);
-    return properties;
-  }.property('content.serviceName', 'App.router.clusterController.isStackConfigsLoaded'),
-
-  /**
    * Dropdown menu items in filter combobox
    * @type {{attributeName: string, attributeValue: string, name: string, selected: boolean}[]}
    */
@@ -361,15 +343,15 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
   prepareConfigObjects: function(data, serviceName) {
     this.get('stepConfigs').clear();
 
-    var configGroups = [];
-    data.items.forEach(function (v) {
-      if (v.group_name == 'default') {
-        v.configurations.forEach(function (c) {
-          configGroups.pushObject(c);
+    var configs = [];
+    data.items.forEach(function (version) {
+      if (version.group_name == 'default') {
+        version.configurations.forEach(function (configObject) {
+          configs = configs.concat(App.config.getConfigsFromJSON(configObject, true));
         });
       }
     });
-    var configs = App.config.mergePredefinedWithSaved(configGroups, serviceName, this.get('selectedConfigGroup'), this.get('canEdit'));
+
     configs = App.config.sortConfigs(configs);
     /**
      * if property defined in stack but somehow it missed from cluster properties (can be after stack upgrade)
@@ -379,16 +361,15 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
 
     //put properties from capacity-scheduler.xml into one config with textarea view
     if (this.get('content.serviceName') === 'YARN') {
-      var configsToSkip = this.get('settingsTabProperties').filterProperty('filename', 'capacity-scheduler.xml');
-      configs = App.config.fileConfigsIntoTextarea(configs, 'capacity-scheduler.xml', configsToSkip);
+      configs = App.config.addYarnCapacityScheduler(configs);
     }
 
     if (this.get('content.serviceName') === 'KERBEROS') {
       var kdc_type = configs.findProperty('name', 'kdc_type');
       if (kdc_type.get('value') === 'none') {
-        configs.findProperty('name', 'kdc_host').set('isRequired', false).set('isVisible', false);
-        configs.findProperty('name', 'admin_server_host').set('isRequired', false).set('isVisible', false);
-        configs.findProperty('name', 'domains').set('isRequired', false).set('isVisible', false);
+        configs.findProperty('name', 'kdc_host').set('isVisible', false);
+        configs.findProperty('name', 'admin_server_host').set('isVisible', false);
+        configs.findProperty('name', 'domains').set('isVisible', false);
       } else if (kdc_type.get('value') === 'active-directory') {
         configs.findProperty('name', 'container_dn').set('isVisible', true);
         configs.findProperty('name', 'ldap_url').set('isVisible', true);
@@ -399,7 +380,21 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
       }
     }
 
+    this.setPropertyIsEditable(configs);
     this.set('allConfigs', configs);
+  },
+
+  /**
+   * Set <code>isEditable<code> proeperty based on selected group, security
+   * and controller restriction
+   * @param configs
+   */
+  setPropertyIsEditable: function(configs) {
+    if (!this.get('selectedConfigGroup.isDefault') || !this.get('canEdit')) {
+      configs.setEach('isEditable', false);
+    } else if (App.get('isKerberosEnabled')) {
+      configs.filterProperty('isSecureConfig').setEach('isEditable', false);
+    }
   },
 
   /**
@@ -411,7 +406,7 @@ App.MainServiceInfoConfigsController = Em.Controller.extend(App.ConfigsLoader, A
    * @method mergeWithStackProperties
    */
   mergeWithStackProperties: function (configs) {
-    this.get('settingsTabProperties').forEach(function (advanced_id) {
+    App.config.getPropertiesFromTheme(this.get('content.serviceName')).forEach(function (advanced_id) {
       if (!configs.someProperty('id', advanced_id)) {
         var advanced = App.configsCollection.getConfig(advanced_id);
         if (advanced) {

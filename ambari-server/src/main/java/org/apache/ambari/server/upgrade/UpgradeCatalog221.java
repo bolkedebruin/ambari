@@ -96,7 +96,6 @@ public class UpgradeCatalog221 extends AbstractUpgradeCatalog {
   private static final String TEZ_COUNTERS_MAX = "tez.counters.max";
   private static final String TEZ_COUNTERS_MAX_GROUPS = "tez.counters.max.groups";
 
-
   // ----- Constructors ------------------------------------------------------
 
   /**

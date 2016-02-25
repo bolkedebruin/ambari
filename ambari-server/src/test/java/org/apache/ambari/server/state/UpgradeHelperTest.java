@@ -60,11 +60,14 @@ import org.apache.ambari.server.state.stack.upgrade.ManualTask;
 import org.apache.ambari.server.state.stack.upgrade.StageWrapper;
 import org.apache.ambari.server.state.stack.upgrade.Task;
 import org.apache.ambari.server.state.stack.upgrade.TaskWrapper;
+import org.apache.ambari.server.state.stack.upgrade.UpgradeScope;
 import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
+import org.apache.ambari.server.utils.EventBusSynchronizer;
 import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -74,7 +77,6 @@ import com.google.inject.Injector;
 import com.google.inject.Module;
 import com.google.inject.persist.PersistService;
 import com.google.inject.util.Modules;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Tests the {@link UpgradeHelper} class
@@ -95,21 +97,23 @@ public class UpgradeHelperTest {
   private AmbariManagementController m_managementController;
   private Gson m_gson = new Gson();
 
-  @Before
-  public void before() throws Exception {
+  /**
+   * Because test cases need to share config mocks, put common ones in this function.
+   * @throws Exception
+   */
+  private void setConfigMocks() throws Exception {
     // configure the mock to return data given a specific placeholder
     m_configHelper = EasyMock.createNiceMock(ConfigHelper.class);
+    expect(m_configHelper.getPlaceholderValueFromDesiredConfigurations(
+        EasyMock.anyObject(Cluster.class), EasyMock.eq("{{foo/bar}}"))).andReturn("placeholder-rendered-properly").anyTimes();
+    expect(m_configHelper.getEffectiveDesiredTags(
+        EasyMock.anyObject(Cluster.class), EasyMock.anyObject(String.class))).andReturn(new HashMap<String, Map<String, String>>()).anyTimes();
+  }
 
-    expect(
-      m_configHelper.getPlaceholderValueFromDesiredConfigurations(
-        EasyMock.anyObject(Cluster.class), EasyMock.eq("{{foo/bar}}"))).andReturn(
-        "placeholder-rendered-properly").anyTimes();
-
-    expect(
-        m_configHelper.getEffectiveDesiredTags(
-            EasyMock.anyObject(Cluster.class), EasyMock.anyObject(String.class))).
-        andReturn(new HashMap<String, Map<String, String>>()).anyTimes();
-
+  @Before
+  public void before() throws Exception {
+    setConfigMocks();
+    // Most test cases can replay the common config mocks. If any test case needs custom ones, it can re-initialize m_configHelper;
     replay(m_configHelper);
 
     final InMemoryDefaultTestModule injectorModule = new InMemoryDefaultTestModule() {
@@ -123,32 +127,14 @@ public class UpgradeHelperTest {
     // create an injector which will inject the mocks
     injector = Guice.createInjector(Modules.override(injectorModule).with(mockModule));
     injector.getInstance(GuiceJpaInitializer.class);
+    EventBusSynchronizer.synchronizeAmbariEventPublisher(injector);
+    EventBusSynchronizer.synchronizeAlertEventPublisher(injector);
 
     helper = injector.getInstance(OrmTestHelper.class);
     ambariMetaInfo = injector.getInstance(AmbariMetaInfo.class);
     m_upgradeHelper = injector.getInstance(UpgradeHelper.class);
     m_masterHostResolver = EasyMock.createMock(MasterHostResolver.class);
     m_managementController = injector.getInstance(AmbariManagementController.class);
-
-//    StackDAO stackDAO = injector.getInstance(StackDAO.class);
-//    StackEntity stackEntity = new StackEntity();
-//    stackEntity.setStackName("HDP");
-//    stackEntity.setStackVersion("2.1");
-//    stackDAO.create(stackEntity);
-//
-//    StackEntity stackEntityTo = new StackEntity();
-//    stackEntityTo.setStackName("HDP");
-//    stackEntityTo.setStackVersion("2.2");
-//    stackDAO.create(stackEntityTo);
-//
-//    Clusters clusters = injector.getInstance(Clusters.class);
-//    clusters.addCluster("c1", new StackId("HDP", "2.1"));
-//
-//    RepositoryVersionDAO repositoryVersionDAO = injector.getInstance(RepositoryVersionDAO.class);
-//    repositoryVersionDAO.create(stackEntity, "2.1.1", "2.1.1", "");
-//    repositoryVersionDAO.create(stackEntityTo, "2.2.0", "2.2.0", "");
-//
-//    replay(m_configHelper);
 
     // Set the authenticated user
     // TODO: remove this or replace the authenticated user to test authorization rules
@@ -254,6 +240,113 @@ public class UpgradeHelperTest {
     assertEquals(6, groups.get(1).items.size());
     assertEquals(9, groups.get(2).items.size());
     assertEquals(8, groups.get(3).items.size());
+  }
+
+  @Test
+  public void testPartialUpgradeOrchestration() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("foo", "bar");
+    assertTrue(upgrades.isEmpty());
+
+    upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+
+    ServiceInfo si = ambariMetaInfo.getService("HDP", "2.1.1", "ZOOKEEPER");
+    si.setDisplayName("Zk");
+    ComponentInfo ci = si.getComponentByName("ZOOKEEPER_SERVER");
+    ci.setDisplayName("ZooKeeper1 Server2");
+
+    assertTrue(upgrades.containsKey("upgrade_test_partial"));
+    UpgradePack upgrade = upgrades.get("upgrade_test_partial");
+    assertNotNull(upgrade);
+
+    makeCluster();
+
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE, UpgradeType.ROLLING);
+    context.setSupportedServices(Collections.singleton("ZOOKEEPER"));
+    context.setScope(UpgradeScope.PARTIAL);
+
+    List<Grouping> groupings = upgrade.getGroups(Direction.UPGRADE);
+    assertEquals(8, groupings.size());
+    assertEquals(UpgradeScope.COMPLETE, groupings.get(6).scope);
+
+    List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
+
+    assertEquals(3, groups.size());
+
+    assertEquals("PRE_CLUSTER", groups.get(0).name);
+    assertEquals("ZOOKEEPER", groups.get(1).name);
+    assertEquals("POST_CLUSTER", groups.get(2).name);
+
+    UpgradeGroupHolder group = groups.get(1);
+    // check that the display name is being used
+    assertTrue(group.items.get(1).getText().contains("ZooKeeper1 Server2"));
+    assertEquals("Service Check Zk", group.items.get(6).getText());
+
+    UpgradeGroupHolder postGroup = groups.get(2);
+    assertEquals("POST_CLUSTER", postGroup.name);
+    assertEquals("Finalize Upgrade", postGroup.title);
+    assertEquals(2, postGroup.items.size());
+    assertEquals("Confirm Finalize", postGroup.items.get(0).getText());
+    assertEquals("Save Cluster State", postGroup.items.get(1).getText());
+    assertEquals(StageWrapper.Type.SERVER_SIDE_ACTION, postGroup.items.get(1).getType());
+
+    assertEquals(3, groups.get(0).items.size());
+    assertEquals(7, groups.get(1).items.size());
+    assertEquals(2, groups.get(2).items.size());
+  }
+
+  @Test
+  public void testCompleteUpgradeOrchestration() throws Exception {
+    Map<String, UpgradePack> upgrades = ambariMetaInfo.getUpgradePacks("foo", "bar");
+    assertTrue(upgrades.isEmpty());
+
+    upgrades = ambariMetaInfo.getUpgradePacks("HDP", "2.1.1");
+
+    ServiceInfo si = ambariMetaInfo.getService("HDP", "2.1.1", "ZOOKEEPER");
+    si.setDisplayName("Zk");
+    ComponentInfo ci = si.getComponentByName("ZOOKEEPER_SERVER");
+    ci.setDisplayName("ZooKeeper1 Server2");
+
+    assertTrue(upgrades.containsKey("upgrade_test_partial"));
+    UpgradePack upgrade = upgrades.get("upgrade_test_partial");
+    assertNotNull(upgrade);
+
+    makeCluster();
+
+    UpgradeContext context = new UpgradeContext(m_masterHostResolver, HDP_21,
+        HDP_21, UPGRADE_VERSION, Direction.UPGRADE, UpgradeType.ROLLING);
+    context.setSupportedServices(Collections.singleton("ZOOKEEPER"));
+    context.setScope(UpgradeScope.COMPLETE);
+
+    List<Grouping> groupings = upgrade.getGroups(Direction.UPGRADE);
+    assertEquals(8, groupings.size());
+    assertEquals(UpgradeScope.COMPLETE, groupings.get(6).scope);
+
+    List<UpgradeGroupHolder> groups = m_upgradeHelper.createSequence(upgrade, context);
+
+    assertEquals(4, groups.size());
+
+    assertEquals("PRE_CLUSTER", groups.get(0).name);
+    assertEquals("ZOOKEEPER", groups.get(1).name);
+    assertEquals("ALL_HOSTS", groups.get(2).name);
+    assertEquals("POST_CLUSTER", groups.get(3).name);
+
+    UpgradeGroupHolder group = groups.get(1);
+    // check that the display name is being used
+    assertTrue(group.items.get(1).getText().contains("ZooKeeper1 Server2"));
+    assertEquals("Service Check Zk", group.items.get(5).getText());
+
+    UpgradeGroupHolder postGroup = groups.get(3);
+    assertEquals("POST_CLUSTER", postGroup.name);
+    assertEquals("Finalize Upgrade", postGroup.title);
+    assertEquals(2, postGroup.items.size());
+    assertEquals("Confirm Finalize", postGroup.items.get(0).getText());
+    assertEquals("Save Cluster State", postGroup.items.get(1).getText());
+    assertEquals(StageWrapper.Type.SERVER_SIDE_ACTION, postGroup.items.get(1).getType());
+
+    assertEquals(3, groups.get(0).items.size());
+    assertEquals(6, groups.get(1).items.size());
+    assertEquals(1, groups.get(2).items.size());
   }
 
   @Test
@@ -924,7 +1017,7 @@ public class UpgradeHelperTest {
 
     c.createClusterVersion(stackId,
         c.getDesiredStackVersion().getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
 
     for (int i = 0; i < 4; i++) {
       String hostName = "h" + (i+1);
@@ -1141,7 +1234,7 @@ public class UpgradeHelperTest {
 
     c.createClusterVersion(stackId,
         c.getDesiredStackVersion().getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
 
     for (int i = 0; i < 2; i++) {
       String hostName = "h" + (i+1);
@@ -1221,7 +1314,7 @@ public class UpgradeHelperTest {
 
     c.createClusterVersion(stackId,
         c.getDesiredStackVersion().getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
 
     for (int i = 0; i < 2; i++) {
       String hostName = "h" + (i+1);
@@ -1244,7 +1337,7 @@ public class UpgradeHelperTest {
     Service s = c.getService("ZOOKEEPER");
     ServiceComponent sc = s.addServiceComponent("ZOOKEEPER_SERVER");
 
-    ServiceComponentHost sch1 =sc.addServiceComponentHost("h1");
+    ServiceComponentHost sch1 = sc.addServiceComponentHost("h1");
     sch1.setVersion("2.1.1.0-1234");
 
     ServiceComponentHost sch2 = sc.addServiceComponentHost("h2");
@@ -1252,7 +1345,6 @@ public class UpgradeHelperTest {
 
     List<ServiceComponentHost> schs = c.getServiceComponentHosts("ZOOKEEPER", "ZOOKEEPER_SERVER");
     assertEquals(2, schs.size());
-
     MasterHostResolver mhr = new MasterHostResolver(null, c, "2.1.1.0-1234");
 
     HostsType ht = mhr.getMasterAndHosts("ZOOKEEPER", "ZOOKEEPER_SERVER");
@@ -1267,6 +1359,117 @@ public class UpgradeHelperTest {
     assertEquals("h2", ht.hosts.iterator().next());
   }
 
+  /**
+   * Test that MasterHostResolver is case-insensitive even if configs have hosts in upper case for NameNode.
+   * @throws Exception
+   */
+  @Test
+  public void testResolverCaseInsensitive() throws Exception {
+    Clusters clusters = injector.getInstance(Clusters.class);
+    ServiceFactory serviceFactory = injector.getInstance(ServiceFactory.class);
+
+    String clusterName = "c1";
+    String version = "2.1.1.0-1234";
+
+    StackId stackId = new StackId("HDP-2.1.1");
+    clusters.addCluster(clusterName, stackId);
+    Cluster c = clusters.getCluster(clusterName);
+
+    helper.getOrCreateRepositoryVersion(stackId,
+        c.getDesiredStackVersion().getStackVersion());
+
+    c.createClusterVersion(stackId,
+        c.getDesiredStackVersion().getStackVersion(), "admin",
+        RepositoryVersionState.INSTALLING);
+
+    for (int i = 0; i < 2; i++) {
+      String hostName = "h" + (i+1);
+      clusters.addHost(hostName);
+      Host host = clusters.getHost(hostName);
+
+      Map<String, String> hostAttributes = new HashMap<String, String>();
+      hostAttributes.put("os_family", "redhat");
+      hostAttributes.put("os_release_version", "6");
+
+      host.setHostAttributes(hostAttributes);
+
+      host.persist();
+      clusters.mapHostToCluster(hostName, clusterName);
+    }
+
+    // Add services
+    c.addService(serviceFactory.createNew(c, "HDFS"));
+
+    Service s = c.getService("HDFS");
+    ServiceComponent sc = s.addServiceComponent("NAMENODE");
+    sc.addServiceComponentHost("h1");
+    sc.addServiceComponentHost("h2");
+
+    List<ServiceComponentHost> schs = c.getServiceComponentHosts("HDFS", "NAMENODE");
+    assertEquals(2, schs.size());
+
+    setConfigMocks();
+    expect(m_configHelper.getValueFromDesiredConfigurations(c, "hdfs-site", "dfs.nameservices")).andReturn("ha").anyTimes();
+    expect(m_configHelper.getValueFromDesiredConfigurations(c, "hdfs-site", "dfs.ha.namenodes.ha")).andReturn("nn1,nn2").anyTimes();
+    expect(m_configHelper.getValueFromDesiredConfigurations(c, "hdfs-site", "dfs.http.policy")).andReturn("HTTP_ONLY").anyTimes();
+
+    // Notice that these names are all caps.
+    expect(m_configHelper.getValueFromDesiredConfigurations(c, "hdfs-site", "dfs.namenode.http-address.ha.nn1")).andReturn("H1:50070").anyTimes();
+    expect(m_configHelper.getValueFromDesiredConfigurations(c, "hdfs-site", "dfs.namenode.http-address.ha.nn2")).andReturn("H2:50070").anyTimes();
+    replay(m_configHelper);
+
+    MasterHostResolver mhr = new MockMasterHostResolver(m_configHelper, c, version);
+
+    HostsType ht = mhr.getMasterAndHosts("HDFS", "NAMENODE");
+    assertNotNull(ht.master);
+    assertNotNull(ht.secondary);
+    assertEquals(2, ht.hosts.size());
+
+    // Should be stored in lowercase.
+    assertTrue(ht.hosts.contains("h1"));
+    assertTrue(ht.hosts.contains("h1"));
+  }
+
+  /**
+   * Extend {@link org.apache.ambari.server.stack.MasterHostResolver} in order to overwrite the JMX methods.
+   */
+  private class MockMasterHostResolver extends MasterHostResolver {
+
+    public MockMasterHostResolver(ConfigHelper configHelper, Cluster cluster) {
+      this(configHelper, cluster, null);
+    }
+
+    public MockMasterHostResolver(ConfigHelper configHelper, Cluster cluster, String version) {
+      super(configHelper, cluster, version);
+    }
+
+    /**
+     * Mock the call to get JMX Values.
+     * @param hostname host name
+     * @param port port number
+     * @param beanName if asQuery is false, then search for this bean name
+     * @param attributeName if asQuery is false, then search for this attribute name
+     * @param asQuery whether to search bean or query
+     * @param encrypted true if using https instead of http.
+     * @return
+     */
+    @Override
+    public String queryJmxBeanValue(String hostname, int port, String beanName, String attributeName,
+                                    boolean asQuery, boolean encrypted) {
+
+      if (beanName.equalsIgnoreCase("Hadoop:service=NameNode,name=NameNodeStatus") && attributeName.equalsIgnoreCase("State") && asQuery) {
+        switch (hostname) {
+          case "H1":
+            return Status.ACTIVE.toString();
+          case "H2":
+            return Status.STANDBY.toString();
+          default:
+            return "UNKNOWN_NAMENODE_STATUS_FOR_THIS_HOST";
+        }
+      }
+      return  "NOT_MOCKED";
+    }
+  }
 
   private class MockModule implements Module {
 

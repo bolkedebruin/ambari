@@ -21,6 +21,7 @@ limitations under the License.
 from mock.mock import MagicMock, patch
 from stacks.utils.RMFTestCase import *
 
+@patch("tempfile.mkdtemp", new = MagicMock(return_value='/some_tmp_dir'))
 @patch("os.path.exists", new = MagicMock(return_value=True))
 @patch("platform.linux_distribution", new = MagicMock(return_value="Linux"))
 class TestMetricsCollector(RMFTestCase):
@@ -39,6 +40,15 @@ class TestMetricsCollector(RMFTestCase):
     self.assert_hbase_configure('master', distributed=True)
     self.assert_hbase_configure('regionserver', distributed=True)
     self.assert_ams('collector', distributed=True)
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh /usr/jdk64/jdk1.7.0_45/bin/keytool -importkeystore -srckeystore /etc/security/clientKeys/all.jks -destkeystore /some_tmp_dir/truststore.p12 -deststoretype PKCS12 -srcstorepass bigdata -deststorepass bigdata',
+                              )
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh openssl pkcs12 -in /some_tmp_dir/truststore.p12 -out /etc/ambari-metrics-collector/conf/ca.pem -cacerts -nokeys -passin pass:bigdata',
+                              )
+    self.assertResourceCalled('Execute', ('chown', u'ams', '/etc/ambari-metrics-collector/conf/ca.pem'),
+                              sudo=True
+                              )
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh rm -rf /some_tmp_dir',
+                              )
     self.assertResourceCalled('Execute', '/usr/lib/ams-hbase/bin/hbase-daemon.sh --config /etc/ams-hbase/conf stop regionserver',
                               on_timeout = 'ls /var/run/ambari-metrics-collector//hbase-ams-regionserver.pid >/dev/null 2>&1 && ps `cat /var/run/ambari-metrics-collector//hbase-ams-regionserver.pid` >/dev/null 2>&1 && ambari-sudo.sh -H -E kill -9 `ambari-sudo.sh cat /var/run/ambari-metrics-collector//hbase-ams-regionserver.pid`',
                               timeout = 30,
@@ -130,6 +140,14 @@ class TestMetricsCollector(RMFTestCase):
                               conf_dir = '/etc/ambari-metrics-collector/conf',
                               configurations = self.getConfig()['configurations']['ams-site'],
                               configuration_attributes = self.getConfig()['configuration_attributes']['ams-hbase-site']
+    )
+
+    self.assertResourceCalled('XmlConfig', 'ssl-server.xml',
+                              owner = 'ams',
+                              group = 'hadoop',
+                              conf_dir = '/etc/ambari-metrics-collector/conf',
+                              configurations = self.getConfig()['configurations']['ams-ssl-server'],
+                              configuration_attributes = self.getConfig()['configuration_attributes']['ams-ssl-server']
     )
     merged_ams_hbase_site = {}
     merged_ams_hbase_site.update(self.getConfig()['configurations']['ams-hbase-site'])
@@ -303,7 +321,7 @@ class TestMetricsCollector(RMFTestCase):
                                   mode = 0775,
                                   hadoop_conf_dir = '/etc/hadoop/conf',
                                   type = 'directory',
-                                  action = ['create_on_execute'],
+                                  action = ['create_on_execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
                                   hdfs_site=self.getConfig()['configurations']['hdfs-site'],
                                   principal_name=UnknownConfigurationMock(),
                                   default_fs='hdfs://c6401.ambari.apache.org:8020',
@@ -319,7 +337,7 @@ class TestMetricsCollector(RMFTestCase):
                                   mode = 0711,
                                   hadoop_conf_dir = '/etc/hadoop/conf',
                                   type = 'directory',
-                                  action = ['create_on_execute'],
+                                  action = ['create_on_execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
                                   hdfs_site=self.getConfig()['configurations']['hdfs-site'],
                                   principal_name=UnknownConfigurationMock(),
                                   default_fs='hdfs://c6401.ambari.apache.org:8020',
@@ -331,7 +349,7 @@ class TestMetricsCollector(RMFTestCase):
                                   kinit_path_local = '/usr/bin/kinit',
                                   user = 'hdfs',
                                   hadoop_conf_dir = '/etc/hadoop/conf',
-                                  action = ['execute'],
+                                  action = ['execute'], hdfs_resource_ignore_file='/var/lib/ambari-agent/data/.hdfs_resource_ignore',
                                   hdfs_site=self.getConfig()['configurations']['hdfs-site'],
                                   principal_name=UnknownConfigurationMock(),
                                   default_fs='hdfs://c6401.ambari.apache.org:8020',

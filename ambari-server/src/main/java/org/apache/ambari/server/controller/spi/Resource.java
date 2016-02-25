@@ -130,6 +130,7 @@ public interface Resource {
     StackLevelConfiguration,
     LdapSyncEvent,
     UserPrivilege,
+    GroupPrivilege,
     RepositoryVersion,
     CompatibleRepositoryVersion,
     ClusterStackVersion,
@@ -150,7 +151,8 @@ public interface Resource {
     Credential,
     KerberosDescriptor,
     RoleAuthorization,
-    UserAuthorization;
+    UserAuthorization,
+    VersionDefinition;
 
     /**
      * Get the {@link Type} that corresponds to this InternalType.
@@ -241,6 +243,7 @@ public interface Resource {
     public static final Type StackLevelConfiguration = InternalType.StackLevelConfiguration.getType();
     public static final Type LdapSyncEvent = InternalType.LdapSyncEvent.getType();
     public static final Type UserPrivilege = InternalType.UserPrivilege.getType();
+    public static final Type GroupPrivilege = InternalType.GroupPrivilege.getType();
     public static final Type RepositoryVersion = InternalType.RepositoryVersion.getType();
     public static final Type CompatibleRepositoryVersion = InternalType.CompatibleRepositoryVersion.getType();
     public static final Type ClusterStackVersion = InternalType.ClusterStackVersion.getType();
@@ -262,6 +265,7 @@ public interface Resource {
     public static final Type KerberosDescriptor = InternalType.KerberosDescriptor.getType();
     public static final Type RoleAuthorization = InternalType.RoleAuthorization.getType();
     public static final Type UserAuthorization = InternalType.UserAuthorization.getType();
+    public static final Type VersionDefinition = InternalType.VersionDefinition.getType();
 
     /**
      * The type name.

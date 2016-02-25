@@ -297,6 +297,10 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
         resourceDefinition = new PrivilegeResourceDefinition(Resource.Type.UserPrivilege);
         break;
 
+      case GroupPrivilege:
+        resourceDefinition = new PrivilegeResourceDefinition(Resource.Type.GroupPrivilege);
+        break;
+
       case ViewPermission:
         resourceDefinition = new ViewPermissionResourceDefinition();
         break;
@@ -410,6 +414,10 @@ public class ResourceInstanceFactoryImpl implements ResourceInstanceFactory {
 
       case Setting:
         resourceDefinition = new SimpleResourceDefinition(Resource.Type.Setting, "setting", "settings");
+        break;
+
+      case VersionDefinition:
+        resourceDefinition = new VersionDefinitionResourceDefinition();
         break;
 
       default:

@@ -39,6 +39,7 @@ GRANT ALL PRIVILEGES ON TABLE ambari.stack TO :username;
 CREATE TABLE ambari.clusters (
   cluster_id BIGINT NOT NULL,
   resource_id BIGINT NOT NULL,
+  upgrade_id BIGINT,
   cluster_info VARCHAR(255) NOT NULL,
   cluster_name VARCHAR(100) NOT NULL UNIQUE,
   provisioning_state VARCHAR(255) NOT NULL DEFAULT 'INIT',
@@ -196,12 +197,16 @@ CREATE TABLE ambari.host_version (
 GRANT ALL PRIVILEGES ON TABLE ambari.host_version TO :username;
 
 CREATE TABLE ambari.servicecomponentdesiredstate (
+  id BIGINT NOT NULL,
   component_name VARCHAR(255) NOT NULL,
   cluster_id BIGINT NOT NULL,
   desired_stack_id BIGINT NOT NULL,
+  desired_version VARCHAR(255) NOT NULL DEFAULT 'UNKNOWN',
   desired_state VARCHAR(255) NOT NULL,
   service_name VARCHAR(255) NOT NULL,
-  PRIMARY KEY (component_name, cluster_id, service_name)
+  recovery_enabled SMALLINT NOT NULL DEFAULT 0,
+  CONSTRAINT pk_sc_desiredstate PRIMARY KEY (id),
+  CONSTRAINT unq_scdesiredstate_name UNIQUE(component_name, service_name, cluster_id)
 );
 GRANT ALL PRIVILEGES ON TABLE ambari.servicecomponentdesiredstate TO :username;
 
@@ -621,6 +626,11 @@ CREATE TABLE ambari.repo_version (
   version VARCHAR(255) NOT NULL,
   display_name VARCHAR(128) NOT NULL,
   repositories TEXT NOT NULL,
+  repo_type VARCHAR(255) DEFAULT 'STANDARD' NOT NULL,
+  version_url VARCHAR(1024),
+  version_xml TEXT,
+  version_xsd VARCHAR(512),
+  parent_id BIGINT,
   PRIMARY KEY(repo_version_id)
 );
 GRANT ALL PRIVILEGES ON TABLE ambari.repo_version TO :username;
@@ -748,9 +758,67 @@ CREATE TABLE ambari.setting (
 );
 GRANT ALL PRIVILEGES ON TABLE ambari.setting TO :username;
 
+-- upgrade tables
+CREATE TABLE ambari.upgrade (
+  upgrade_id BIGINT NOT NULL,
+  cluster_id BIGINT NOT NULL,
+  request_id BIGINT NOT NULL,
+  from_version VARCHAR(255) DEFAULT '' NOT NULL,
+  to_version VARCHAR(255) DEFAULT '' NOT NULL,
+  direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
+  upgrade_package VARCHAR(255) NOT NULL,
+  upgrade_type VARCHAR(32) NOT NULL,
+  skip_failures SMALLINT DEFAULT 0 NOT NULL,
+  skip_sc_failures SMALLINT DEFAULT 0 NOT NULL,
+  downgrade_allowed SMALLINT DEFAULT 1 NOT NULL,
+  PRIMARY KEY (upgrade_id),
+  FOREIGN KEY (cluster_id) REFERENCES ambari.clusters(cluster_id),
+  FOREIGN KEY (request_id) REFERENCES ambari.request(request_id)
+);
+
+CREATE TABLE ambari.upgrade_group (
+  upgrade_group_id BIGINT NOT NULL,
+  upgrade_id BIGINT NOT NULL,
+  group_name VARCHAR(255) DEFAULT '' NOT NULL,
+  group_title VARCHAR(1024) DEFAULT '' NOT NULL,
+  PRIMARY KEY (upgrade_group_id),
+  FOREIGN KEY (upgrade_id) REFERENCES ambari.upgrade(upgrade_id)
+);
+
+CREATE TABLE ambari.upgrade_item (
+  upgrade_item_id BIGINT NOT NULL,
+  upgrade_group_id BIGINT NOT NULL,
+  stage_id BIGINT NOT NULL,
+  state VARCHAR(255) DEFAULT 'NONE' NOT NULL,
+  hosts TEXT,
+  tasks TEXT,
+  item_text VARCHAR(1024),
+  PRIMARY KEY (upgrade_item_id),
+  FOREIGN KEY (upgrade_group_id) REFERENCES ambari.upgrade_group(upgrade_group_id)
+);
+
+CREATE TABLE ambari.servicecomponent_history(
+  id BIGINT NOT NULL,
+  component_id BIGINT NOT NULL,
+  upgrade_id BIGINT NOT NULL,
+  from_stack_id BIGINT NOT NULL,
+  to_stack_id BIGINT NOT NULL,
+  CONSTRAINT PK_sc_history PRIMARY KEY (id),
+  CONSTRAINT FK_sc_history_component_id FOREIGN KEY (component_id) REFERENCES ambari.servicecomponentdesiredstate (id),
+  CONSTRAINT FK_sc_history_upgrade_id FOREIGN KEY (upgrade_id) REFERENCES ambari.upgrade (upgrade_id),
+  CONSTRAINT FK_sc_history_from_stack_id FOREIGN KEY (from_stack_id) REFERENCES ambari.stack (stack_id),
+  CONSTRAINT FK_sc_history_to_stack_id FOREIGN KEY (to_stack_id) REFERENCES ambari.stack (stack_id)
+);
+
+GRANT ALL PRIVILEGES ON TABLE ambari.upgrade TO :username;
+GRANT ALL PRIVILEGES ON TABLE ambari.upgrade_group TO :username;
+GRANT ALL PRIVILEGES ON TABLE ambari.upgrade_item TO :username;
+GRANT ALL PRIVILEGES ON TABLE ambari.servicecomponent_history TO :username;
+
 -- tasks indices --
 CREATE INDEX idx_stage_request_id ON ambari.stage (request_id);
 CREATE INDEX idx_hrc_request_id ON ambari.host_role_command (request_id);
+CREATE INDEX idx_hrc_status_role ON ambari.host_role_command (status, role);
 CREATE INDEX idx_rsc_request_id ON ambari.role_success_criteria (request_id);
 
 --------altering tables by creating unique constraints----------
@@ -770,6 +838,7 @@ ALTER TABLE ambari.stack ADD CONSTRAINT unq_stack UNIQUE (stack_name, stack_vers
 -- Note, Oracle has a limitation of 32 chars in the FK name, and we should use the same FK name in all DB types.
 ALTER TABLE ambari.members ADD CONSTRAINT FK_members_group_id FOREIGN KEY (group_id) REFERENCES ambari.groups (group_id);
 ALTER TABLE ambari.members ADD CONSTRAINT FK_members_user_id FOREIGN KEY (user_id) REFERENCES ambari.users (user_id);
+ALTER TABLE ambari.clusters ADD CONSTRAINT FK_clusters_upgrade_id FOREIGN KEY (upgrade_id) REFERENCES ambari.upgrade (upgrade_id);
 ALTER TABLE ambari.clusterconfig ADD CONSTRAINT FK_clusterconfig_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
 ALTER TABLE ambari.clusterservices ADD CONSTRAINT FK_clusterservices_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
 ALTER TABLE ambari.clusterconfigmapping ADD CONSTRAINT clusterconfigmappingcluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
@@ -777,8 +846,8 @@ ALTER TABLE ambari.clusterstate ADD CONSTRAINT FK_clusterstate_cluster_id FOREIG
 ALTER TABLE ambari.cluster_version ADD CONSTRAINT FK_cluster_version_cluster_id FOREIGN KEY (cluster_id) REFERENCES ambari.clusters (cluster_id);
 ALTER TABLE ambari.cluster_version ADD CONSTRAINT FK_cluster_version_repovers_id FOREIGN KEY (repo_version_id) REFERENCES ambari.repo_version (repo_version_id);
 ALTER TABLE ambari.hostcomponentdesiredstate ADD CONSTRAINT FK_hcdesiredstate_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
-ALTER TABLE ambari.hostcomponentdesiredstate ADD CONSTRAINT hstcmpnntdesiredstatecmpnntnme FOREIGN KEY (component_name, cluster_id, service_name) REFERENCES ambari.servicecomponentdesiredstate (component_name, cluster_id, service_name);
-ALTER TABLE ambari.hostcomponentstate ADD CONSTRAINT hstcomponentstatecomponentname FOREIGN KEY (component_name, cluster_id, service_name) REFERENCES ambari.servicecomponentdesiredstate (component_name, cluster_id, service_name);
+ALTER TABLE ambari.hostcomponentdesiredstate ADD CONSTRAINT hstcmpnntdesiredstatecmpnntnme FOREIGN KEY (component_name, service_name, cluster_id) REFERENCES ambari.servicecomponentdesiredstate (component_name, service_name, cluster_id);
+ALTER TABLE ambari.hostcomponentstate ADD CONSTRAINT hstcomponentstatecomponentname FOREIGN KEY (component_name, service_name, cluster_id) REFERENCES ambari.servicecomponentdesiredstate (component_name, service_name, cluster_id);
 ALTER TABLE ambari.hostcomponentstate ADD CONSTRAINT FK_hostcomponentstate_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.hoststate ADD CONSTRAINT FK_hoststate_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
 ALTER TABLE ambari.host_version ADD CONSTRAINT FK_host_version_host_id FOREIGN KEY (host_id) REFERENCES ambari.hosts (host_id);
@@ -1002,49 +1071,6 @@ CREATE INDEX idx_alert_history_state on ambari.alert_history(alert_state);
 CREATE INDEX idx_alert_group_name on ambari.alert_group(group_name);
 CREATE INDEX idx_alert_notice_state on ambari.alert_notice(notify_state);
 
--- upgrade tables
-CREATE TABLE ambari.upgrade (
-  upgrade_id BIGINT NOT NULL,
-  cluster_id BIGINT NOT NULL,
-  request_id BIGINT NOT NULL,
-  from_version VARCHAR(255) DEFAULT '' NOT NULL,
-  to_version VARCHAR(255) DEFAULT '' NOT NULL,
-  direction VARCHAR(255) DEFAULT 'UPGRADE' NOT NULL,
-  upgrade_package VARCHAR(255) NOT NULL,
-  upgrade_type VARCHAR(32) NOT NULL,
-  skip_failures SMALLINT DEFAULT 0 NOT NULL,
-  skip_sc_failures SMALLINT DEFAULT 0 NOT NULL,
-  downgrade_allowed SMALLINT DEFAULT 1 NOT NULL,
-  PRIMARY KEY (upgrade_id),
-  FOREIGN KEY (cluster_id) REFERENCES ambari.clusters(cluster_id),
-  FOREIGN KEY (request_id) REFERENCES ambari.request(request_id)
-);
-
-CREATE TABLE ambari.upgrade_group (
-  upgrade_group_id BIGINT NOT NULL,
-  upgrade_id BIGINT NOT NULL,
-  group_name VARCHAR(255) DEFAULT '' NOT NULL,
-  group_title VARCHAR(1024) DEFAULT '' NOT NULL,
-  PRIMARY KEY (upgrade_group_id),
-  FOREIGN KEY (upgrade_id) REFERENCES ambari.upgrade(upgrade_id)
-);
-
-CREATE TABLE ambari.upgrade_item (
-  upgrade_item_id BIGINT NOT NULL,
-  upgrade_group_id BIGINT NOT NULL,
-  stage_id BIGINT NOT NULL,
-  state VARCHAR(255) DEFAULT 'NONE' NOT NULL,
-  hosts TEXT,
-  tasks TEXT,
-  item_text VARCHAR(1024),
-  PRIMARY KEY (upgrade_item_id),
-  FOREIGN KEY (upgrade_group_id) REFERENCES ambari.upgrade_group(upgrade_group_id)
-);
-
-GRANT ALL PRIVILEGES ON TABLE ambari.upgrade TO :username;
-GRANT ALL PRIVILEGES ON TABLE ambari.upgrade_group TO :username;
-GRANT ALL PRIVILEGES ON TABLE ambari.upgrade_item TO :username;
-
 ---------inserting some data-----------
 -- In order for the first ID to be 1, must initialize the ambari_sequences table with a sequence_value of 0.
 BEGIN;
@@ -1135,7 +1161,11 @@ INSERT INTO ambari.ambari_sequences (sequence_name, sequence_value)
   union all
   select 'setting_id_seq', 0
   union all
-  select 'hostcomponentstate_id_seq', 0;
+  select 'hostcomponentstate_id_seq', 0
+  union all
+  select 'servicecomponentdesiredstate_id_seq', 0
+  union all
+  select 'servicecomponent_history_id_seq', 0;
 
 INSERT INTO ambari.adminresourcetype (resource_type_id, resource_type_name)
   SELECT 1, 'AMBARI'
@@ -1412,7 +1442,7 @@ INSERT INTO ambari.adminprivilege (privilege_id, permission_id, resource_id, pri
   SELECT 1, 1, 1, 1;
 
 INSERT INTO ambari.metainfo (metainfo_key, metainfo_value)
-  SELECT 'version', '${ambariVersion}';
+  SELECT 'version', '${ambariSchemaVersion}';
 COMMIT;
 
 -- Quartz tables

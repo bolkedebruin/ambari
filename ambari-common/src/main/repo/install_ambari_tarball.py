@@ -42,7 +42,7 @@ DEB_DEPENDENCIES_PROPERTY =  "deb.dependency.list"
 
 FILES_TO_DOWNLOAD = [PREINST_SCRIPT, PRERM_SCRIPT, POSTINST_SCRIPT, POSTRM_SCRIPT, OS_CHECK, OS_FAMILY_DESCRIPTION, OS_PACKAGE_DEPENDENCIES]
 
-ROOT_FOLDER_ENV_VARIABLE = "AMBARI_ROOT_FOLDER"
+ROOT_FOLDER_ENV_VARIABLE = "RPM_INSTALL_PREFIX"
           
 class Utils:
   verbose = False
@@ -200,7 +200,7 @@ class Installer:
     if self.verbose:
       bash_args.append("-x")
       
-    Utils.os_call(["bash"] + bash_args + [script_name] + args, env={ROOT_FOLDER_ENV_VARIABLE: self.root_folder})
+    Utils.os_call(["bash"] + bash_args + [script_name] + args, env={ROOT_FOLDER_ENV_VARIABLE: self.root_folder}, logoutput=True)
     
 
 class TargzInstaller(Installer):

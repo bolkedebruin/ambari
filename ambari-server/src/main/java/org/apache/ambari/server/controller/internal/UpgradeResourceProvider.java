@@ -36,8 +36,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.google.inject.assistedinject.Assisted;
-import com.google.inject.persist.Transactional;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
@@ -86,6 +84,9 @@ import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
 import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.DesiredConfig;
+import org.apache.ambari.server.state.RepositoryType;
+import org.apache.ambari.server.state.Service;
+import org.apache.ambari.server.state.ServiceComponent;
 import org.apache.ambari.server.state.ServiceInfo;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.StackInfo;
@@ -104,6 +105,7 @@ import org.apache.ambari.server.state.stack.upgrade.StageWrapper;
 import org.apache.ambari.server.state.stack.upgrade.Task;
 import org.apache.ambari.server.state.stack.upgrade.TaskWrapper;
 import org.apache.ambari.server.state.stack.upgrade.UpdateStackGrouping;
+import org.apache.ambari.server.state.stack.upgrade.UpgradeScope;
 import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostServerActionEvent;
 import org.apache.commons.collections.CollectionUtils;
@@ -115,6 +117,8 @@ import com.google.common.collect.Lists;
 import com.google.gson.Gson;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
+import com.google.inject.assistedinject.Assisted;
+import com.google.inject.persist.Transactional;
 
 /**
  * Manages the ability to start and get status of upgrades.
@@ -172,6 +176,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
   private static final String COMMAND_PARAM_CLUSTER_NAME = "clusterName";
   private static final String COMMAND_PARAM_DIRECTION = "upgrade_direction";
   private static final String COMMAND_PARAM_UPGRADE_PACK = "upgrade_pack";
+  private static final String COMMAND_PARAM_REQUEST_ID = "request_id";
+
   // TODO AMBARI-12698, change this variable name since it is no longer always a restart. Possible values are rolling_upgrade or nonrolling_upgrade
   // This will involve changing Script.py
   private static final String COMMAND_PARAM_RESTART_TYPE = "restart_type";
@@ -300,9 +306,9 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         String forceDowngrade = requestInfoProps.get(UpgradeResourceDefinition.DOWNGRADE_DIRECTIVE);
         String clusterName = (String) requestMap.get(UPGRADE_CLUSTER_NAME);
 
-          if (null == clusterName) {
-              throw new AmbariException(String.format("%s is required", UPGRADE_CLUSTER_NAME));
-           }
+        if (null == clusterName) {
+          throw new AmbariException(String.format("%s is required", UPGRADE_CLUSTER_NAME));
+        }
 
         Cluster cluster = getManagementController().getClusters().getCluster(clusterName);
         Direction direction = Boolean.parseBoolean(forceDowngrade) ? Direction.DOWNGRADE
@@ -311,15 +317,17 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         UpgradePack up = validateRequest(direction, requestMap);
 
         try {
-              return createUpgrade(cluster, direction, up, requestMap);
-            } catch (Exception e){
-              LOG.error("Error appears during upgrade task submitting", e);
+          return createUpgrade(cluster, direction, up, requestMap);
+        } catch (Exception e) {
+          LOG.error("Error appears during upgrade task submitting", e);
 
-                // Any error caused in the createUpgrade will initiate transaction rollback
-                  // As we operate inside with cluster data, any cache which belongs to cluster need to be flushed
-                    cluster.invalidateData();
-              throw e;
-            }
+          // Any error caused in the createUpgrade will initiate transaction
+          // rollback
+          // As we operate inside with cluster data, any cache which belongs to
+          // cluster need to be flushed
+          cluster.invalidateData();
+          throw e;
+        }
       }
     });
 
@@ -701,12 +709,20 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     StackId sourceStackId = null;
     StackId targetStackId = null;
 
+    Set<String> supportedServices = new HashSet<>();
+    UpgradeScope scope = UpgradeScope.COMPLETE;
+
     switch (direction) {
       case UPGRADE:
         sourceStackId = cluster.getCurrentStackVersion();
 
         RepositoryVersionEntity targetRepositoryVersion = s_repoVersionDAO.findByStackNameAndVersion(
             sourceStackId.getStackName(), version);
+
+        // !!! TODO check the repo_version for patch-ness and restrict the context
+        // to those services that require it.  Consult the version definition and add the
+        // service names to supportedServices
+
         targetStackId = targetRepositoryVersion.getStackId();
         break;
       case DOWNGRADE:
@@ -717,6 +733,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     UpgradeContext ctx = new UpgradeContext(resolver, sourceStackId, targetStackId, version,
         direction, pack.getType());
+    ctx.setSupportedServices(supportedServices);
+    ctx.setScope(scope);
 
     if (direction.isDowngrade()) {
       if (requestMap.containsKey(UPGRADE_FROM_VERSION)) {
@@ -797,6 +815,20 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
       }
       configUpgradePack = ConfigUpgradePack.merge(intermediateConfigUpgradePacks);
     }
+
+    // TODO: for now, all service components are transitioned to upgrading state
+    // TODO: When performing patch upgrade, we should only target supported services/components
+    // from upgrade pack
+    Set<Service> services = new HashSet<>(cluster.getServices().values());
+    Map<Service, Set<ServiceComponent>> targetComponents = new HashMap<>();
+    for (Service service: services) {
+      Set<ServiceComponent> serviceComponents =
+        new HashSet<>(service.getServiceComponents().values());
+      targetComponents.put(service, serviceComponents);
+    }
+    // TODO: is there any extreme case when we need to set component upgrade state back to NONE
+    // from IN_PROGRESS (e.g. canceled downgrade)
+    s_upgradeHelper.putComponentsToUpgradingState(version, targetComponents);
 
     for (UpgradeGroupHolder group : groups) {
       boolean skippable = group.skippable;
@@ -879,6 +911,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     req.persist();
 
     s_upgradeDAO.create(entity);
+    cluster.setUpgradeEntity(entity);
 
     return entity;
   }
@@ -1175,7 +1208,8 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     RequestResourceFilter filter = new RequestResourceFilter("", "",
         new ArrayList<String>(wrapper.getHosts()));
 
-    Map<String, String> params = getNewParameterMap();
+    LOG.debug("Analyzing upgrade item {} with tasks: {}.", entity.getText(), entity.getTasks());
+    Map<String, String> params = getNewParameterMap(request);
     params.put(COMMAND_PARAM_TASKS, entity.getTasks());
     params.put(COMMAND_PARAM_VERSION, context.getVersion());
     params.put(COMMAND_PARAM_DIRECTION, context.getDirection().name().toLowerCase());
@@ -1283,7 +1317,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
         break;
     }
 
-    Map<String, String> commandParams = getNewParameterMap();
+    Map<String, String> commandParams = getNewParameterMap(request);
 
     // TODO AMBARI-12698, change COMMAND_PARAM_RESTART_TYPE to something that isn't "RESTART" specific.
     if (context.getType() == UpgradeType.ROLLING) {
@@ -1351,7 +1385,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     Cluster cluster = context.getCluster();
 
-    Map<String, String> commandParams = getNewParameterMap();
+    Map<String, String> commandParams = getNewParameterMap(request);
     commandParams.put(COMMAND_PARAM_VERSION, context.getVersion());
     commandParams.put(COMMAND_PARAM_DIRECTION, context.getDirection().name().toLowerCase());
     commandParams.put(COMMAND_PARAM_ORIGINAL_STACK, context.getOriginalStackId().getStackId());
@@ -1391,7 +1425,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
     stage.setStageId(stageId);
     entity.setStageId(Long.valueOf(stageId));
 
-    Map<String, String> requestParams = getNewParameterMap();
+    Map<String, String> requestParams = getNewParameterMap(request);
     s_commandExecutionHelper.get().addExecutionCommandsToStage(actionContext, stage, requestParams);
 
     request.addStages(Collections.singletonList(stage));
@@ -1418,7 +1452,7 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
 
     Cluster cluster = context.getCluster();
 
-    Map<String, String> commandParams = getNewParameterMap();
+    Map<String, String> commandParams = getNewParameterMap(request);
     commandParams.put(COMMAND_PARAM_CLUSTER_NAME, cluster.getClusterName());
     commandParams.put(COMMAND_PARAM_VERSION, context.getVersion());
     commandParams.put(COMMAND_PARAM_DIRECTION, context.getDirection().name().toLowerCase());
@@ -1529,13 +1563,15 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
    * command was created. For upgrades, this is problematic since the commands
    * are all created ahead of time, but the upgrade may change configs as part
    * of the upgrade pack.</li>
+   * <li>{@link #COMMAND_PARAM_REQUEST_ID}</li> the ID of the request.
    * <ul>
    *
    * @return
    */
-  private Map<String, String> getNewParameterMap() {
+  private Map<String, String> getNewParameterMap(RequestStageContainer requestStageContainer) {
     Map<String, String> parameters = new HashMap<String, String>();
     parameters.put(KeyNames.REFRESH_CONFIG_TAGS_BEFORE_EXECUTION, "*");
+    parameters.put(COMMAND_PARAM_REQUEST_ID, String.valueOf(requestStageContainer.getId()));
     return parameters;
   }
 
@@ -1582,11 +1618,19 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
               HostRoleStatus.ABORTED, internalStatus));
     }
 
+    Long clusterId = internalRequest.getClusterId();
     if (HostRoleStatus.ABORTED == status) {
       if (!internalStatus.isCompletedState()) {
         actionManager.cancelRequest(internalRequest.getRequestId(), reason);
+        // Remove relevant upgrade entity
+        try {
+          Cluster cluster = clusters.get().getClusterById(clusterId);
+          cluster.setUpgradeEntity(null);
+        } catch (AmbariException e) {
+          LOG.warn("Could not clear upgrade entity for cluster with id {}", clusterId, e);
+        }
       }
-    } else {
+    } else { // Processing PENDING
       List<Long> taskIds = new ArrayList<Long>();
 
       for (HostRoleCommand hrc : internalRequest.getCommands()) {
@@ -1597,6 +1641,15 @@ public class UpgradeResourceProvider extends AbstractControllerResourceProvider 
       }
 
       actionManager.resubmitTasks(taskIds);
+
+      try {
+        Cluster cluster = clusters.get().getClusterById(clusterId);
+        UpgradeEntity lastUpgradeItemForCluster = s_upgradeDAO.findLastUpgradeForCluster(cluster.getClusterId());
+        cluster.setUpgradeEntity(lastUpgradeItemForCluster);
+      } catch (AmbariException e) {
+        LOG.warn("Could not clear upgrade entity for cluster with id {}", clusterId, e);
+      }
+
     }
   }
 }

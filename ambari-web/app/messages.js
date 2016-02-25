@@ -207,7 +207,9 @@ Em.I18n.translations = {
   'common.stacks': 'Stacks',
   'common.stack': 'Stack',
   'common.reset': 'Reset',
+  'common.resume': 'Resume',
   'common.path': 'Path',
+  'common.patch': 'Patch',
   'common.package': 'Package',
   'common.proceed': 'Proceed',
   'common.proceedAnyway': 'Proceed Anyway',
@@ -390,6 +392,8 @@ Em.I18n.translations = {
   'popup.clusterCheck.Upgrade.header': 'Upgrade to {0}',
   'popup.clusterCheck.Upgrade.fail.title': 'Requirements',
   'popup.clusterCheck.Upgrade.fail.alert': 'You <strong>must</strong> meet these requirements before you can proceed.',
+  'popup.clusterCheck.Upgrade.bypassed-failures.title': 'Errors that can be bypassed',
+  'popup.clusterCheck.Upgrade.bypassed-failures.alert': 'Errors are allowed to be bypassed since config stack.upgrade.bypass.prechecks is set to true. It is strongly encouraged to look into these failures.',
   'popup.clusterCheck.Upgrade.warning.title': 'Warnings',
   'popup.clusterCheck.Upgrade.warning.alert': 'Correcting the warnings is not required but is <strong>recommended</strong>.',
   'popup.clusterCheck.Upgrade.configsMerge.title': 'Configuration Changes',
@@ -1519,6 +1523,7 @@ Em.I18n.translations = {
   'admin.stackVersions.version.upgrade.upgradeOptions.RU.description': "Services remain running while the upgrade is performed. Minimized disruption but slower upgrade.",
   'admin.stackVersions.version.upgrade.upgradeOptions.EU.title': "Express Upgrade",
   'admin.stackVersions.version.upgrade.upgradeOptions.EU.description': "Services are stopped while the upgrade is performed. Incurs downtime, but faster upgrade.",
+  'admin.stackVersions.version.upgrade.upgradeOptions.errors_bypassed': "Bypassed errors,<br/>proceed at your own risk.",
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.rerun':'Rerun Checks',
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.title':'Checks:',
   'admin.stackVersions.version.upgrade.upgradeOptions.preCheck.msg.checking': 'Checking...',
@@ -1530,6 +1535,9 @@ Em.I18n.translations = {
   'admin.stackVersions.version.upgrade.upgradeOptions.notAllowed':'Not allowed by the current version',
   'admin.stackVersions.version.upgrade.upgradeOptions.EU.confirm.msg': 'You are about to perform an <b>Express Upgrade</b> from <b>{0}</b> to <b>{1}</b>. This will incur cluster downtime. Are you sure you want to proceed?',
   'admin.stackVersions.version.upgrade.upgradeOptions.RU.confirm.msg': 'You are about to perform a <b>Rolling Upgrade</b> from <b>{0}</b> to <b>{1}</b>. Are you sure you want to proceed?',
+
+  'admin.stackVersions.version.column.showDetails': "Show Details",
+  'admin.stackVersions.version.column.showDetails.title': "Version Details",
 
   'admin.stackVersions.hosts.popup.header.current': "Current",
   'admin.stackVersions.hosts.popup.header.installed': "Installed",
@@ -1690,9 +1698,14 @@ Em.I18n.translations = {
   'services.service.actions.run.stopLdapKnox.title':'Stop Demo LDAP Knox Gateway',
   'services.service.actions.run.stopLdapKnox.context':'Stop Demo LDAP',
   'services.service.actions.run.startStopLdapKnox.error': 'Error during remote command: ',
-  'services.service.actions.run.immediateStopHawqCluster.context':'Stop HAWQ Cluster (Immediate Mode)',
+  'services.service.actions.run.immediateStopHawqService.context':'Stop HAWQ Service (Immediate Mode)',
+  'services.service.actions.run.immediateStopHawqService.label':'Stop HAWQ Service (Immediate Mode)',
   'services.service.actions.run.immediateStopHawqSegment.label':'Stop (Immediate Mode)',
   'services.service.actions.run.immediateStopHawqSegment.context':'Stop HAWQ Segment (Immediate Mode)',
+  'services.service.actions.run.resyncHawqStandby.context':'Re-Sync HAWQ Standby',
+  'services.service.actions.run.resyncHawqStandby.label':'Re-Synchronize HAWQ Standby',
+  'services.service.actions.run.clearHawqCache.label':'Clear HAWQ\'s HDFS Metadata Cache',
+  'services.service.actions.run.runHawqCheck.label':'Run HAWQ Check',
   'services.service.actions.manage_configuration_groups.short':'Manage Config Groups',
   'services.service.actions.serviceActions':'Service Actions',
 
@@ -2096,10 +2109,10 @@ Em.I18n.translations = {
     '</div>',
   'services.reassign.step5.body.app_timeline_server': '<div class="alert alert-info">' +
   '<ol>' +
-  '<li>Copy <b>{7}/leveldb-timeline-store.ldb</b> from the source host <b>{1}</b> to <b>{7}/leveldb-timeline-store.ldb</b> on the target host <b>{2}</b>.</li>' +
+  '<li>Copy <b>{7}/{8}</b> from the source host <b>{1}</b> to <b>{7}/{8}</b> on the target host <b>{2}</b>.</li>' +
   '<li>Login to the target host <b>{2}</b> and change permissions by running:' +
-  '<div class="code-snippet">chown -R {3}:{5} {7}/leveldb-timeline-store.ldb</div></li>' +
-  '<div class="code-snippet">chmod -R 700 {7}/leveldb-timeline-store.ldb</div></li>' +
+  '<div class="code-snippet">chown -R {3}:{5} {7}/{8}</div></li>' +
+  '<div class="code-snippet">chmod -R 700 {7}/{8}</div></li>' +
   '</ol>' +
   '</div>',
   'services.reassign.step5.body.securityNotice': '<div class="alert alert-info"> <div class="alert alert-warn"> <strong>Note: </strong> Secure cluster' +
@@ -2528,6 +2541,7 @@ Em.I18n.translations = {
   'dashboard.widgets.YARNLinks': 'YARN Links',
   'dashboard.widgets.error.invalid': 'Invalid! Enter a number between 0 - {0}',
   'dashboard.widgets.error.smaller': 'Threshold 1 should be smaller than threshold 2!',
+  'dashboard.widgets.HawqSegmentUp': 'HAWQ Segments Live',
 
   'dashboard': {
     'widgets': {
@@ -2631,6 +2645,10 @@ Em.I18n.translations = {
   'dashboard.services.hbase.regions.transition':'Regions In Transition',
   'dashboard.services.hbase.masterStarted':'Master Started',
   'dashboard.services.hbase.masterActivated':'Master Activated',
+
+  'dashboard.services.hawq.segments.started':'started',
+  'dashboard.services.hawq.segments.stopped':'stopped',
+  'dashboard.services.hawq.segments.total':'in total',
 
   'dashboard.services.hive.clients':'Hive Clients',
   'dashboard.services.hive.client':'Hive Client',

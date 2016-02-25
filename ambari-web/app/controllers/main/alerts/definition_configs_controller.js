@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+var numericUtils = require('utils/number_utils');
+
 App.MainAlertDefinitionConfigsController = Em.Controller.extend({
 
   name: 'mainAlertDefinitionConfigsController',
@@ -289,8 +291,18 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
         text: isWizard ? '' : this.getThresholdsProperty('critical', 'text'),
         value: isWizard ? '' : this.getThresholdsProperty('critical', 'value')
       }),
-      App.AlertConfigProperties.ConnectionTimeout.create({
-        value: alertDefinition.get('uri.connectionTimeout')
+      App.AlertConfigProperties.Parameter.create({
+        value: alertDefinition.get('uri.connectionTimeout'),
+        threshold: "CRITICAL",
+        name: 'connection_timeout',
+        label: 'Connection Timeout',
+        displayType: 'parameter',
+        apiProperty: 'source.uri.connection_timeout',
+        units: 'Seconds',
+        isValid: function () {
+          var value = this.get('value');
+          return numericUtils.isPositiveNumber(value);
+        }.property('value')
       })
     ]);
 
@@ -330,6 +342,7 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
       result.push(App.AlertConfigProperties.Parameter.create(mixin, {
         value: isWizard ? '' : parameter.get('value'),
         apiProperty: parameter.get('name'),
+        description: parameter.get('description'),
         label: isWizard ? '' : parameter.get('displayName'),
         threshold: isWizard ? '' : parameter.get('threshold'),
         units: isWizard ? '' : parameter.get('units'),
@@ -542,10 +555,10 @@ App.MainAlertDefinitionConfigsController = Em.Controller.extend({
 
     // `source.parameters` is an array and should be updated separately from other configs
     if (this.get('content.parameters.length')) {
-      propertiesToUpdate['AlertDefinition/source/parameters'] = this.get('content.rawSourceData.parameters');
+      propertiesToUpdate['AlertDefinition/source'] = this.get('content.rawSourceData');
       var parameterConfigs = this.get('configs').filterProperty('name', 'parameter');
       parameterConfigs.forEach(function (parameter) {
-        propertiesToUpdate['AlertDefinition/source/parameters'].findProperty('name', parameter.get('apiProperty')).value = parameter.get('apiFormattedValue');
+        propertiesToUpdate['AlertDefinition/source'].parameters.findProperty('name', parameter.get('apiProperty')).value = parameter.get('apiFormattedValue');
       });
     }
 

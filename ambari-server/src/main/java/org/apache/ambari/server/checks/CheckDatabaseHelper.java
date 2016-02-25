@@ -37,11 +37,9 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -60,6 +58,8 @@ public class CheckDatabaseHelper {
   private Connection connection;
   private AmbariMetaInfo ambariMetaInfo;
   private Injector injector;
+  private boolean errorAvailable = false;
+  private boolean warningAvailable = false;
 
   @Inject
   public CheckDatabaseHelper(DBAccessor dbAccessor,
@@ -112,11 +112,27 @@ public class CheckDatabaseHelper {
     persistService.stop();
   }
 
+  protected boolean isErrorAvailable() {
+    return errorAvailable;
+  }
+
+  protected void setErrorAvailable(boolean errorAvailable) {
+    this.errorAvailable = errorAvailable;
+  }
+
+  public boolean isWarningAvailable() {
+    return warningAvailable;
+  }
+
+  public void setWarningAvailable(boolean warningAvailable) {
+    this.warningAvailable = warningAvailable;
+  }
+
   /*
-  * This method checks if all configurations that we have in clusterconfig table
-  * have at least one mapping in clusterconfigmapping table. If we found not mapped config
-  * then we are showing warning message for user.
-  * */
+    * This method checks if all configurations that we have in clusterconfig table
+    * have at least one mapping in clusterconfigmapping table. If we found not mapped config
+    * then we are showing warning message for user.
+    * */
   protected void checkForNotMappedConfigsToCluster() {
     String GET_NOT_MAPPED_CONFIGS_QUERY = "select type_name from clusterconfig where type_name not in (select type_name from clusterconfigmapping)";
     Set<String> nonSelectedConfigs = new HashSet<>();
@@ -130,7 +146,8 @@ public class CheckDatabaseHelper {
         }
       }
       if (!nonSelectedConfigs.isEmpty()) {
-        LOG.warn("You have config(s) that is(are) not mapped to any cluster: " + StringUtils.join(nonSelectedConfigs, ","));
+        LOG.warn("You have config(s): {} that is(are) not mapped (in clusterconfigmapping table) to any cluster!", StringUtils.join(nonSelectedConfigs, ","));
+        warningAvailable = true;
       }
     } catch (SQLException e) {
       LOG.error("Exception occurred during check for not mapped configs to cluster procedure: ", e);
@@ -152,24 +169,27 @@ public class CheckDatabaseHelper {
   * than one selected version it's a bug and we are showing error message for user.
   * */
   protected void checkForConfigsSelectedMoreThanOnce() {
-    String GET_CONFIGS_SELECTED_MORE_THAN_ONCE_QUERY = "select c.cluster_name,type_name from clusterconfigmapping ccm " +
+    String GET_CONFIGS_SELECTED_MORE_THAN_ONCE_QUERY = "select c.cluster_name, ccm.type_name from clusterconfigmapping ccm " +
             "join clusters c on ccm.cluster_id=c.cluster_id " +
-            "group by c.cluster_name,type_name " +
+            "group by c.cluster_name, ccm.type_name " +
             "having sum(selected) > 1";
-    Multimap<String, String> configsSelectedMoreThanOnce = HashMultimap.create();
+    Multimap<String, String> clusterConfigTypeMap = HashMultimap.create();
     ResultSet rs = null;
     try {
       Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
       rs = statement.executeQuery(GET_CONFIGS_SELECTED_MORE_THAN_ONCE_QUERY);
       if (rs != null) {
         while (rs.next()) {
-          configsSelectedMoreThanOnce.put(rs.getString("cluster_name"), rs.getString("type_name"));
+          clusterConfigTypeMap.put(rs.getString("cluster_name"), rs.getString("type_name"));
+        }
+
+        for (String clusterName : clusterConfigTypeMap.keySet()) {
+          LOG.error("You have config(s), in cluster {}, that is(are) selected more than once in clusterconfigmapping table: {}",
+                  clusterName ,StringUtils.join(clusterConfigTypeMap.get(clusterName), ","));
+          errorAvailable = true;
         }
       }
-      for (String clusterName : configsSelectedMoreThanOnce.keySet()) {
-        LOG.error(String.format("You have config(s), in cluster %s, that is(are) selected more than once in clusterconfigmapping: %s",
-                clusterName ,StringUtils.join(configsSelectedMoreThanOnce.get(clusterName), ",")));
-      }
+
     } catch (SQLException e) {
       LOG.error("Exception occurred during check for config selected more than ones procedure: ", e);
     } finally {
@@ -199,11 +219,13 @@ public class CheckDatabaseHelper {
         while (rs.next()) {
           hostsWithoutStatus.add(rs.getString("host_name"));
         }
+
+        if (!hostsWithoutStatus.isEmpty()) {
+          LOG.error("You have host(s) without state (in hoststate table): " + StringUtils.join(hostsWithoutStatus, ","));
+          errorAvailable = true;
+        }
       }
 
-      if (!hostsWithoutStatus.isEmpty()) {
-        LOG.error("You have host(s) without status: " + StringUtils.join(hostsWithoutStatus, ","));
-      }
     } catch (SQLException e) {
       LOG.error("Exception occurred during check for host without state procedure: ", e);
     } finally {
@@ -227,7 +249,7 @@ public class CheckDatabaseHelper {
     String GET_HOST_COMPONENT_STATE_COUNT_QUERY = "select count(*) from hostcomponentstate";
     String GET_HOST_COMPONENT_DESIRED_STATE_COUNT_QUERY = "select count(*) from hostcomponentdesiredstate";
     String GET_MERGED_TABLE_ROW_COUNT_QUERY = "select count(*) FROM hostcomponentstate hcs " +
-            "JOIN hostcomponentdesiredstate hcds ON hcs.service_name = hcds.service_name AND hcs.component_name = hcds.component_name AND hcs.host_id = hcds.host_id";
+            "JOIN hostcomponentdesiredstate hcds ON hcs.service_name=hcds.service_name AND hcs.component_name=hcds.component_name AND hcs.host_id=hcds.host_id";
     int hostComponentStateCount = 0;
     int hostComponentDesiredStateCount = 0;
     int mergedCount = 0;
@@ -257,7 +279,8 @@ public class CheckDatabaseHelper {
       }
 
       if (hostComponentStateCount != hostComponentDesiredStateCount || hostComponentStateCount != mergedCount) {
-        LOG.error("Your host component state count not equals host component desired state count!");
+        LOG.error("Your host component states (hostcomponentstate table) count not equals host component desired states (hostcomponentdesiredstate table) count!");
+        errorAvailable = true;
       }
 
     } catch (SQLException e) {
@@ -284,27 +307,34 @@ public class CheckDatabaseHelper {
   * If any issue was discovered, we are showing error message for user.
   * */
   protected void checkServiceConfigs()  {
-    String GET_SERVICES_WITHOUT_CONFIGS_QUERY = "select service_name from clusterservices where service_name not in (select service_name from serviceconfig where group_id is null)";
-    String GET_SERVICE_CONFIG_WITHOUT_MAPPING_QUERY = "select service_name from serviceconfig where service_config_id not in (select service_config_id from serviceconfigmapping) and group_id is null";
-    String GET_STACK_NAME_VERSION_QUERY = "select s.stack_name, s.stack_version from clusters c join stack s on c.desired_stack_id = s.stack_id";
-    String GET_SERVICES_WITH_CONFIGS_QUERY = "select cs.service_name, type_name, sc.version from clusterservices cs " +
-            "join serviceconfig sc on cs.service_name=sc.service_name " +
+    String GET_SERVICES_WITHOUT_CONFIGS_QUERY = "select c.cluster_name, service_name from clusterservices cs " +
+            "join clusters c on cs.cluster_id=c.cluster_id " +
+            "where service_name not in (select service_name from serviceconfig sc where sc.cluster_id=cs.cluster_id and sc.service_name=cs.service_name and sc.group_id is null)";
+    String GET_SERVICE_CONFIG_WITHOUT_MAPPING_QUERY = "select c.cluster_name, sc.service_name, sc.version from serviceconfig sc " +
+            "join clusters c on sc.cluster_id=c.cluster_id " +
+            "where service_config_id not in (select service_config_id from serviceconfigmapping) and group_id is null";
+    String GET_STACK_NAME_VERSION_QUERY = "select c.cluster_name, s.stack_name, s.stack_version from clusters c " +
+            "join stack s on c.desired_stack_id = s.stack_id";
+    String GET_SERVICES_WITH_CONFIGS_QUERY = "select c.cluster_name, cs.service_name, cc.type_name, sc.version from clusterservices cs " +
+            "join serviceconfig sc on cs.service_name=sc.service_name and cs.cluster_id=sc.cluster_id " +
             "join serviceconfigmapping scm on sc.service_config_id=scm.service_config_id " +
-            "join clusterconfig cc on scm.config_id=cc.config_id " +
+            "join clusterconfig cc on scm.config_id=cc.config_id and sc.cluster_id=cc.cluster_id " +
+            "join clusters c on cc.cluster_id=c.cluster_id " +
             "where sc.group_id is null " +
-            "group by cs.service_name, type_name, sc.version";
-    String GET_NOT_SELECTED_SERVICE_CONFIGS_QUERY = "select cs.service_name,cc.type_name from clusterservices cs " +
-            "join serviceconfig sc on cs.service_name=sc.service_name " +
+            "group by c.cluster_name, cs.service_name, cc.type_name, sc.version";
+    String GET_NOT_SELECTED_SERVICE_CONFIGS_QUERY = "select c.cluster_name, cs.service_name, cc.type_name from clusterservices cs " +
+            "join serviceconfig sc on cs.service_name=sc.service_name and cs.cluster_id=sc.cluster_id " +
             "join serviceconfigmapping scm on sc.service_config_id=scm.service_config_id " +
-            "join clusterconfig cc on scm.config_id=cc.config_id " +
-            "join clusterconfigmapping ccm on cc.type_name=ccm.type_name and cc.version_tag=ccm.version_tag " +
-            "where sc.group_id is null and sc.service_config_id = (select max(service_config_id) from serviceconfig sc2 where sc2.service_name=sc.service_name) " +
-            "group by cs.service_name,cc.type_name " +
+            "join clusterconfig cc on scm.config_id=cc.config_id and cc.cluster_id=sc.cluster_id " +
+            "join clusterconfigmapping ccm on cc.type_name=ccm.type_name and cc.version_tag=ccm.version_tag and cc.cluster_id=ccm.cluster_id " +
+            "join clusters c on ccm.cluster_id=c.cluster_id " +
+            "where sc.group_id is null and sc.service_config_id = (select max(service_config_id) from serviceconfig sc2 where sc2.service_name=sc.service_name and sc2.cluster_id=sc.cluster_id) " +
+            "group by c.cluster_name, cs.service_name, cc.type_name " +
             "having sum(ccm.selected) < 1";
-    String stackName = null, stackVersion = null;
-    Set<String> servicesWithoutConfigs = new HashSet<>();
-    Set<String> servicesWithoutMappedConfigs = new HashSet<>();
-    Map<String, List<String>> notSelectedServiceConfigs = new HashMap<>();
+    Multimap<String, String> clusterServiceMap = HashMultimap.create();
+    Map<String, Map<String, String>>  clusterStackInfo = new HashMap<>();
+    Map<String, Multimap<String, String>> clusterServiceVersionMap = new HashMap<>();
+    Map<String, Multimap<String, String>> clusterServiceConfigType = new HashMap<>();
     ResultSet rs = null;
 
     try {
@@ -313,60 +343,99 @@ public class CheckDatabaseHelper {
       rs = statement.executeQuery(GET_SERVICES_WITHOUT_CONFIGS_QUERY);
       if (rs != null) {
         while (rs.next()) {
-          servicesWithoutConfigs.add(rs.getString("service_name"));
+          clusterServiceMap.put(rs.getString("cluster_name"), rs.getString("service_name"));
         }
-      }
 
-      if (!servicesWithoutConfigs.isEmpty()) {
-        LOG.error("You have services without configs at all: " + StringUtils.join(servicesWithoutConfigs, ","));
+        for (String clusterName : clusterServiceMap.keySet()) {
+          LOG.error("Service(s): {}, from cluster {} has no config(s) in serviceconfig table!", StringUtils.join(clusterServiceMap.get(clusterName), ","), clusterName);
+          errorAvailable = true;
+        }
+
       }
 
       rs = statement.executeQuery(GET_SERVICE_CONFIG_WITHOUT_MAPPING_QUERY);
       if (rs != null) {
+        String serviceName = null, version = null, clusterName = null;
         while (rs.next()) {
-          servicesWithoutMappedConfigs.add(rs.getString("service_name"));
-        }
-      }
+          serviceName = rs.getString("service_name");
+          clusterName = rs.getString("cluster_name");
+          version = rs.getString("version");
 
-      if (!servicesWithoutMappedConfigs.isEmpty()) {
-        LOG.error("You have services without mapped configs: " + StringUtils.join(servicesWithoutMappedConfigs, ","));
-      }
-
-      rs = statement.executeQuery(GET_STACK_NAME_VERSION_QUERY);
-      if (rs != null) {
-        while (rs.next()) {
-          stackName = rs.getString("stack_name");
-          stackVersion = rs.getString("stack_version");
-        }
-      }
-
-      if (stackName != null && stackVersion != null) {
-        Set<String> serviceNames = new HashSet<>();
-        Map<Integer, Multimap<String, String>> dbServiceVersionConfigs = new HashMap<>();
-        Multimap<String, String> stackServiceConfigs = HashMultimap.create();
-
-        rs = statement.executeQuery(GET_SERVICES_WITH_CONFIGS_QUERY);
-        if (rs != null) {
-          String serviceName = null, configType = null;
-          Integer serviceVersion = null;
-          while (rs.next()) {
-            serviceName = rs.getString("service_name");
-            configType = rs.getString("type_name");
-            serviceVersion = rs.getInt("version");
-
-            serviceNames.add(serviceName);
-
-            if (dbServiceVersionConfigs.get(serviceVersion) == null) {
-              Multimap<String, String> dbServiceConfigs = HashMultimap.create();
-              dbServiceConfigs.put(serviceName, configType);
-              dbServiceVersionConfigs.put(serviceVersion, dbServiceConfigs);
-            } else {
-              dbServiceVersionConfigs.get(serviceVersion).put(serviceName, configType);
-            }
+          if (clusterServiceVersionMap.get(clusterName) != null) {
+            Multimap<String, String> serviceVersion = clusterServiceVersionMap.get(clusterName);
+            serviceVersion.put(serviceName, version);
+          } else {
+            Multimap<String, String> serviceVersion = HashMultimap.create();;
+            serviceVersion.put(serviceName, version);
+            clusterServiceVersionMap.put(clusterName, serviceVersion);
           }
         }
 
+        for (String clName : clusterServiceVersionMap.keySet()) {
+          Multimap<String, String> serviceVersion = clusterServiceVersionMap.get(clName);
+          for (String servName : serviceVersion.keySet()) {
+            LOG.error("In cluster {}, service config mapping is unavailable (in table serviceconfigmapping) for service {} with version(s) {}! ", clName, servName, StringUtils.join(serviceVersion.get(servName), ","));
+            errorAvailable = true;
+          }
+        }
 
+      }
+
+      //get stack info from db
+      rs = statement.executeQuery(GET_STACK_NAME_VERSION_QUERY);
+      if (rs != null) {
+        while (rs.next()) {
+          Map<String, String> stackInfoMap = new HashMap<>();
+          stackInfoMap.put(rs.getString("stack_name"), rs.getString("stack_version"));
+          clusterStackInfo.put(rs.getString("cluster_name"), stackInfoMap);
+        }
+      }
+
+
+      Set<String> serviceNames = new HashSet<>();
+      Map<String, Map<Integer, Multimap<String, String>>> dbClusterServiceVersionConfigs = new HashMap<>();
+      Multimap<String, String> stackServiceConfigs = HashMultimap.create();
+
+      rs = statement.executeQuery(GET_SERVICES_WITH_CONFIGS_QUERY);
+      if (rs != null) {
+        String serviceName = null, configType = null, clusterName = null;
+        Integer serviceVersion = null;
+        while (rs.next()) {
+          clusterName = rs.getString("cluster_name");
+          serviceName = rs.getString("service_name");
+          configType = rs.getString("type_name");
+          serviceVersion = rs.getInt("version");
+
+          serviceNames.add(serviceName);
+
+          //collect data about mapped configs to services from db
+          if (dbClusterServiceVersionConfigs.get(clusterName) != null) {
+            Map<Integer, Multimap<String, String>> dbServiceVersionConfigs = dbClusterServiceVersionConfigs.get(clusterName);
+
+            if (dbServiceVersionConfigs.get(serviceVersion) != null) {
+              dbServiceVersionConfigs.get(serviceVersion).put(serviceName, configType);
+            } else {
+              Multimap<String, String> dbServiceConfigs = HashMultimap.create();
+              dbServiceConfigs.put(serviceName, configType);
+              dbServiceVersionConfigs.put(serviceVersion, dbServiceConfigs);
+            }
+          } else {
+            Map<Integer, Multimap<String, String>> dbServiceVersionConfigs = new HashMap<>();
+            Multimap<String, String> dbServiceConfigs = HashMultimap.create();
+            dbServiceConfigs.put(serviceName, configType);
+            dbServiceVersionConfigs.put(serviceVersion, dbServiceConfigs);
+            dbClusterServiceVersionConfigs.put(clusterName, dbServiceVersionConfigs);
+          }
+        }
+      }
+
+      //compare service configs from stack with configs that we got from db
+      for (Map.Entry<String, Map<String, String>> clusterStackInfoEntry : clusterStackInfo.entrySet()) {
+        //collect required configs for all services from stack
+        String clusterName = clusterStackInfoEntry.getKey();
+        Map<String, String> stackInfo = clusterStackInfoEntry.getValue();
+        String stackName = stackInfo.keySet().iterator().next();
+        String stackVersion = stackInfo.get(stackName);
         Map<String, ServiceInfo> serviceInfoMap = ambariMetaInfo.getServices(stackName, stackVersion);
         for (String serviceName : serviceNames) {
           ServiceInfo serviceInfo = serviceInfoMap.get(serviceName);
@@ -376,6 +445,8 @@ public class CheckDatabaseHelper {
           }
         }
 
+        //compare required service configs from stack with mapped service configs from db
+        Map<Integer, Multimap<String, String>> dbServiceVersionConfigs = dbClusterServiceVersionConfigs.get(clusterName);
         for (Integer serviceVersion : dbServiceVersionConfigs.keySet()) {
           Multimap<String, String> dbServiceConfigs = dbServiceVersionConfigs.get(serviceVersion);
           for (String serviceName : dbServiceConfigs.keySet()) {
@@ -384,33 +455,45 @@ public class CheckDatabaseHelper {
             if (serviceConfigsFromDB != null && serviceConfigsFromStack != null) {
               serviceConfigsFromStack.removeAll(serviceConfigsFromDB);
               if (!serviceConfigsFromStack.isEmpty()) {
-                LOG.error(String.format("Required config(s): %s is(are) not available for service %s with service config version %s",
-                        StringUtils.join(serviceConfigsFromStack, ","), serviceName, Integer.toString(serviceVersion)));
+                LOG.error("Required config(s): {} is(are) not available for service {} with service config version {} in cluster {}",
+                        StringUtils.join(serviceConfigsFromStack, ","), serviceName, Integer.toString(serviceVersion), clusterName);
+                errorAvailable = true;
               }
             }
           }
         }
       }
 
+      //getting services which has mapped configs which are not selected in clusterconfigmapping
       rs = statement.executeQuery(GET_NOT_SELECTED_SERVICE_CONFIGS_QUERY);
       if (rs != null) {
-        String serviceName = null, configType = null;
+        String serviceName = null, configType = null, clusterName = null;
         while (rs.next()) {
+          clusterName = rs.getString("cluster_name");
           serviceName = rs.getString("service_name");
           configType = rs.getString("type_name");
 
-          if (notSelectedServiceConfigs.get(serviceName) != null) {
-            notSelectedServiceConfigs.get(serviceName).add(configType);
+
+          if (clusterServiceConfigType.get(clusterName) != null) {
+            Multimap<String, String> serviceConfigs = clusterServiceConfigType.get(clusterName);
+            serviceConfigs.put(serviceName, configType);
           } else {
-            List<String> configTypes = new ArrayList<>();
-            configTypes.add(configType);
-            notSelectedServiceConfigs.put(serviceName, configTypes);
+
+            Multimap<String, String> serviceConfigs = HashMultimap.create();
+            serviceConfigs.put(serviceName, configType);
+            clusterServiceConfigType.put(clusterName, serviceConfigs);
+
           }
+
         }
       }
 
-      for (String serviceName : notSelectedServiceConfigs.keySet()) {
-        LOG.error(String.format("You have non selected configs: %s for service %s.", StringUtils.join(notSelectedServiceConfigs.get(serviceName), ","), serviceName));
+      for (String clusterName : clusterServiceConfigType.keySet()) {
+        Multimap<String, String> serviceConfig = clusterServiceConfigType.get(clusterName);
+        for (String serviceName : serviceConfig.keySet()) {
+          LOG.error("You have non selected configs: {} for service {} from cluster {}!", StringUtils.join(serviceConfig.get(serviceName), ","), serviceName, clusterName);
+          errorAvailable = true;
+        }
       }
     } catch (SQLException e) {
       LOG.error("Exception occurred during complex service check procedure: ", e);
@@ -467,6 +550,11 @@ public class CheckDatabaseHelper {
     } finally {
       if (checkDatabaseHelper != null) {
         checkDatabaseHelper.closeConnection();
+        if (checkDatabaseHelper.isErrorAvailable() || checkDatabaseHelper.isWarningAvailable()) {
+          System.out.print("Some error(s) or/and warning(s) was(were) found. Please check ambari-server-check-database.log for problem(s).");
+        } else {
+          System.out.print("No erros were found.");
+        }
       }
     }
   }
