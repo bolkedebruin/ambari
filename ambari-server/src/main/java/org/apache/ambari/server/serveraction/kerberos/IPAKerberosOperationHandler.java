@@ -126,6 +126,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         executableKinit = getExecutable("kinit");
         executableIpaGetKeytab = getExecutable("ipa-getkeytab");
 
+        dokInit(administratorCredentials);
+
         setOpen(true);
     }
 
@@ -160,6 +162,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         if (!isOpen()) {
             throw new KerberosOperationException("This operation handler has not been opened");
         }
+        // init is required.
 
         if (principal == null) {
             return false;
@@ -176,7 +179,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                     return true;
                 }
             } catch (KerberosOperationException e) {
-                return false;
+                LOG.error("Cannot invoke IPA: " + e);
+                throw e;
             }
         }
 
@@ -395,6 +399,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         BufferedReader bfr = null;
         OutputStreamWriter osw = null;
 
+        LOG.info("Entering doKinit");
         try {
             List<String> kinit = new ArrayList<>();
 
@@ -403,6 +408,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
             ProcessBuilder builder = new ProcessBuilder(kinit.toArray(new String[kinit.size()]));
 
+            LOG.info("start subprocess");
             if (ShellCommandUtil.WINDOWS) {
                 synchronized (WindowsProcessLaunchLock) {
                     process = builder.start();
@@ -410,6 +416,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             } else {
                 process = builder.start();
             }
+            LOG.info("reading subprocess");
 
             InputStreamReader isr = new InputStreamReader(process.getInputStream());
             bfr = new BufferedReader(isr);
