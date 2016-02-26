@@ -1694,7 +1694,7 @@ public class KerberosHelperImpl implements KerberosHelper {
           if (!serviceComponentHostsToProcess.isEmpty()) {
             try {
               validateKDCCredentials(kerberosDetails, cluster);
-            } catch (KerberosOperationException e) {
+            } catch (Exception e) {
               LOG.error(e.getMessage());
               LOG.error(e.getStackTrace().toString());
               try {
