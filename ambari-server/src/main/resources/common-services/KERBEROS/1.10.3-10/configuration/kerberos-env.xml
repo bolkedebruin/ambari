@@ -317,14 +317,6 @@
   </property>
 
   <property>
-    <name>admin_keytab</name>
-    <description>
-      The location of the key for administrative access to the KDC
-    </description>
-    <value>/etc/admin.keytab</value>
-  </property>
-
-  <property>
     <name>group</name>
     <description>
       The group in IPA user principals should be member of
