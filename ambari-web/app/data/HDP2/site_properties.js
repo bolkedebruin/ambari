@@ -1532,19 +1532,6 @@ var hdp2properties = [
   },
   {
     "id": "puppet var",
-    "name": "admin_keytab",
-    "displayName": "Admin keytab",
-    "description": "Admin keytab used to create principals and export key tabs (e.g. /etc/security/admin.keytab)",
-    "isOverridable": false,
-    "isVisible": false,
-    "isRequiredByAgent": false,
-    "serviceName": "KERBEROS",
-    "filename": "krb5-conf.xml",
-    "category": "Kadmin",
-    "index": 3
-  },
-  {
-    "id": "puppet var",
     "name": "group",
     "displayName": "Group",
     "description": "User group of which user principals are member",

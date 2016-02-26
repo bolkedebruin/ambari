@@ -1132,7 +1132,6 @@ Em.I18n.translations = {
   'admin.kerberos.wizard.step5.executable_search_paths.label': 'Executable path',
   'admin.kerberos.wizard.step5.exitWizard': 'Exit Wizard',
   'admin.kerberos.wizard.step5.downloadCSV': 'Download CSV',
-  'admin.kerberos.wizard.step5.admin_keytab.label': 'Keytab of the user administrator',
   'admin.kerberos.wizard.step5.group.label': 'Group user principals should be member of',
   'admin.kerberos.wizard.step6.task0.title' : 'Stop Services',
   'admin.kerberos.wizard.step6.task1.title' : 'Delete ATS',
