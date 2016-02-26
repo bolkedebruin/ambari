@@ -1695,6 +1695,8 @@ public class KerberosHelperImpl implements KerberosHelper {
             try {
               validateKDCCredentials(kerberosDetails, cluster);
             } catch (KerberosOperationException e) {
+              LOG.error(e.getMessage());
+              LOG.error(e.getStackTrace().toString());
               try {
                 FileUtils.deleteDirectory(dataDirectory);
               } catch (Throwable t) {
