@@ -1654,6 +1654,7 @@ public class KerberosHelperImpl implements KerberosHelper {
                         null, hostname, serviceName, componentName, null, configurations);
 
                     if (identitiesAdded > 0) {
+                      LOG.info("Identity added");
                       // Add the relevant principal name and keytab file data to the command params state
                       if (!commandParameters.containsKey("principal_name") || !commandParameters.containsKey("keytab_file")) {
                         commandParameters.put("principal_name",
@@ -1672,6 +1673,10 @@ public class KerberosHelperImpl implements KerberosHelper {
             String message = String.format("Failed to write index file - %s", identityDataFile.getAbsolutePath());
             LOG.error(message);
             throw new AmbariException(message, e);
+          } catch (Exception e) {
+            LOG.error(e.getMessage());
+            LOG.error(e.getStackTrace().toString());
+            throw e;
           } finally {
             if (kerberosIdentityDataFileWriter != null) {
               // Make sure the data file is closed
@@ -1683,6 +1688,7 @@ public class KerberosHelperImpl implements KerberosHelper {
             }
           }
 
+          LOG.info("Check credentials");
           // If there are ServiceComponentHosts to process, make sure the administrator credential
           // are available
           if (!serviceComponentHostsToProcess.isEmpty()) {
