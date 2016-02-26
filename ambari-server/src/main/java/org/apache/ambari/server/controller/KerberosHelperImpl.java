@@ -1548,6 +1548,7 @@ public class KerberosHelperImpl implements KerberosHelper {
                                                    Map<String, String> commandParameters, RequestStageContainer requestStageContainer,
                                                    Handler handler) throws AmbariException, KerberosOperationException {
 
+    LOG.info("in handleTestIdentity");
     if (kerberosDetails.manageIdentities()) {
       if (commandParameters == null) {
         throw new AmbariException("The properties map must not be null.  It is needed to store data related to the service check identity");
@@ -1640,7 +1641,7 @@ public class KerberosHelperImpl implements KerberosHelper {
                       Role.KERBEROS_CLIENT.name().equals(componentName) &&
                       (sch.getState() == State.INSTALLED)) {
                     hostsWithValidKerberosClient.add(hostname);
-
+                    LOG.info("Found valid host " + hostname);
                     int identitiesAdded = 0;
 
                     // Lazily create the KerberosIdentityDataFileWriter instance...
@@ -1699,6 +1700,8 @@ public class KerberosHelperImpl implements KerberosHelper {
             }
           }
 
+          LOG.info("Setting up stages");
+
           // Always set up the necessary stages to perform the tasks needed to complete the operation.
           // Some stages may be no-ops, this is expected.
           // Gather data needed to create stages and tasks...
@@ -1712,6 +1715,8 @@ public class KerberosHelperImpl implements KerberosHelper {
               ambariServerHostname, // TODO: Choose a random hostname from the cluster. All tasks for the AMBARI_SERVER service will be executed on this Ambari server
               System.currentTimeMillis());
           RoleCommandOrder roleCommandOrder = ambariManagementController.getRoleCommandOrder(cluster);
+
+          LOG.info("Done executing role command");
 
           // If a RequestStageContainer does not already exist, create a new one...
           if (requestStageContainer == null) {
@@ -1737,6 +1742,7 @@ public class KerberosHelperImpl implements KerberosHelper {
       }
     }
 
+    LOG.info("Done handltest");
     return requestStageContainer;
   }
 
