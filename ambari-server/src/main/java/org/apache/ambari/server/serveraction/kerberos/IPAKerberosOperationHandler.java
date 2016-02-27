@@ -402,28 +402,15 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         LOG.info("Entering doKinit");
         try {
-            List<String> kinit = new ArrayList<>();
-
-            kinit.add(executableKinit);
-            kinit.add(credentials.getPrincipal());
-
-            ProcessBuilder builder = new ProcessBuilder(kinit.toArray(new String[kinit.size()]));
-
             LOG.info("start subprocess");
-            if (ShellCommandUtil.WINDOWS) {
-                synchronized (WindowsProcessLaunchLock) {
-                    process = builder.start();
-                }
-            } else {
-                process = builder.start();
-            }
-            LOG.info("reading subprocess");
-
+            process = Runtime.getRuntime().exec(new String[]{executableKinit, credentials.getPrincipal()});
             InputStreamReader isr = new InputStreamReader(process.getInputStream());
             bfr = new BufferedReader(isr);
             osw = new OutputStreamWriter(process.getOutputStream());
 
+            LOG.info("Reading a line");
             String line = bfr.readLine();
+            LOG.info("Line: " + line);
             if (line == null) {
                 throw new KerberosOperationException("No response from kinit while trying to get ticket for "
                         + credentials.getPrincipal());
