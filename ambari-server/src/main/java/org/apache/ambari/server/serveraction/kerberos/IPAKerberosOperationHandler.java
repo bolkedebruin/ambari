@@ -398,29 +398,31 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
     private void dokInit(PrincipalKeyCredential credentials) throws KerberosOperationException {
         Process process;
-        BufferedReader bfr = null;
+        BufferedReader reader = null;
         OutputStreamWriter osw = null;
 
         LOG.info("Entering doKinit");
         try {
             LOG.info("start subprocess " + executableKinit + " " + credentials.getPrincipal());
             process = Runtime.getRuntime().exec(new String[]{executableKinit, credentials.getPrincipal()});
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+            reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
             osw = new OutputStreamWriter(process.getOutputStream());
 
-            String line = null;
-            while ((line = reader.readLine()) != null) {
-                if (line.isEmpty())
-                    continue;
+            char[] data = new char[1024];
+            StringBuilder sb = new StringBuilder();
 
-                LOG.info("Reading a line: " + line);
-                if (!line.matches("/Password/")) {
-                    throw new KerberosOperationException("Unexpected response from kinit while trying to get ticket for "
-                            + credentials.getPrincipal() + " got: " + line);
-                }
-                osw.write(credentials.getKey());
-                osw.write('\n');
+            while (reader.read(data) > 0) {
+                sb.append(data);
             }
+
+            String line = sb.toString();
+            LOG.info("Reading a line: " + line);
+            if (!line.startsWith("Password")) {
+                throw new KerberosOperationException("Unexpected response from kinit while trying to get ticket for "
+                        + credentials.getPrincipal() + " got: " + line);
+            }
+            osw.write(credentials.getKey());
+            osw.write('\n');
 
             LOG.info("done subprocess");
         } catch (IOException e) {
@@ -435,9 +437,9 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 }
             }
 
-            if (bfr != null) {
+            if (reader != null) {
                 try {
-                    bfr.close();
+                    reader.close();
                 } catch (IOException e) {
                 }
             }
