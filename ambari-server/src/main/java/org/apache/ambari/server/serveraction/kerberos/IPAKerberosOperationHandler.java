@@ -424,6 +424,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             }
             osw.write(credentials.getKey());
             osw.write('\n');
+            osw.close();
 
             process.waitFor();
 
