@@ -411,8 +411,14 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             char[] data = new char[1024];
             StringBuilder sb = new StringBuilder();
 
-            if (!reader.ready()) {
-                Thread.sleep(500L);
+            int count = 0;
+            while (!reader.ready()) {
+                Thread.sleep(1000L);
+                if (count >= 5) {
+                    process.destroy();
+                    throw new KerberosOperationException("No answer from kinit");
+                }
+                count++;
             }
 
             while (reader.ready()) {
@@ -519,7 +525,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             List<String> fixedCommand = fixCommandList(command);
             result = executeCommand(fixedCommand.toArray(new String[fixedCommand.size()]));
 
-            if (!result.isSuccessful()) {
+            /*if (!result.isSuccessful()) {
                 String message = String.format("Failed to execute ipa:\n\tCommand: %s\n\tExitCode: %s\n\tSTDOUT: %s\n\tSTDERR: %s",
                         createCleanCommand(command), result.getExitCode(), result.getStdout(), result.getStderr());
                 LOG.warn(message);
@@ -546,7 +552,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                 } else {
                     throw new KerberosOperationException("Unexpected error condition executing the ipa command");
                 }
-            }
+            }*/
         } finally {
             // If a temporary keytab file was created, clean it up.
             if (tempKeytabFile != null) {
