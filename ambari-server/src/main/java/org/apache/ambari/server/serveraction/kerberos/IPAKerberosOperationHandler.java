@@ -126,8 +126,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         executableKinit = getExecutable("kinit");
         executableIpaGetKeytab = getExecutable("ipa-getkeytab");
 
-        dokInit(administratorCredentials);
-
+        LOG.info("IPA open done");
         setOpen(true);
     }
 
@@ -159,10 +158,11 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     public boolean principalExists(String principal)
             throws KerberosOperationException {
 
+        LOG.info("Enterering principal exists");
+
         if (!isOpen()) {
             throw new KerberosOperationException("This operation handler has not been opened");
         }
-        // init is required.
 
         if (principal == null) {
             return false;
@@ -172,6 +172,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             // TODO: fix exception check to only check for relevant exceptions
             try {
                 DeconstructedPrincipal deconstructedPrincipal = createDeconstructPrincipal(principal);
+                LOG.info("Running script");
 
                 // Create the ipa query to execute:
                 ShellCommandUtil.Result result = invokeIpa(String.format("user-show %s", deconstructedPrincipal.getPrimary()));
@@ -436,7 +437,9 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             osw.write(credentials.getKey());
             osw.write('\n');
 
+            LOG.info("finaizing subprocess");
             process.waitFor();
+            LOG.info("done subprocess");
         } catch (IOException e) {
             String message = String.format("Failed to execute the command: %s", e.getLocalizedMessage());
             LOG.error(message, e);
@@ -509,10 +512,13 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
             dokInit(administratorCredentials);
 
+            LOG.info("Passed doKinit");
+
             // Set the ipa interface to be ipa
             command.add(executableIpa);
             command.add(query);
 
+            LOG.info("Executing %s", command);
             if(LOG.isDebugEnabled()) {
                 LOG.debug(String.format("Executing: %s", createCleanCommand(command)));
             }
@@ -557,6 +563,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             }
         }
 
+        LOG.info("Done invokeipa");
         return result;
     }
 
