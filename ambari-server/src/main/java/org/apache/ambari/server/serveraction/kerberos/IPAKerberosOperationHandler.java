@@ -411,7 +411,8 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             char[] data = new char[1024];
             StringBuilder sb = new StringBuilder();
 
-            while (reader.read(data) > 0) {
+            while (reader.ready()) {
+                reader.read(data);
                 sb.append(data);
             }
 
