@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.security.auth.kerberos.KeyTab;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.*;
@@ -402,30 +403,25 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         LOG.info("Entering doKinit");
         try {
-            LOG.info("start subprocess");
+            LOG.info("start subprocess " + executableKinit + " " + credentials.getPrincipal());
             process = Runtime.getRuntime().exec(new String[]{executableKinit, credentials.getPrincipal()});
-            InputStreamReader isr = new InputStreamReader(process.getInputStream());
-            bfr = new BufferedReader(isr);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
             osw = new OutputStreamWriter(process.getOutputStream());
 
-            LOG.info("Reading a line");
-            String line = bfr.readLine();
-            LOG.info("Line: " + line);
-            if (line == null) {
-                throw new KerberosOperationException("No response from kinit while trying to get ticket for "
-                        + credentials.getPrincipal());
+            String line = null;
+            while ((line = reader.readLine()) != null) {
+                if (line.isEmpty())
+                    continue;
+
+                LOG.info("Reading a line: " + line);
+                if (!line.matches("/Password/")) {
+                    throw new KerberosOperationException("Unexpected response from kinit while trying to get ticket for "
+                            + credentials.getPrincipal() + " got: " + line);
+                }
+                osw.write(credentials.getKey());
+                osw.write('\n');
             }
 
-            if (!line.matches("/Password/")) {
-                throw new KerberosOperationException("Unexpected response from kinit while trying to get ticket for "
-                        + credentials.getPrincipal() + " got: " + line);
-            }
-
-            osw.write(credentials.getKey());
-            osw.write('\n');
-
-            LOG.info("finaizing subprocess");
-            process.waitFor();
             LOG.info("done subprocess");
         } catch (IOException e) {
             String message = String.format("Failed to execute the command: %s", e.getLocalizedMessage());
