@@ -82,7 +82,8 @@ App.supports = {
   hostComboSearchBox: true,
   serviceAutoStart: false,
   logSearch: false,
-  redhatSatellite: false
+  redhatSatellite: false,
+  enableIpa: false
 };
 
 if (App.enableExperimental) {
