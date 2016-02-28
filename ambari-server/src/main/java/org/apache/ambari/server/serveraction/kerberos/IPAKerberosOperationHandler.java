@@ -144,7 +144,12 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     }
 
     private void setUsePasswordExpiry(String usePasswordExpiry) {
-        if (usePasswordExpiry != null) {
+        if (usePasswordExpiry == null) {
+            this.usePasswordExpiry = false;
+            return;
+        }
+
+        if (usePasswordExpiry.equalsIgnoreCase("true")) {
             this.usePasswordExpiry = true;
         } else {
             this.usePasswordExpiry = false;
