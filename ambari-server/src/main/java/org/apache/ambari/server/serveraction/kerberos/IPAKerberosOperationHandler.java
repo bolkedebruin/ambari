@@ -472,7 +472,9 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             }
             Pattern pattern = Pattern.compile("password: (.*)");
             Matcher matcher = pattern.matcher(result.getStdout());
-            LOG.info("Command returned: " + result.getStdout());
+            if (!matcher.find()) {
+                throw new KerberosOperationException("Unexpected response from ipa: " + result.getStdout());
+            }
             String old_password = matcher.group(1);
 
             Process process = Runtime.getRuntime().exec(new String[]{executableKinit, principal});
