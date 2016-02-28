@@ -490,6 +490,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             LOG.debug("Sending old password");
             out.write(old_password);
             out.write('\n');
+            out.flush();
 
             data = readData(reader);
             if (!data.contains("Enter")) {
@@ -500,6 +501,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             LOG.debug("Sending new password");
             out.write(password);
             out.write('\n');
+            out.flush();
 
             data = readData(reader);
             if (!data.contains("again")) {
@@ -510,6 +512,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             LOG.debug("Sending new password again");
             out.write(password);
             out.write('\n');
+            out.flush();
 
             process.waitFor();
         } catch (IOException e) {
