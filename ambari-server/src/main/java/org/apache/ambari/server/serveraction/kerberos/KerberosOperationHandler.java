@@ -66,9 +66,14 @@ public abstract class KerberosOperationHandler {
   public final static String KERBEROS_ENV_PRINCIPAL_CONTAINER_DN = "container_dn";
 
   /**
-   * Kerberos-env configuration property name: container_dn
+   * Kerberos-env configuration property name: group
    */
   public final static String KERBEROS_ENV_USER_PRINCIPAL_GROUP = "group";
+
+  /**
+   * Kerberos-env configuration property name: set_password_expiry
+   */
+  public final static String KERBEROS_ENV_SET_PASSWORD_EXPIRY = "set_password_expiry";
 
   /**
    * Kerberos-env configuration property name: ad_create_attributes_template

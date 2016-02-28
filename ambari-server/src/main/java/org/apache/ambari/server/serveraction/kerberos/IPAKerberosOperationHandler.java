@@ -21,12 +21,9 @@ package org.apache.ambari.server.serveraction.kerberos;
 import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
 import org.apache.ambari.server.utils.ShellCommandUtil;
 import org.apache.directory.server.kerberos.shared.keytab.Keytab;
-import org.apache.directory.shared.kerberos.codec.types.EncryptionType;
-import org.apache.directory.shared.kerberos.exceptions.KerberosException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.security.auth.kerberos.KeyTab;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -39,11 +36,10 @@ import java.util.regex.Pattern;
  * IPAKerberosOperationHandler is an implementation of a KerberosOperationHandler providing
  * functionality specifically for IPA managed KDC. See http://www.freeipa.org
  * <p/>
- * It is assumed that the IPA client is installed and that the ipa shell command is
+ * It is assumed that the IPA admin tools are installed and that the ipa shell command is
  * available
  */
 public class IPAKerberosOperationHandler extends KerberosOperationHandler {
-    private static final Object WindowsProcessLaunchLock = new Object();
     private final static Logger LOG = LoggerFactory.getLogger(IPAKerberosOperationHandler.class);
 
     private String adminServerHost = null;
@@ -86,6 +82,11 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     private String executableKvno = null;
 
     /**
+     * A boolean indicating if password expiry should be set
+     */
+    private boolean usePasswordExpiry = false;
+
+    /**
      * Prepares and creates resources to be used by this KerberosOperationHandler
      * <p/>
      * It is expected that this KerberosOperationHandler will not be used before this call.
@@ -93,7 +94,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
      * The kerberosConfiguration Map is not being used.
      *
      * @param administratorCredentials a KerberosCredential containing the administrative credentials
-     *                                 for the relevant KDC
+     *                                 for the relevant IPA KDC
      * @param realm                    a String declaring the default Kerberos realm (or domain)
      * @param kerberosConfiguration    a Map of key/value pairs containing data from the kerberos-env configuration set
      * @throws KerberosKDCConnectionException       if a connection to the KDC cannot be made
@@ -115,11 +116,13 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             setExecutableSearchPaths(kerberosConfiguration.get(KERBEROS_ENV_EXECUTABLE_SEARCH_PATHS));
             setUserPrincipalGroup(kerberosConfiguration.get(KERBEROS_ENV_USER_PRINCIPAL_GROUP));
             setAdminServerHost(kerberosConfiguration.get(KERBEROS_ENV_ADMIN_SERVER_HOST));
+            setUsePasswordExpiry(kerberosConfiguration.get(KERBEROS_ENV_SET_PASSWORD_EXPIRY));
         } else {
             setKeyEncryptionTypes(null);
             setAdminServerHost(null);
             setExecutableSearchPaths((String) null);
             setUserPrincipalGroup(null);
+            setUsePasswordExpiry(null);
         }
 
         // Pre-determine the paths to relevant Kerberos executables
@@ -128,8 +131,15 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         executableKinit = getExecutable("kinit");
         executableIpaGetKeytab = getExecutable("ipa-getkeytab");
 
-        LOG.info("IPA open done");
         setOpen(true);
+    }
+
+    private void setUsePasswordExpiry(String usePasswordExpiry) {
+        if (usePasswordExpiry != null) {
+            this.usePasswordExpiry = true;
+        } else {
+            this.usePasswordExpiry = false;
+        }
     }
 
     @Override
@@ -144,23 +154,20 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     }
 
     /**
-     * Test to see if the specified principal exists in a previously configured MIT KDC
+     * Test to see if the specified principal exists in a previously configured IPA KDC
      * <p/>
-     * This implementation creates a query to send to the kadmin shell command and then interrogates
+     * This implementation creates a query to send to the ipa shell command and then interrogates
      * the result from STDOUT to determine if the presence of the specified principal.
      *
      * @param principal a String containing the principal to test
      * @return true if the principal exists; false otherwise
-     * @throws KerberosKDCConnectionException       if a connection to the KDC cannot be made
-     * @throws KerberosAdminAuthenticationException if the administrator credentials fail to authenticate
-     * @throws KerberosRealmException               if the realm does not map to a KDC
      * @throws KerberosOperationException           if an unexpected error occurred
      */
     @Override
     public boolean principalExists(String principal)
             throws KerberosOperationException {
 
-        LOG.info("Enterering principal exists");
+        LOG.debug("Entering principal exists");
 
         if (!isOpen()) {
             throw new KerberosOperationException("This operation handler has not been opened");
@@ -202,9 +209,6 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
      * @param service   a boolean value indicating whether the principal is to be created as a service principal or not
      * @return an Integer declaring the generated key number
      * @throws KerberosKDCConnectionException       if a connection to the KDC cannot be made
-     * @throws KerberosAdminAuthenticationException if the administrator credentials fail to authenticate
-     * @throws KerberosRealmException               if the realm does not map to a KDC
-     * @throws KerberosOperationException           if an unexpected error occurred
      */
     @Override
     public Integer createPrincipal(String principal, String password, boolean service)
@@ -263,6 +267,11 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
                     }
                 }
 
+                if (!usePasswordExpiry) {
+                    updatePassword(deconstructedPrincipal.getPrimary(), password);
+                    return getKeyNumber(principal);
+                }
+
                 result = invokeIpa(String.format("user-mod %s --setattr krbPasswordExpiration=%s",
                         deconstructedPrincipal.getPrimary(), PASSWORD_EXPIRY_DATE));
                 stdOut = result.getStdout();
@@ -287,9 +296,6 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
      * @param principal a String containing the principal to update
      * @param password  a String containing the password to set
      * @return an Integer declaring the new key number
-     * @throws KerberosKDCConnectionException       if a connection to the KDC cannot be made
-     * @throws KerberosAdminAuthenticationException if the administrator credentials fail to authenticate
-     * @throws KerberosRealmException               if the realm does not map to a KDC
      * @throws KerberosOperationException           if an unexpected error occurred
      */
     @Override
@@ -305,21 +311,22 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         } else if (!isServicePrincipal(principal)) {
             DeconstructedPrincipal deconstructedPrincipal = createDeconstructPrincipal(principal);
 
-            LOG.info("Setting password for {} does not make sense in IPA context as it " +
-                    "triggers a password expiry. Continuing anyway.", principal);
+            if (usePasswordExpiry) {
+                // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
+                invokeIpa(String.format("user-mod %s --setattr userPassword=%s", deconstructedPrincipal.getPrimary(), password));
 
-            // Create the ipa query:  user-mod <user> --setattr userPassword=<password>
-            invokeIpa(String.format("user-mod %s --setattr userPassword=%s", deconstructedPrincipal.getPrimary(), password));
-
-            List<String> command = new ArrayList<>();
-            command.add(executableIpa);
-            command.add("user-mod");
-            command.add(deconstructedPrincipal.getPrimary());
-            command.add("--setattr");
-            command.add(String.format("krbPasswordExpiration=%s",PASSWORD_EXPIRY_DATE));
-            ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
-            if (!result.isSuccessful()) {
-                throw new KerberosOperationException("Failed to set password expiry");
+                List<String> command = new ArrayList<>();
+                command.add(executableIpa);
+                command.add("user-mod");
+                command.add(deconstructedPrincipal.getPrimary());
+                command.add("--setattr");
+                command.add(String.format("krbPasswordExpiration=%s", PASSWORD_EXPIRY_DATE));
+                ShellCommandUtil.Result result = executeCommand(command.toArray(new String[command.size()]));
+                if (!result.isSuccessful()) {
+                    throw new KerberosOperationException("Failed to set password expiry");
+                }
+            } else {
+                updatePassword(deconstructedPrincipal.getPrimary(), password);
             }
         }
         return getKeyNumber(principal);
@@ -397,6 +404,122 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
         return this.adminServerHost;
     }
 
+    /**
+     * Reads data from a stream without blocking and when available. Allows some time for the
+     * stream to become ready.
+     *
+     * @param in the BufferedReader to read from
+     * @return a String with available data
+     * @throws KerberosOperationException if a timeout happens
+     * @throws IOException when somethings goes wrong with the underlying stream
+     * @throws InterruptedException if the thread is interrupted
+     */
+    private String readData(BufferedReader in) throws KerberosOperationException, IOException, InterruptedException {
+        char[] data = new char[1024];
+        StringBuilder sb = new StringBuilder();
+
+        int count = 0;
+        while (!in.ready()) {
+            Thread.sleep(1000L);
+            if (count >= 5) {
+                throw new KerberosOperationException("No answer data available from stream");
+            }
+            count++;
+        }
+
+        while (in.ready()) {
+            in.read(data);
+            sb.append(data);
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Updates a  password for a (user) principal. This is done by first setting a random password and
+     * then invoking kInit to directly set the password. This is done to circumvent issues with expired
+     * password in IPA, as IPA needs passwords set by the admin to be set again by the user. Note that
+     * this resets the current principal to the principal specified here. To invoke further administrative
+     * commands a new kInit to admin is required.
+     *
+     * @param principal The principal user name that needs to be updated
+     * @param password The new password
+     * @throws KerberosOperationException if something is not as expected
+     */
+    private void updatePassword(String principal, String password) throws KerberosOperationException {
+        BufferedReader reader = null;
+        OutputStreamWriter out = null;
+
+        LOG.info("Updating password for: " + principal);
+        try {
+            ShellCommandUtil.Result result = invokeIpa(String.format("user-mode %s --random"));
+            if (!result.isSuccessful()) {
+                throw new KerberosOperationException(result.getStderr());
+            }
+            Pattern pattern = Pattern.compile("password: (.*)");
+            Matcher matcher = pattern.matcher(result.getStdout());
+            String old_password = matcher.group(1);
+
+            Process process = Runtime.getRuntime().exec(new String[]{executableKinit, principal});
+            reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            out = new OutputStreamWriter(process.getOutputStream());
+
+            String data = readData(reader);
+            if (!data.startsWith("Password")) {
+                process.destroy();
+                throw new KerberosOperationException("Unexpected response from kinit while trying to password for "
+                + principal + " got: " + data);
+            }
+            LOG.debug("Sending old password");
+            out.write(old_password);
+            out.write('\n');
+
+            data = readData(reader);
+            if (!data.contains("Enter")) {
+                process.destroy();
+                throw new KerberosOperationException("Unexpected response from kinit while trying to password for "
+                        + principal + " got: " + data);
+            }
+            LOG.debug("Sending new password");
+            out.write(password);
+            out.write('\n');
+
+            data = readData(reader);
+            if (!data.contains("again")) {
+                process.destroy();
+                throw new KerberosOperationException("Unexpected response from kinit while trying to password for "
+                        + principal + " got: " + data);
+            }
+            LOG.debug("Sending new password again");
+            out.write(password);
+            out.write('\n');
+
+            process.waitFor();
+        } catch (IOException e) {
+            LOG.error("Cannot read stream: " + e);
+            throw new KerberosOperationException(e.getMessage());
+        } catch (InterruptedException e) {
+            LOG.error("Process interrupted: " + e);
+            throw new KerberosOperationException(e.getMessage());
+        } finally {
+            try {
+                if (out != null)
+                    out.close();
+                if (reader != null)
+                    reader.close();
+            } catch (IOException e) {
+                LOG.warn("Cannot close streams: " + e);
+            }
+        }
+
+    }
+
+    /**
+     * Does a kinit to obtain a ticket for the specified principal
+     *
+     * @param credentials Credentials to be used to obtain the ticket
+     * @throws KerberosOperationException In case the ticket cannot be obtained
+     */
     private void dokInit(PrincipalKeyCredential credentials) throws KerberosOperationException {
         Process process;
         BufferedReader reader = null;
@@ -471,13 +594,10 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
     }
 
     /**
-     * Invokes the ipa shell command to issue queries
+     * Invokes the ipa shell command with administrative credentials to issue queries
      *
      * @param query a String containing the query to send to the kdamin command
      * @return a ShellCommandUtil.Result containing the result of the operation
-     * @throws KerberosKDCConnectionException       if a connection to the KDC cannot be made
-     * @throws KerberosAdminAuthenticationException if the administrator credentials fail to authenticate
-     * @throws KerberosRealmException               if the realm does not map to a KDC
      * @throws KerberosOperationException           if an unexpected error occurred
      */
     protected ShellCommandUtil.Result invokeIpa(String query)
@@ -526,34 +646,6 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
             List<String> fixedCommand = fixCommandList(command);
             result = executeCommand(fixedCommand.toArray(new String[fixedCommand.size()]));
 
-            /*if (!result.isSuccessful()) {
-                String message = String.format("Failed to execute ipa:\n\tCommand: %s\n\tExitCode: %s\n\tSTDOUT: %s\n\tSTDERR: %s",
-                        createCleanCommand(command), result.getExitCode(), result.getStdout(), result.getStderr());
-                LOG.warn(message);
-
-                // Test STDERR to see of any "expected" error conditions were encountered...
-                String stdErr = result.getStderr();
-                // Did admin credentials fail?
-                if (stdErr.contains("Client not found in Kerberos database")) {
-                    throw new KerberosAdminAuthenticationException(stdErr);
-                } else if (stdErr.contains("Incorrect password while initializing")) {
-                    throw new KerberosAdminAuthenticationException(stdErr);
-                }
-                // Did we fail to connect to the KDC?
-                else if (stdErr.contains("Cannot contact any KDC")) {
-                    throw new KerberosKDCConnectionException(stdErr);
-                } else if (stdErr.contains("Cannot resolve network address for admin server in requested realm while initializing kadmin interface")) {
-                    throw new KerberosKDCConnectionException(stdErr);
-                }
-                // Was the realm invalid?
-                else if (stdErr.contains("Missing parameters in krb5.conf required for kadmin client")) {
-                    throw new KerberosRealmException(stdErr);
-                } else if (stdErr.contains("Cannot find KDC for requested realm while initializing kadmin interface")) {
-                    throw new KerberosRealmException(stdErr);
-                } else {
-                    throw new KerberosOperationException("Unexpected error condition executing the ipa command");
-                }
-            }*/
         } finally {
             // If a temporary keytab file was created, clean it up.
             if (tempKeytabFile != null) {
