@@ -466,7 +466,7 @@ public class IPAKerberosOperationHandler extends KerberosOperationHandler {
 
         LOG.info("Updating password for: " + principal);
         try {
-            ShellCommandUtil.Result result = invokeIpa(String.format("user-mode %s --random", principal));
+            ShellCommandUtil.Result result = invokeIpa(String.format("user-mod %s --random", principal));
             if (!result.isSuccessful()) {
                 throw new KerberosOperationException(result.getStderr());
             }
