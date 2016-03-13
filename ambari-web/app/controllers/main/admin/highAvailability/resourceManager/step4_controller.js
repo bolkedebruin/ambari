@@ -44,7 +44,7 @@ App.RMHighAvailabilityWizardStep4Controller = App.HighAvailabilityProgressPageCo
 
   installResourceManager: function () {
     var hostName = this.get('content.rmHosts.additionalRM');
-    this.createComponent('RESOURCEMANAGER', hostName, "YARN");
+    this.createInstallComponentTask('RESOURCEMANAGER', hostName, "YARN");
   },
 
   reconfigureYARN: function () {
@@ -114,7 +114,7 @@ App.RMHighAvailabilityWizardStep4Controller = App.HighAvailabilityProgressPageCo
       data.items[0].properties[property.name] = property.value;
     });
 
-    var configData = this.reconfigureSites([params.type], data, Em.I18n.t('admin.highAvailability.step4.save.configuration.note').format(App.format.role('RESOURCEMANAGER')));
+    var configData = this.reconfigureSites([params.type], data, Em.I18n.t('admin.highAvailability.step4.save.configuration.note').format(App.format.role('RESOURCEMANAGER', false)));
 
     App.ajax.send({
       name: 'common.service.configurations',
@@ -134,4 +134,3 @@ App.RMHighAvailabilityWizardStep4Controller = App.HighAvailabilityProgressPageCo
     this.startServices(true);
   }
 });
-

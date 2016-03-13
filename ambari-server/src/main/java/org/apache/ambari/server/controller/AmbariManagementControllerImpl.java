@@ -170,6 +170,7 @@ import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_R
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.COMMAND_TIMEOUT;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.DB_DRIVER_FILENAME;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.GROUP_LIST;
+import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.NOT_MANAGED_HDFS_PATH_LIST;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.HOOKS_FOLDER;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.MAX_DURATION_OF_RETRIES;
 import static org.apache.ambari.server.agent.ExecutionCommand.KeyNames.PACKAGE_LIST;
@@ -517,7 +518,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       ServiceComponent sc = s.getServiceComponent(
           request.getComponentName());
 
-      setRestartRequiredServices(s, request.getHostname());
+      setRestartRequiredServices(s, request.getComponentName());
 
       Host host;
       try {
@@ -658,10 +659,12 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
   }
 
   private void setRestartRequiredServices(
-          Service service, String hostName) throws AmbariException {
-
+          Service service, String componentName) throws AmbariException {
     Cluster cluster = service.getCluster();
     StackId stackId = cluster.getCurrentStackVersion();
+    if (service.getServiceComponent(componentName).isClientComponent()) {
+      return;
+    }
     Set<String> needRestartServices = ambariMetaInfo.getRestartRequiredServicesNames(
         stackId.getStackName(), stackId.getStackVersion());
 
@@ -669,16 +672,13 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
       Map<String, ServiceComponent> m = service.getServiceComponents();
       for (Entry<String, ServiceComponent> entry : m.entrySet()) {
         ServiceComponent serviceComponent = entry.getValue();
-        if (serviceComponent.isMasterComponent()) {
-          Map<String, ServiceComponentHost> schMap = serviceComponent.getServiceComponentHosts();
-          //schMap will only contain hostName when deleting a host; when adding a host the test skips the loop
-          if(schMap.containsKey(hostName)) {
-            for (Entry<String, ServiceComponentHost> sch : schMap.entrySet()) {
-              ServiceComponentHost serviceComponentHost = sch.getValue();
-              serviceComponentHost.setRestartRequired(true);
-            }
+        Map<String, ServiceComponentHost> schMap = serviceComponent.getServiceComponentHosts();
+
+          for (Entry<String, ServiceComponentHost> sch : schMap.entrySet()) {
+            ServiceComponentHost serviceComponentHost = sch.getValue();
+            serviceComponentHost.setRestartRequired(true);
           }
-        }
+
       }
     }
   }
@@ -2184,6 +2184,10 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
     String groupList = gson.toJson(groupSet);
     hostParams.put(GROUP_LIST, groupList);
 
+    Set<String> notManagedHdfsPathSet = configHelper.getPropertyValuesWithPropertyType(stackId, PropertyType.NOT_MANAGED_HDFS_PATH, cluster);
+    String notManagedHdfsPathList = gson.toJson(notManagedHdfsPathSet);
+    hostParams.put(NOT_MANAGED_HDFS_PATH_LIST, notManagedHdfsPathList);
+
     DatabaseType databaseType = configs.getDatabaseType();
     if (databaseType == DatabaseType.ORACLE) {
       hostParams.put(DB_DRIVER_FILENAME, configs.getOjdbcJarName());
@@ -3061,7 +3065,7 @@ public class AmbariManagementControllerImpl implements AmbariManagementControlle
             "DISABLED/INIT/INSTALLED/INSTALL_FAILED/UNKNOWN state. Current=" + componentHost.getState() + ".");
       }
 
-      setRestartRequiredServices(service, request.getHostname());
+      setRestartRequiredServices(service, request.getComponentName());
 
       if (!safeToRemoveSCHs.containsKey(component)) {
         safeToRemoveSCHs.put(component, new HashSet<ServiceComponentHost>());

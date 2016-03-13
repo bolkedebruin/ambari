@@ -22,6 +22,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
+import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.RetryCounter;
@@ -46,7 +47,6 @@ import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.SplitByMetricNamesCondition;
 import org.apache.hadoop.yarn.util.timeline.TimelineUtils;
 import org.apache.phoenix.exception.PhoenixIOException;
-import org.apache.phoenix.exception.SQLExceptionCode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.type.TypeReference;
 
@@ -84,7 +84,6 @@ import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.ti
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.OUT_OFF_BAND_DATA_TIME_ALLOWANCE;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.PRECISION_TABLE_SPLIT_POINTS;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.TimelineMetricConfiguration.PRECISION_TABLE_TTL;
-import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.ALTER_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_HOSTED_APPS_METADATA_TABLE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_AGGREGATE_TABLE_SQL;
 import static org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query.PhoenixTransactSQL.CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL;
@@ -150,6 +149,8 @@ public class PhoenixHBaseAccessor {
   static final String BLOCKING_STORE_FILES_KEY =
     "hbase.hstore.blockingStoreFiles";
 
+  private HashMap<String, String> tableTTL = new HashMap<>();
+
   public PhoenixHBaseAccessor(Configuration hbaseConf,
                               Configuration metricsConf){
     this(hbaseConf, metricsConf, new DefaultPhoenixDataSource(hbaseConf));
@@ -173,6 +174,15 @@ public class PhoenixHBaseAccessor {
     this.outOfBandTimeAllowance = metricsConf.getLong(OUT_OFF_BAND_DATA_TIME_ALLOWANCE,
       DEFAULT_OUT_OF_BAND_TIME_ALLOWANCE);
     this.skipBlockCacheForAggregatorsEnabled = metricsConf.getBoolean(AGGREGATORS_SKIP_BLOCK_CACHE, false);
+
+    tableTTL.put(METRICS_RECORD_TABLE_NAME, getDaysInSeconds(metricsConf.get(PRECISION_TABLE_TTL, "1")));                            //1 day
+    tableTTL.put(METRICS_AGGREGATE_MINUTE_TABLE_NAME, getDaysInSeconds(metricsConf.get(HOST_MINUTE_TABLE_TTL, "7")));                //7 days
+    tableTTL.put(METRICS_AGGREGATE_HOURLY_TABLE_NAME, getDaysInSeconds(metricsConf.get(HOST_HOUR_TABLE_TTL, "30")));                 //30 days
+    tableTTL.put(METRICS_AGGREGATE_DAILY_TABLE_NAME, getDaysInSeconds(metricsConf.get(HOST_DAILY_TABLE_TTL, "365")));                //1 year
+    tableTTL.put(METRICS_CLUSTER_AGGREGATE_TABLE_NAME, getDaysInSeconds(metricsConf.get(CLUSTER_SECOND_TABLE_TTL, "7")));            //7 days
+    tableTTL.put(METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME, getDaysInSeconds(metricsConf.get(CLUSTER_MINUTE_TABLE_TTL, "30")));    //30 days
+    tableTTL.put(METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME, getDaysInSeconds(metricsConf.get(CLUSTER_HOUR_TABLE_TTL, "365")));     //1 year
+    tableTTL.put(METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME, getDaysInSeconds(metricsConf.get(CLUSTER_DAILY_TABLE_TTL, "730")));     //2 years
   }
 
   private static TimelineMetric getLastTimelineMetricFromResultSet(ResultSet rs)
@@ -242,14 +252,7 @@ public class PhoenixHBaseAccessor {
 
     String encoding = metricsConf.get(HBASE_ENCODING_SCHEME, DEFAULT_ENCODING);
     String compression = metricsConf.get(HBASE_COMPRESSION_SCHEME, DEFAULT_TABLE_COMPRESSION);
-    String precisionTtl = getDaysInSeconds(metricsConf.get(PRECISION_TABLE_TTL, "1"));           //1 day
-    String hostMinTtl = getDaysInSeconds(metricsConf.get(HOST_MINUTE_TABLE_TTL, "7"));           //7 days
-    String hostHourTtl = getDaysInSeconds(metricsConf.get(HOST_HOUR_TABLE_TTL, "30"));           //30 days
-    String hostDailyTtl = getDaysInSeconds(metricsConf.get(HOST_DAILY_TABLE_TTL, "365"));        //1 year
-    String clusterSecTtl = getDaysInSeconds(metricsConf.get(CLUSTER_SECOND_TABLE_TTL, "7"));     //7 days
-    String clusterMinTtl = getDaysInSeconds(metricsConf.get(CLUSTER_MINUTE_TABLE_TTL, "30"));    //30 days
-    String clusterHourTtl = getDaysInSeconds(metricsConf.get(CLUSTER_HOUR_TABLE_TTL, "365"));    //1 year
-    String clusterDailyTtl = getDaysInSeconds(metricsConf.get(CLUSTER_DAILY_TABLE_TTL, "730"));  //2 years
+
 
     try {
       LOG.info("Initializing metrics schema...");
@@ -266,76 +269,56 @@ public class PhoenixHBaseAccessor {
 
       // Host level
       String precisionSql = String.format(CREATE_METRICS_TABLE_SQL,
-        encoding, precisionTtl, compression);
+        encoding, tableTTL.get(METRICS_RECORD_TABLE_NAME), compression);
       String splitPoints = metricsConf.get(PRECISION_TABLE_SPLIT_POINTS);
       if (!StringUtils.isEmpty(splitPoints)) {
         precisionSql += getSplitPointsStr(splitPoints);
       }
       stmt.executeUpdate(precisionSql);
       stmt.executeUpdate(String.format(CREATE_METRICS_AGGREGATE_TABLE_SQL,
-        METRICS_AGGREGATE_MINUTE_TABLE_NAME, encoding, hostMinTtl, compression));
+        METRICS_AGGREGATE_MINUTE_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_AGGREGATE_MINUTE_TABLE_NAME),
+        compression));
       stmt.executeUpdate(String.format(CREATE_METRICS_AGGREGATE_TABLE_SQL,
-        METRICS_AGGREGATE_HOURLY_TABLE_NAME, encoding, hostHourTtl, compression));
+        METRICS_AGGREGATE_HOURLY_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_AGGREGATE_HOURLY_TABLE_NAME),
+        compression));
       stmt.executeUpdate(String.format(CREATE_METRICS_AGGREGATE_TABLE_SQL,
-        METRICS_AGGREGATE_DAILY_TABLE_NAME, encoding, hostDailyTtl, compression));
+        METRICS_AGGREGATE_DAILY_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_AGGREGATE_DAILY_TABLE_NAME),
+        compression));
 
       // Cluster level
       String aggregateSql = String.format(CREATE_METRICS_CLUSTER_AGGREGATE_TABLE_SQL,
-        METRICS_CLUSTER_AGGREGATE_TABLE_NAME, encoding, clusterMinTtl, compression);
+        METRICS_CLUSTER_AGGREGATE_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_CLUSTER_AGGREGATE_TABLE_NAME),
+        compression);
       splitPoints = metricsConf.get(AGGREGATE_TABLE_SPLIT_POINTS);
       if (!StringUtils.isEmpty(splitPoints)) {
         aggregateSql += getSplitPointsStr(splitPoints);
       }
       stmt.executeUpdate(aggregateSql);
       stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL,
-        METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME, encoding, clusterHourTtl, compression));
+        METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME),
+        compression));
       stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL,
-        METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME, encoding, clusterHourTtl, compression));
+        METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME),
+        compression));
       stmt.executeUpdate(String.format(CREATE_METRICS_CLUSTER_AGGREGATE_GROUPED_TABLE_SQL,
-        METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME, encoding, clusterDailyTtl, compression));
+        METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME, encoding,
+        tableTTL.get(METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME),
+        compression));
 
-      //alter TTL options to update tables
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_RECORD_TABLE_NAME,
-        precisionTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_AGGREGATE_MINUTE_TABLE_NAME,
-        hostMinTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_AGGREGATE_HOURLY_TABLE_NAME,
-        hostHourTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_AGGREGATE_DAILY_TABLE_NAME,
-        hostDailyTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_CLUSTER_AGGREGATE_TABLE_NAME,
-        clusterSecTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_CLUSTER_AGGREGATE_MINUTE_TABLE_NAME,
-        clusterMinTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_CLUSTER_AGGREGATE_HOURLY_TABLE_NAME,
-        clusterHourTtl));
-      stmt.executeUpdate(String.format(ALTER_SQL,
-        METRICS_CLUSTER_AGGREGATE_DAILY_TABLE_NAME,
-        clusterDailyTtl));
 
       conn.commit();
 
       LOG.info("Metrics schema initialized.");
-    } catch (SQLException sql) {
-      if (sql.getErrorCode() ==
-        SQLExceptionCode.SET_UNSUPPORTED_PROP_ON_ALTER_TABLE.getErrorCode()) {
-        LOG.warn("Cannot update TTL on tables. " + sql.getMessage());
-      } else {
-        LOG.error("Error creating Metrics Schema in HBase using Phoenix.", sql);
-        throw new MetricsSystemInitializationException(
-          "Error creating Metrics Schema in HBase using Phoenix.", sql);
-      }
-    } catch (InterruptedException e) {
-      LOG.error("Error creating Metrics Schema in HBase using Phoenix.", e);
+    } catch (SQLException | InterruptedException sql) {
+      LOG.error("Error creating Metrics Schema in HBase using Phoenix.", sql);
       throw new MetricsSystemInitializationException(
-        "Error creating Metrics Schema in HBase using Phoenix.", e);
+        "Error creating Metrics Schema in HBase using Phoenix.", sql);
     } finally {
       if (stmt != null) {
         try {
@@ -354,7 +337,7 @@ public class PhoenixHBaseAccessor {
     }
   }
 
-  protected void initPolicies() {
+  protected void initPoliciesAndTTL() {
     boolean enableNormalizer = hbaseConf.getBoolean("hbase.normalizer.enabled", true);
     boolean enableFifoCompaction = metricsConf.getBoolean("timeline.metrics.hbase.fifo.compaction.enabled", true);
 
@@ -406,6 +389,20 @@ public class PhoenixHBaseAccessor {
             LOG.info("Setting config property " + BLOCKING_STORE_FILES_KEY +
               " = " + 300 + " for " + tableName);
             modifyTable = true;
+          }
+          // Change TTL setting to match user configuration
+          HColumnDescriptor[] columnFamilies = tableDescriptor.getColumnFamilies();
+          if (columnFamilies != null) {
+            for (HColumnDescriptor family : columnFamilies) {
+              String ttlValue = family.getValue("TTL");
+              if (StringUtils.isEmpty(ttlValue) ||
+                  !ttlValue.trim().equals(tableTTL.get(tableName))) {
+                family.setValue("TTL", tableTTL.get(tableName));
+                LOG.info("Setting TTL on table: " + tableName + " to : " +
+                  tableTTL.get(tableName) + " seconds.");
+                modifyTable = true;
+              }
+            }
           }
 
           // Persist only if anything changed
@@ -1348,8 +1345,8 @@ public class PhoenixHBaseAccessor {
     return metadataMap;
   }
 
-  private String getDaysInSeconds(String daysString) {
+  String getDaysInSeconds(String daysString) {
     double days = Double.valueOf(daysString.trim());
-    return String.valueOf((int)(days*86400));
+    return String.valueOf((int) (days * 86400));
   }
 }

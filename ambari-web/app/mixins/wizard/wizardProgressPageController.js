@@ -598,7 +598,7 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create(App.InstallComponent, {
           state: state
         },
         query: 'HostRoles/component_name=' + componentName + '&HostRoles/host_name.in(' + hostName.join(',') + ')&HostRoles/maintenance_state=OFF',
-        context: context + " " + App.format.role(componentName),
+        context: context + " " + App.format.role(componentName, false),
         hostName: hostName,
         taskNum: taskNum || 1,
         componentName: componentName,
@@ -725,6 +725,20 @@ App.wizardProgressPageControllerMixin = Em.Mixin.create(App.InstallComponent, {
     } else {
       this.onTaskError();
     }
-  }
+  },
 
+  /**
+   * Same as <code>createComponent</code> but with kdc session check and status changes
+   * when KDC auth dialog dissmised.
+   *
+   * @see createComponent
+   */
+  createInstallComponentTask: function(componentName, hostName, serviceName, options) {
+    var self = this;
+    App.get('router.mainAdminKerberosController').getKDCSessionState(function() {
+      self.createComponent(componentName, hostName, serviceName);
+    }, function() {
+      self.onTaskError();
+    });
+  }
 });

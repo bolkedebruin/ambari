@@ -88,7 +88,7 @@ App.ActivateHawqStandbyWizardStep3Controller = App.HighAvailabilityProgressPageC
       data.items[0].properties[property.name] = property.value;
     });
 
-    var configData = this.reconfigureSites([params.type], data, Em.I18n.t('admin.addHawqStandby.step4.save.configuration.note').format(App.format.role('HAWQSTANDBY')));
+    var configData = this.reconfigureSites([params.type], data, Em.I18n.t('admin.addHawqStandby.step4.save.configuration.note').format(App.format.role('HAWQSTANDBY', false)));
 
     App.ajax.send({
       name: 'common.service.configurations',
@@ -106,7 +106,7 @@ App.ActivateHawqStandbyWizardStep3Controller = App.HighAvailabilityProgressPageC
 
   installHawqMaster: function () {
     var hostName = this.get('content.hawqHosts.hawqStandby');
-    this.createComponent(this.hawqMasterComponentName, hostName, this.hawqServiceName);
+    this.createInstallComponentTask(this.hawqMasterComponentName, hostName, this.hawqServiceName);
   },
 
   deleteOldHawqMaster: function () {

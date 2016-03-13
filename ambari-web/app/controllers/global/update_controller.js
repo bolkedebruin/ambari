@@ -191,7 +191,7 @@ App.UpdateController = Em.Controller.extend({
    * Start polling, when <code>isWorking</code> become true
    */
   updateAll: function () {
-    if (this.get('isWorking')) {
+    if (this.get('isWorking') && !App.get('isOnlyViewUser')) {
       App.updater.run(this, 'updateServices', 'isWorking');
       App.updater.run(this, 'updateHost', 'isWorking');
       App.updater.run(this, 'updateServiceMetric', 'isWorking', App.componentsUpdateInterval, '\/main\/(dashboard|services).*');
@@ -260,7 +260,7 @@ App.UpdateController = Em.Controller.extend({
       }
     }
 
-    realUrl = realUrl.replace("<stackVersions>", App.get('supports.stackUpgrade') ? stackVersionInfo : "");
+    realUrl = realUrl.replace("<stackVersions>", stackVersionInfo);
     realUrl = realUrl.replace("<metrics>", lazyLoadMetrics ? "" : "metrics/disk,metrics/load/load_one,");
     realUrl = realUrl.replace('<hostDetailsParams>', hostDetailsParams);
 
