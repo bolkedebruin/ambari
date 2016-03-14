@@ -165,6 +165,14 @@ public class ShellCommandUtil {
     }
   }
 
+  /**
+   * Runs a command with a given set of environment variables
+   * @param args a String[] of the command and its arguments
+   * @param vars a Map of String,String setting an environment variable to run the command with
+   * @return Result
+   * @throws IOException
+   * @throws InterruptedException
+   */
   public static Result runCommand(String [] args, Map<String, String> vars) throws IOException,
           InterruptedException {
     ProcessBuilder builder = new ProcessBuilder(args);
@@ -196,6 +204,13 @@ public class ShellCommandUtil {
     return new Result(exitCode, stdout, stderr);
   }
 
+  /**
+   * Run a command
+   * @param args A String[] of the command and its arguments
+   * @return Result
+   * @throws IOException
+   * @throws InterruptedException
+   */
   public static Result runCommand(String [] args) throws IOException,
           InterruptedException {
     return runCommand(args, null);
